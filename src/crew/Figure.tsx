@@ -138,7 +138,7 @@ export default function Figure({ member, angle, radius, status, index }: {
           <group position={[0, 1.2, .78]}><PropMesh kind={member.prop} colour={member.colour} work={st} /></group>
         </group>
 
-        <Html position={[0, 2.62, 0]} center distanceFactor={7.5} zIndexRange={[10, 0]} style={{ pointerEvents: 'none' }}>
+        <Html position={[0, 2.62, 0]} center distanceFactor={7.5} zIndexRange={[2, 0]} style={{ pointerEvents: 'none' }}>
           <div className={`cs-tag is-${status.state}`} style={{ ['--c' as string]: member.colour }}>
             <div className="cs-name"><i />{member.name}<em>{member.kind}</em></div>
             <div className="cs-say">{status.state === 'idle' ? '' : status.detail}</div>

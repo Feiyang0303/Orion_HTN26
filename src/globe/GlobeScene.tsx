@@ -57,8 +57,13 @@ export default function GlobeScene({ mode, city, events, places, className }: {
           {CREW.map((m, i) => <Figure key={m.id} member={m} index={i} angle={angleOf(i)} radius={RING} status={status[m.id]} />)}
         </> : null} />
       <Streams status={statusRef} cityWorld={cityWorld} crewScale={crewScale} />
-      <Sparkles count={130} scale={[17, 8, 17]} size={2.1} speed={.18} opacity={.3} color="#f0b45e" position={[0, 3, 0]} />
-      <Sparkles count={70} scale={[11, 5, 11]} size={3.4} speed={.1} opacity={.16} color="#8fb4ff" position={[0, 3.2, 0]} />
+      {/* Motes in the air around the stage. The box stays shallow in z on purpose:
+          these are point sprites with size attenuation, so one that wanders close
+          to the camera is drawn as a quad subtending its size over its distance —
+          at z = +8 a 2-unit mote fills a quarter of the screen as a glowing slab.
+          Keeping |z| under 3 puts every one of them at least 13 units out. */}
+      <Sparkles count={130} scale={[17, 8, 5]} size={1.2} speed={.18} opacity={.3} color="#f0b45e" position={[0, 3, 0]} />
+      <Sparkles count={70} scale={[11, 5, 4]} size={1.7} speed={.1} opacity={.16} color="#8fb4ff" position={[0, 3.2, 0]} />
     </Canvas>
   )
 }
@@ -83,7 +88,7 @@ function Layout({ mode, globe, crew, statusRef, energy, crewScale }: {
       ? (portrait
         ? { x: 0, y: 6.7, k: THREE.MathUtils.clamp(hw * .38, 1.0, 1.5), c: 0 }                       // narrow screens: above the card
         : { x: Math.min(hw * .5, 4.6), y: 2.9, k: THREE.MathUtils.clamp(hw * .3, 1.3, 2.5), c: 0 })   // wide screens: beside it
-      : { x: 0, y: 3.85, k: THREE.MathUtils.clamp(hw * .25, 1.35, 2.2), c: 1 }
+      : { x: 0, y: 3.85, k: THREE.MathUtils.clamp(hw * .2, 1.15, 1.75), c: 1 }
     const e = 1 - Math.exp(-dt * 2.2)
     st.x += (goal.x - st.x) * e; st.y += (goal.y - st.y) * e; st.k += (goal.k - st.k) * e; st.c += (goal.c - st.c) * (1 - Math.exp(-dt * 1.4))
 
