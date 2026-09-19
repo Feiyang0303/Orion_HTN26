@@ -272,7 +272,7 @@
 /* Under this the three columns have nowhere to go, so the page stops trying to
    fit the height and becomes a scroll again — a legible tall page beats an
    unreadable wide one. */
-@media (max-width: 900px) {
+@media screen and (max-width: 900px) {
   .jn { justify-content: flex-start; }
   .jp { width: 100%; aspect-ratio: 3 / 4; }
   .jp-sk { width: 112px; }
@@ -300,9 +300,14 @@
    they are all put back in flow, inline styles included, which is what the
    !important on `position` is for. */
 @media print {
-  @page { size: landscape; margin: 8mm; }
+  @page { size: landscape; margin: 6mm; }
 
-  html, body { background: #fff !important; height: auto !important; overflow: visible !important; }
+  /* overflow:hidden is what keeps this to one sheet: anything that would spill
+     past the page box is clipped rather than paginated. */
+  html, body {
+    background: #fff !important; width: auto !important; height: auto !important;
+    margin: 0 !important; padding: 0 !important; overflow: hidden !important;
+  }
 
   /* the city, the globe, the bars, the editor, the error chip: none of it is the page */
   .orion-ground, .orion-veil, .orion-globe, .tv-bar, .t-panel, .ed, .orion-note,
@@ -315,8 +320,22 @@
     padding: 0 !important; margin: 0 !important; display: block !important;
     opacity: 1 !important; transform: none !important;
   }
+  .jn { height: 100vh !important; overflow: hidden !important; display: flex !important; align-items: center !important; }
 
-  .jp { width: 100% !important; max-width: none !important; }
+  /* The sheet is measured against the page box, not against `100%`. A
+     percentage here resolves against whatever ancestor box the app happens to
+     leave behind, which on paper was wider than the paper — so the page came
+     out 16:10 of the wrong width, ran past the bottom of the sheet, and
+     printed its last inch on a second one. In paged media vw and vh are the
+     page box itself, so taking the smaller of "as wide as the page" and "as
+     wide as the page is tall, times the ratio" always lands inside it. */
+  .jp {
+    width: min(100vw, calc(100vh * 1.6)) !important;
+    aspect-ratio: 16 / 10 !important;   /* whatever the paper's orientation, the sheet keeps its shape */
+    max-width: none !important; margin: 0 auto !important;
+    --u: calc(min(100vw, 100vh * 1.6) / 100);
+  }
+  .jn, .jp, .jp-sheet { break-inside: avoid !important; page-break-inside: avoid !important; }
   /* The sheet stays absolute and inset into .jp: that is what gives it a box
      at all, and everything drawn on it is positioned against that box. Only
      the fold and the shadow come off. */
