@@ -80,3 +80,29 @@ export async function photoFor(a: Article): Promise<Photo | null> {
   const licence = stripHtml(meta.LicenseShortName?.value)
   return { url: info.thumburl, credit: licence ? `${author}, ${licence}` : author, pageUrl: info.descriptionurl }
 }
+
+/** Photographs on Wikimedia Commons taken within `radiusM` of a point —
+    the honest way to show a hotel that has no article: the street outside it,
+    as someone actually photographed it. Nearest first, with credit. */
+export async function photosNear(at: LatLon, radiusM = 120, keep = 3): Promise<Photo[]> {
+  try {
+    const geo = await getJson<{ query?: { geosearch: { pageid: number; title: string; dist: number }[] } }>(api('commons.wikimedia.org', {
+      action: 'query', list: 'geosearch', gscoord: `${at.lat}|${at.lon}`, gsradius: String(Math.min(radiusM, 10000)),
+      gslimit: '12', gsnamespace: '6',
+    }))
+    const hits = (geo.query?.geosearch ?? []).filter(h => /\.(jpe?g|png|webp)$/i.test(h.title)).slice(0, keep)
+    if (!hits.length) return []
+    const res = await getJson<{ query?: { pages: { pageid: number; imageinfo?: { thumburl?: string; descriptionurl: string; extmetadata?: Record<string, { value: string }> }[] }[] } }>(
+      api('commons.wikimedia.org', {
+        action: 'query', pageids: hits.map(h => h.pageid).join('|'), prop: 'imageinfo', iiprop: 'url|extmetadata', iiurlwidth: '700',
+      }))
+    return (res.query?.pages ?? []).flatMap(p => {
+      const info = p.imageinfo?.[0]
+      if (!info?.thumburl) return []
+      const meta = info.extmetadata ?? {}
+      const author = stripHtml(meta.Artist?.value) || 'Unknown author'
+      const licence = stripHtml(meta.LicenseShortName?.value)
+      return [{ url: info.thumburl, credit: licence ? `${author}, ${licence}` : author, pageUrl: info.descriptionurl }]
+    })
+  } catch { return [] }
+}

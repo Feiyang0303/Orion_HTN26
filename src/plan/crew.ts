@@ -57,8 +57,27 @@ export const guessKind = (name: string): Kind => KIND_RULES.find(([r]) => r.test
 
 /** What Wikipedia knows about the area, most-read first. The one network call
     the whole planning page shares. */
+/* Wikipedia's geosearch returns everything with coordinates, and a city's
+   most-read geotagged articles include the city itself, its geography, its
+   arrondissements, its stations and its universities — none of which is a
+   place you fly to. A model told to pick sights will still pick "Paris" if
+   "Paris" is the most-read thing on the list, so the list is cleaned first. */
+const NOT_A_SIGHT = [
+  /^(geography|history|culture|economy|demographics|timeline|list|outline|climate|transport|architecture|tourism|administration|politics) (of|in) /i,
+  /^\d+(st|nd|rd|th) arrondissement/i, /\b(arrondissement|district|borough|ward|quarter|neighbourhood|neighborhood|suburb|commune)\b/i,
+  /\b(station|métro|metro|gare|railway|tram stop|bus station|airport|terminal)\b/i,
+  /\b(university|université|college|collège|école|school|lycée|institute|academy|académie|faculty|campus)\b/i,
+  /\b(hospital|hôpital|clinic|prefecture|préfecture|ministry|ministère|embassy|headquarters|company|bank|stock exchange|bourse)\b/i,
+  /\b(street|rue|avenue|boulevard)\b.*\b(paris|kyoto)\b/i,
+]
 export async function catalogueFor(origin: { lat: number; lon: number }, radiusM = RADIUS_M, keep = 40) {
-  return (await notable(origin, radiusM, keep, 400)).filter(a => a.extract.length > 80)
+  const all = await notable(origin, radiusM, Math.round(keep * 1.5), 400)
+  return all
+    .filter(a => a.extract.length > 80)
+    .filter(a => !NOT_A_SIGHT.some(r => r.test(a.title)))
+    // the city's own article, and any town or region that happens to be nearby
+    .filter(a => !/\b(is|was) (the|a|an) ([\w-]+ )?(capital|city|town|commune|municipality|region|department|département|prefecture|province)\b/i.test(a.extract.slice(0, 220)))
+    .slice(0, keep)
 }
 
 /** A place the person pinned, resolved to something the day can actually fly
@@ -220,4 +239,5 @@ export type Skeleton = {
   stops: Candidate[]     // in visiting order
   legs: Leg[]            // stops[i] -> stops[i+1]
   approach: Leg | null   // from -> stops[0]
+  back?: Leg | null      // stops[last] -> from
 }

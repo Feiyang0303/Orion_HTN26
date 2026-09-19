@@ -72,7 +72,14 @@ export default function Studio({ wish, mode, origin, onFly, onHome, onBack, save
     finally { setBusy(null) }
   }, [wish, mode, onEvent])
 
-  useEffect(() => { void runBeds(); return () => abort.current.abort() }, [])   // eslint-disable-line react-hooks/exhaustive-deps
+  /* Once. Fast Refresh re-runs mount effects on every hot update, and a
+     studio that restarted stage one each time a file was saved was
+     unusable while anyone was working on it. */
+  useEffect(() => {
+    if (!session.current && !busy) void runBeds()
+    const ctl = abort.current
+    return () => { if (!import.meta.hot) ctl.abort() }
+  }, [])   // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ------------------------------------------------------------- stage 2 */
 
@@ -223,6 +230,9 @@ export default function Studio({ wish, mode, origin, onFly, onHome, onBack, save
                 <li key={b.id} className={bed?.id === b.id ? 'is-on' : ''}>
                   <button type="button" onClick={() => setBed(b)}>
                     <span className="jr-disc">{i + 1}</span>
+                    {b.photos[0]
+                      ? <img className="jr-bed-thumb" src={b.photos[0].url} alt="" loading="lazy" title={`Nearby: ${b.photos[0].credit}`} />
+                      : <span className="jr-bed-thumb is-blank"><Mark name="station" size={26} /></span>}
                     <span className="jr-bed-body">
                       <b>{b.name}</b>
                       <em>{b.kind.replace('_', ' ')}{b.stars != null ? ` · ${b.stars} stars, self-declared` : ''}{b.address ? ` · ${b.address}` : ''}</em>
@@ -233,7 +243,7 @@ export default function Studio({ wish, mode, origin, onFly, onHome, onBack, save
               ))}
               {!beds.length && !busy && <li className="jr-empty">OpenStreetMap lists nothing to sleep in near here. You can carry on without a bed; the days will start from the city centre.</li>}
             </ol>
-            <p className="jr-caption">Ranked on distance from where the days will be, the sort of bed you asked for, and the tags OpenStreetMap has. Nothing here knows prices or availability.</p>
+            <p className="jr-caption">Ranked on distance from where the days will be, the sort of bed you asked for, and the tags OpenStreetMap has. Photographs are of the street nearby, from Wikimedia Commons. Nothing here knows prices or availability.</p>
             <div className="jr-order-moves">
               <button type="button" className="jr-btn tiny ghost" disabled={!!busy} onClick={() => void runBeds()}>Three different ones</button>
             </div>

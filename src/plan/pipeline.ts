@@ -47,7 +47,7 @@ function limiter(max: number) {
 /** The book. Targets, narration and voice per stop, in parallel, plus the
     photo — then the clock over the finished set. */
 export async function writePages(skeleton: Skeleton, opts: PipelineOptions): Promise<Plan> {
-  const { wish, mode, origin, from, stops: chosen, legs, approach } = skeleton
+  const { wish, mode, origin, from, stops: chosen, legs, approach, back = null } = skeleton
   const { onEvent = () => {}, saveAudio } = opts
   const say = (agent: Agent, kind: 'tool' | 'agent', state: 'working' | 'done' | 'reworking' | 'failed', detail: string) =>
     onEvent({ type: 'crew', agent, kind, state, detail })
@@ -132,7 +132,8 @@ export async function writePages(skeleton: Skeleton, opts: PipelineOptions): Pro
   const totalKm = (legs.reduce((s, l) => s + l.distanceM, 0) + (approach?.distanceM ?? 0)) / 1000
   const preface = await writePreface({
     city: origin.name, startAt: wish.startAt, endsAt: clock.endsAt, windowEnd: wish.endAt,
-    party: wish.party, pace: wish.pace, transport: wish.transport, budget: wish.budget,
+    party: wish.party, pace: wish.pace, budget: wish.budget,
+    transport: [...new Set([...(approach ? [approach] : []), ...legs, ...(back ? [back] : [])].map(l => l.transport))].join(' and ') || wish.transport,
     interests: wish.interests, from: from?.name, approachMin: approach ? approach.durationSec / 60 : undefined,
     meals: clock.breaks.map(b => ({ label: b.label, minutes: b.minutes, after: stops[b.after]?.name ?? '' })),
     totalKm,
@@ -148,7 +149,7 @@ export async function writePages(skeleton: Skeleton, opts: PipelineOptions): Pro
 
   const plan: Plan = {
     id: planId, city: origin.name, origin: { lat: origin.lat, lon: origin.lon }, mode, stops, legs,
-    wish, from, approach,
+    wish, from, approach, back,
     epigraph: epigraphFor(stops, legs, approach, window, clock.endsAt), preface,
     generatedAt: new Date().toISOString(),
     provenance: {

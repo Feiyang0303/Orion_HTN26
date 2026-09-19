@@ -1073,3 +1073,42 @@
 }
 .jr-editor-ask input::placeholder { color: #9a8a70; }
 .orion-overlay.jr-stage > .jr-studio-plan { margin-block: 0; }
+
+/* --- the studio's book must never be centred into its own overflow ------ */
+.jr-studio-plan { grid-template-columns: minmax(0, 1fr) minmax(280px, 340px); }
+.jr-studio-book { align-items: stretch; }
+.jr-studio-book > .jr-book-wrap { margin-inline: auto; max-width: 100%; }
+.jr-book { min-width: 0; }
+.jr-leaf { min-width: 0; }
+
+/* the bed's page */
+.jr-bed-name {
+  display: flex; align-items: center; gap: 9px; margin: 0;
+  font-family: var(--display); font-weight: 400; font-size: 24px; color: #3f3426;
+}
+.jr-bed-name .jr-mark { color: #9a6b3f; }
+.jr-bed-facts { grid-template-columns: repeat(2, 1fr); }
+.jr-bed-facts dd { word-break: break-word; }
+.jr-bed-map { margin-top: auto; }
+
+.jr-bed-thumb {
+  width: 64px; height: 64px; object-fit: cover; border-radius: 2px; flex: none;
+  border: 1px solid #cdbd99; box-shadow: 0 1px 3px rgba(40,26,10,.25);
+}
+.jr-bed-thumb.is-blank { display: grid; place-items: center; background: rgba(120,95,60,.08); color: #9a8a70; }
+.jr-beds li button { grid-template-columns: 26px 64px 1fr; }
+
+/* photographs, pinned in a row */
+.jr-photos { display: grid; gap: 14px 12px; }
+.jr-photos.n2 { grid-template-columns: 1fr 1fr; }
+.jr-photos.n3 { grid-template-columns: 1fr 1fr; }
+.jr-photos.n3 > :first-child { grid-column: 1 / -1; }
+.jr-photo-small img { max-height: 190px; }
+.jr-photos.n3 > :first-child img { max-height: 240px; }
+
+/* the day's edges: out from the bed, and back */
+.jr-day-edge { list-style: none; }
+.jr-day-hop.is-edge { margin-left: 0; border-left: 0; padding-left: 2px; color: #6a5c47; font-size: 12px; }
+.jr-day-hop.is-edge b { font-family: var(--display); font-weight: 400; font-size: 14px; color: #3f3426; }
+.jr-day-hop.is-edge .jr-mark { color: var(--ink-day, #8a5a2b); }
+.jr-day-table.is-dinner { margin-left: 0; margin-top: 6px; }

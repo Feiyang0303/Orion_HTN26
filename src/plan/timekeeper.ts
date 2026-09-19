@@ -116,7 +116,10 @@ export const arrivals = (v: number[], l: number[], w: DayWindow, a = 0, m: Meal[
 /** How many minutes of visiting a day has room for, after meals and a guess
     at travel. Used to decide how many places a day should hold *before* the
     scout is asked, so it is asked for a number that can actually fit. */
-export function visitBudgetMin(wish: Wish, travelGuessMin = 60) {
+export function visitBudgetMin(wish: Wish, travelGuessMin = 90) {
   const w = windowOf(wish)
-  return Math.max(60, w.endMin - w.startMin - mealMinutes(wish.meals) - travelGuessMin)
+  // Only a meal that falls inside the hours costs the hours anything: dinner
+  // after a day that ends at six is the evening's business, not the day's.
+  const inside = wish.meals.filter(m => MEAL[m].after < w.endMin - 30)
+  return Math.max(60, w.endMin - w.startMin - mealMinutes(inside) - travelGuessMin)
 }

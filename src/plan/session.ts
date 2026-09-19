@@ -99,7 +99,7 @@ export async function stagePlaces(s: Session, bed: Stay | null): Promise<DayDraf
   // Sized to the hours, with a little over: the day-shaper is told the budget
   // and will leave the surplus aside, and a scout asked for too few cannot be
   // asked for the rest without a second round of API calls.
-  const perDay = Math.max(2, Math.min(7, Math.round(budget / 50) + 1))
+  const perDay = Math.max(2, Math.min(8, Math.round(budget / 45) + 1))
 
   const taken = new Set<number>()
   const fixed: Candidate[] = []
@@ -120,16 +120,20 @@ export async function stagePlaces(s: Session, bed: Stay | null): Promise<DayDraf
   const byId = new Map(all.map(c => [c.id, c]))
   const drafts: DayDraft[] = shapes.map(d => ({ title: d.title, why: d.why, stops: d.ids.map(id => byId.get(id)!).filter(Boolean) }))
 
-  /* A day the shaper left thin is topped up, once, from what the scout did
-     not choose the first time. Thin means well under the budget after travel
-     is allowed for; a day that is merely not full is left alone. */
+  /* Nine to six means nine to six. A day the shaper left thin is topped up
+     from what the scout did not choose the first time, until its visiting
+     minutes come within an hour of the budget — the budget already having
+     meals and a travel allowance taken out. Two rounds at most, and never
+     past the point where the catalogue has nothing left worth adding. */
   const minutesOf = (d: DayDraft) => d.stops.reduce((n, c) => n + c.visitMin, 0)
   for (const d of drafts) {
-    if (minutesOf(d) >= budget * 0.6) continue
-    const want = Math.max(1, Math.min(3, Math.round((budget * 0.8 - minutesOf(d)) / 50)))
-    say(s, 'Scout', 'agent', 'working', `${d.title} is light — looking for ${want} more`)
-    const extra = await findStops({ catalogue: s.catalogue, wish, mode: s.mode, fixed: drafts.flatMap(x => x.stops), count: want, onEvent: () => {} }).catch(() => [])
-    for (const c of extra) { s.known.set(c.id, c); d.stops.push(c) }
+    for (let round = 0; round < 2 && minutesOf(d) < budget - 60; round++) {
+      const want = Math.max(1, Math.min(3, Math.round((budget - minutesOf(d)) / 50)))
+      say(s, 'Scout', 'agent', 'working', `${d.title}: ${minutesOf(d)} of ${budget} minutes filled — looking for ${want} more`)
+      const extra = await findStops({ catalogue: s.catalogue, wish, mode: s.mode, fixed: drafts.flatMap(x => x.stops), count: want, onEvent: () => {} }).catch(() => [])
+      if (!extra.length) break
+      for (const c of extra) { s.known.set(c.id, c); d.stops.push(c) }
+    }
   }
   say(s, 'Scout', 'agent', 'done', drafts.map((d, i) => `${i + 1}. ${d.title} (${d.stops.length}, ${minutesOf(d)} min)`).join(' · '))
   return drafts
@@ -161,10 +165,15 @@ async function buildDay(s: Session, draft: DayDraft, number: number, opts: Pipel
   const allLegs = await legsFor(chain, wish.transport, wish.budget)
   const approach = from ? allLegs[0] ?? null : null
   const legs = from ? allLegs.slice(1) : allLegs
+  // And home again: a day is a loop from the bed, not a line that ends in the street.
+  const last = ordered[ordered.length - 1]
+  const back = from && last
+    ? (await legsFor([{ id: last.id, lat: last.lat, lon: last.lon }, { id: 'bed', lat: from.lat, lon: from.lon }], wish.transport, wish.budget))[0] ?? null
+    : null
   say(s, 'Router', 'tool', 'done',
-    `Day ${number}: ${(legs.reduce((a, l) => a + l.distanceM, 0) / 1000).toFixed(1)} km, ${[...new Set(legs.map(l => l.transport))].join(' and ')}`)
+    `Day ${number}: ${((legs.reduce((a, l) => a + l.distanceM, 0) + (approach?.distanceM ?? 0) + (back?.distanceM ?? 0)) / 1000).toFixed(1)} km door to door, ${[...new Set([...legs, ...(approach ? [approach] : []), ...(back ? [back] : [])].map(l => l.transport))].join(' and ')}`)
 
-  const plan = await writePages({ wish, mode: s.mode, origin: s.origin, from, stops: ordered, legs, approach }, {
+  const plan = await writePages({ wish, mode: s.mode, origin: s.origin, from, stops: ordered, legs, approach, back }, {
     ...opts, written: s.written, signal: s.signal,
     onEvent: e => s.onEvent(e.type === 'crew' ? { ...e, detail: `Day ${number}: ${e.detail}` } : e),
   })
@@ -174,6 +183,7 @@ async function buildDay(s: Session, draft: DayDraft, number: number, opts: Pipel
   const tables = await chooseTables({
     number, title: draft.title,
     stops: plan.stops.map(st => ({ id: st.id, name: st.name, lat: st.lat, lon: st.lon, arrival: st.arrival, visitMin: st.visitMin })),
+    bed: s.bed ? { id: s.bed.id, name: s.bed.name, lat: s.bed.lat, lon: s.bed.lon } : null,
   }, wish, s.signal)
   say(s, 'Narrator', 'agent', tables.length ? 'done' : 'failed',
     tables.length ? `Day ${number}: ${tables.map(t => `${t.meal} at ${t.name}`).join(', ')}` : `Day ${number}: OpenStreetMap had nothing named near those stops`)

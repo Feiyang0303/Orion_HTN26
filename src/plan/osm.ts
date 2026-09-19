@@ -1,5 +1,6 @@
 import type { LatLon, Source } from '../types'
 import { metresBetween } from './geo'
+import { nearby } from './geocode'
 
 /* OpenStreetMap, for the things Wikipedia does not have: beds and dinner.
  *
@@ -17,8 +18,11 @@ import { metresBetween } from './geo'
 const MIRRORS = [
   'https://overpass-api.de/api/interpreter',
   'https://overpass.kumi.systems/api/interpreter',
+  'https://overpass.private.coffee/api/interpreter',
 ]
-const TIMEOUT_MS = 22_000
+/* Short, on purpose. Overpass in a dense city can take a minute, and a person
+   is waiting; past this the answer comes from Nominatim instead. */
+const TIMEOUT_MS = 12_000
 
 export type OsmPlace = LatLon & {
   id: string
@@ -39,28 +43,34 @@ type Element = {
 }
 
 async function overpass(query: string, signal?: AbortSignal): Promise<Element[]> {
-  for (const url of MIRRORS) {
-    const guard = new AbortController()
-    const timer = setTimeout(() => guard.abort(), TIMEOUT_MS)
-    const onAbort = () => guard.abort()
-    signal?.addEventListener('abort', onAbort)
-    try {
-      const res = await fetch(url, {
-        method: 'POST', signal: guard.signal,
-        headers: { 'content-type': 'application/x-www-form-urlencoded' },
-        body: 'data=' + encodeURIComponent(query),
-      })
-      if (!res.ok) continue
-      const body = await res.json() as { elements?: Element[] }
-      return body.elements ?? []
-    } catch {
-      /* next mirror */
-    } finally {
-      clearTimeout(timer)
-      signal?.removeEventListener('abort', onAbort)
-    }
+  /* All mirrors at once; the first good answer wins and the rest are
+     abandoned. Asking them in turn meant three timeouts in a row when the
+     first was busy, and a person was waiting through every one of them. */
+  const guards = MIRRORS.map(() => new AbortController())
+  const onAbort = () => guards.forEach(g => g.abort())
+  signal?.addEventListener('abort', onAbort)
+  const timer = setTimeout(onAbort, TIMEOUT_MS)
+  const attempt = async (url: string, guard: AbortController): Promise<Element[]> => {
+    const res = await fetch(url, {
+      method: 'POST', signal: guard.signal,
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: 'data=' + encodeURIComponent(query),
+    })
+    if (!res.ok) throw new Error(`${res.status}`)
+    const body = await res.json() as { elements?: Element[] }
+    if (!body.elements?.length) throw new Error('empty')
+    return body.elements
   }
-  return []
+  try {
+    const won = await Promise.any(MIRRORS.map((url, i) => attempt(url, guards[i])))
+    onAbort()
+    return won
+  } catch {
+    return []
+  } finally {
+    clearTimeout(timer)
+    signal?.removeEventListener('abort', onAbort)
+  }
 }
 
 const osmSource = (e: Element): Source => ({
@@ -88,7 +98,29 @@ function shape(elements: Element[], centre: LatLon, kindOf: (t: Record<string, s
 }
 
 const around = (centre: LatLon, radiusM: number, filters: string[]) =>
-  `[out:json][timeout:20];(${filters.map(f => `node${f}(around:${radiusM},${centre.lat},${centre.lon});way${f}(around:${radiusM},${centre.lat},${centre.lon});`).join('')});out center tags 120;`
+  `[out:json][timeout:10];(${filters.map(f => `node${f}(around:${radiusM},${centre.lat},${centre.lon});way${f}(around:${radiusM},${centre.lat},${centre.lon});`).join('')});out center tags 120;`
+
+/* The same places, asked of Nominatim when Overpass will not answer. It knows
+   fewer tags (stars, website and phone survive; cuisine sometimes) but it
+   knows the names and the doors, which is what matters. */
+async function viaNominatim(what: string[], centre: LatLon, radiusM: number, kindOf: (k: string) => string, signal?: AbortSignal): Promise<OsmPlace[]> {
+  const seen = new Set<string>()
+  const out: OsmPlace[] = []
+  for (const w of what) {
+    const rows = await nearby(w, centre, radiusM, 30, signal).catch(() => [])
+    for (const r of rows) {
+      const key = r.name.toLowerCase()
+      if (seen.has(key)) continue
+      seen.add(key)
+      out.push({
+        id: r.osmId, name: r.name, kind: kindOf(r.kind), tags: { name: r.name, ...r.tags },
+        lat: r.lat, lon: r.lon, distM: metresBetween(centre, r),
+        source: { kind: 'nominatim', label: `OpenStreetMap: ${r.name}`, url: `https://www.openstreetmap.org/${r.osmId[0] === 'w' ? 'way' : r.osmId[0] === 'r' ? 'relation' : 'node'}/${r.osmId.slice(1)}` },
+      })
+    }
+  }
+  return out.sort((a, b) => a.distM - b.distM)
+}
 
 /** Places to sleep near a point. `kinds` are OSM tourism values. */
 export async function beds(
@@ -96,7 +128,9 @@ export async function beds(
 ): Promise<OsmPlace[]> {
   const filters = kinds.map(k => `["tourism"="${k}"]["name"]`)
   const raw = await overpass(around(centre, radiusM, filters), signal)
-  return shape(raw, centre, t => t.tourism ?? 'hotel')
+  const got = shape(raw, centre, t => t.tourism ?? 'hotel')
+  if (got.length) return got
+  return viaNominatim(kinds.map(k => k.replace('_', ' ')), centre, radiusM, k => k.replace(' ', '_'), signal)
 }
 
 /** Places to eat near a point. */
@@ -105,7 +139,9 @@ export async function tables(
 ): Promise<OsmPlace[]> {
   const filters = ['restaurant', 'cafe', 'fast_food', 'bar'].map(k => `["amenity"="${k}"]["name"]`)
   const raw = await overpass(around(centre, radiusM, filters), signal)
-  return shape(raw, centre, t => t.amenity ?? 'restaurant')
+  const got = shape(raw, centre, t => t.amenity ?? 'restaurant')
+  if (got.length) return got
+  return viaNominatim(['restaurant', 'cafe'], centre, radiusM, k => k, signal)
 }
 
 /** One line per place for a model to choose from: everything OSM actually

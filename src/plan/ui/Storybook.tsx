@@ -147,7 +147,7 @@ export default function Storybook({ trip, events, planning, onFly, onClose, onHo
 
     if (trip.stays.length) out.push({
       key: 'bed', tab: '⌂', title: 'Where you sleep',
-      left: <Beds trip={trip} />, right: <HowChosen trip={trip} />,
+      left: <Beds trip={trip} />, right: <BedStreet trip={trip} />,
     })
 
     for (const day of trip.days) {
@@ -308,52 +308,113 @@ function Opening({ trip }: { trip: Trip }) {
 /* ----------------------------------------------------------------- the bed */
 
 function Beds({ trip }: { trip: Trip }) {
+  const b = trip.stays[0]
+  if (!b) return <Page title="Where you sleep"><p className="jr-empty">OpenStreetMap lists nothing to sleep in near the middle of this trip.</p></Page>
+  const t = b.tags
+  const facts: [string, string][] = [
+    ['Sort', b.kind.replace('_', ' ')],
+    ...(b.stars != null ? [['Stars', `${b.stars}, self-declared`] as [string, string]] : []),
+    ...(b.address ? [['Address', b.address] as [string, string]] : []),
+    ...(t.website || t['contact:website'] ? [['Website', (t.website || t['contact:website']).replace(/^https?:\/\//, '').replace(/\/$/, '')] as [string, string]] : []),
+    ...(t.phone || t['contact:phone'] ? [['Phone', t.phone || t['contact:phone']] as [string, string]] : []),
+    ...(t.rooms ? [['Rooms', t.rooms] as [string, string]] : []),
+    ...(t['check_in'] || t['checkin'] ? [['Check-in', t['check_in'] || t['checkin']] as [string, string]] : []),
+    ...(t.wheelchair ? [['Step-free', t.wheelchair] as [string, string]] : []),
+    ...(t.internet_access ? [['Wi-fi', t.internet_access] as [string, string]] : []),
+    ...(t.breakfast ? [['Breakfast', t.breakfast] as [string, string]] : []),
+    ...(t.operator || t.brand ? [['Run by', t.operator || t.brand] as [string, string]] : []),
+  ]
+  const nights = trip.days.length
+  const first = trip.days[0]
   return (
-    <Page title="Where you sleep" sub={`${trip.stays.length} from OpenStreetMap`} className="jr-found-page">
-      <ul className="jr-found">
-        {trip.stays.map((b, i) => (
-          <li key={b.id} style={{ '--c': STOP_COLOURS[i % STOP_COLOURS.length] } as React.CSSProperties}>
-            <div className="jr-found-plate"><Mark name="station" size={28} /></div>
-            <div className="jr-found-body">
-              <h3>{b.name}</h3>
-              <p>{b.why}</p>
-              <ul className="jr-tags">
-                <li className="is-fit">{b.kind.replace('_', ' ')}</li>
-                {b.stars != null && <li className="is-time">{b.stars} stars, self-declared</li>}
-                {b.address && <li className="is-photo">{b.address}</li>}
-              </ul>
-              <div className="jr-found-act">
-                <a className="jr-cite" href={b.source.url} target="_blank" rel="noreferrer">OpenStreetMap</a>
-              </div>
-            </div>
-          </li>
-        ))}
-        {!trip.stays.length && <li className="jr-empty">OpenStreetMap lists nothing to sleep in near the middle of this trip.</li>}
-      </ul>
+    <Page title="Where you sleep" sub={`${nights} night${nights === 1 ? '' : 's'}`} className="jr-bed-page">
+      <h3 className="jr-bed-name"><Mark name="station" size={22} />{b.name}</h3>
+      <p className="jr-hand">{b.why}</p>
+      <dl className="jr-brief jr-bed-facts">
+        {facts.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}
+      </dl>
+      {first?.approach && (
+        <p className="jr-fits"><Mark name="compass" size={15} />
+          <span>{Math.round(first.approach.durationSec / 60)} minutes {TRANSPORT_LABEL[first.approach.transport].toLowerCase()} to the first stop of day 1, <b>{first.stops[0]?.name}</b>.
+            {first.back && <> {Math.round(first.back.durationSec / 60)} minutes back at the end of it.</>}</span>
+        </p>
+      )}
+      <p className="jr-caption">
+        Every fact here is an OpenStreetMap tag, quoted as written. It knows no prices and no availability, and
+        nothing on this page says the place is good — only where it is, and what it told the map about itself.
+        <> · </><a className="jr-cite" href={b.source.url} target="_blank" rel="noreferrer">OpenStreetMap</a>
+      </p>
+      {trip.stays.length > 1 && (
+        <p className="jr-caption">Also ranked: {trip.stays.slice(1).map(x => x.name).join('; ')}.</p>
+      )}
     </Page>
   )
 }
 
-function HowChosen({ trip }: { trip: Trip }) {
+/** The street outside, as someone photographed it, and where the bed sits
+    against the days. */
+function BedStreet({ trip }: { trip: Trip }) {
+  const b = trip.stays[0]
+  if (!b) return null
+  const photos = b.photos
   return (
-    <Page title="How the bed and the table were chosen">
-      <p className="jr-blurb">
-        Hotels and restaurants are not in Wikipedia, so they come from OpenStreetMap: every place on
-        these pages is a real entry somebody mapped, with a real position, and the link under each one
-        goes to it.
+    <Page title="The street outside" sub={photos.length ? `${photos.length} from Wikimedia Commons` : ''} className="jr-bed-street">
+      {photos.length ? (
+        <div className={`jr-photos n${Math.min(photos.length, 3)}`}>
+          {photos.map((p, i) => (
+            <figure key={i} className="jr-photo jr-photo-small">
+              <Tape className="tl" /><Tape className="tr" />
+              <img src={p.url} alt="" loading="lazy" />
+              <figcaption>{p.credit} · <a href={p.pageUrl} target="_blank" rel="noreferrer">Commons</a></figcaption>
+            </figure>
+          ))}
+        </div>
+      ) : (
+        <div className="jr-sketch" style={{ height: 150 }}><Mark name="station" size={90} /></div>
+      )}
+      <p className="jr-caption">
+        {photos.length
+          ? 'Taken within about a hundred metres of the door. They are the neighbourhood, not the rooms — the map has no photographs of the inside of anything.'
+          : 'Nobody has put a photograph of this street on Wikimedia Commons, so there is a drawing instead. The rooms are not pictured either way.'}
       </p>
-      <p className="jr-blurb">
-        OpenStreetMap has no ratings and no prices, so this book prints none. A star count, where it
-        appears, is what the hotel told OpenStreetMap about itself. Opening hours are quoted from the
-        tag exactly as written and may be out of date — the book cannot promise anywhere is open.
-      </p>
-      <p className="jr-blurb">
-        What the crew could weigh was distance from where you will actually be, the sort of bed you
-        asked for, the cuisine tag, and anything said about diets or step-free access. That is the
-        whole basis of every choice here, and it is why none of them claims to be the best in the city.
-      </p>
-      <div className="jr-pressed"><Mark name={pressedFor(trip.origin.lat)} size={72} className="pressed" /></div>
+      <div className="jr-bed-map">
+        <RouteMapLite trip={trip} />
+      </div>
+      <p className="jr-caption">Where it sits against the days: the bed in brown, each day's first stop in its own colour.</p>
     </Page>
+  )
+}
+
+/** A tiny map of the bed and the first stop of every day. */
+function RouteMapLite({ trip }: { trip: Trip }) {
+  const b = trip.stays[0]
+  const pts = [b, ...trip.days.map(d => d.stops[0]).filter(Boolean)]
+  const lats = pts.map(p => p.lat), lons = pts.map(p => p.lon)
+  const pad = 0.004
+  const west = Math.min(...lons) - pad, east = Math.max(...lons) + pad
+  const south = Math.min(...lats) - pad, north = Math.max(...lats) + pad
+  const W = 520, H = 200
+  const X = (lon: number) => ((lon - west) / (east - west || 1)) * W
+  const Y = (lat: number) => H - ((lat - south) / (north - south || 1)) * H
+  return (
+    <figure className="jr-map">
+      <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="The bed and the first stop of each day">
+        {trip.days.map((d, i) => d.stops[0] && (
+          <line key={i} x1={X(b.lon)} y1={Y(b.lat)} x2={X(d.stops[0].lon)} y2={Y(d.stops[0].lat)}
+            stroke={colourOf(i)} strokeWidth="1.4" strokeDasharray="4 5" opacity=".8" />
+        ))}
+        {trip.days.map((d, i) => d.stops[0] && (
+          <g key={`p${i}`} transform={`translate(${X(d.stops[0].lon)} ${Y(d.stops[0].lat)})`}>
+            <circle r="9" fill={colourOf(i)} stroke="#fbf3e2" strokeWidth="1.5" />
+            <text y="4" textAnchor="middle" className="jr-map-no" fill="#fbf3e2">{i + 1}</text>
+          </g>
+        ))}
+        <g transform={`translate(${X(b.lon)} ${Y(b.lat)})`}>
+          <circle r="10" fill="#6d5a3c" stroke="#fbf3e2" strokeWidth="1.5" />
+          <text y="4" textAnchor="middle" className="jr-map-no" fill="#fbf3e2">⌂</text>
+        </g>
+      </svg>
+    </figure>
   )
 }
 
@@ -382,9 +443,18 @@ function DayPage({ day, trip, onPick, onFly }: {
           someone is actually looking at it; a plan that reads like an
           encyclopaedia is a plan nobody reads on the morning they use it. */}
       <ol className="jr-day-run">
+        {day.from && (
+          <li className="jr-day-edge">
+            <p className="jr-day-hop is-edge">
+              <Mark name="station" size={16} />
+              <b>{trip.wish.startAt}</b> leave <b>{day.from.name}</b>
+              {day.approach && <i>{Math.round(day.approach.durationSec / 60)} min {TRANSPORT_LABEL[day.approach.transport].toLowerCase()} to the first stop</i>}
+            </p>
+          </li>
+        )}
         {day.stops.map((s, i) => {
           const leg = day.legs[i]
-          const table = day.tables.find(t => t.nearStopId === s.id)
+          const table = day.tables.find(t => t.nearStopId === s.id && t.meal !== 'dinner')
           return (
             <li key={s.id} style={{ '--c': colourOf(i) } as React.CSSProperties}>
               <button className="jr-day-stop" onClick={() => onPick(i)}>
@@ -414,6 +484,38 @@ function DayPage({ day, trip, onPick, onFly }: {
             </li>
           )
         })}
+        {(() => {
+          const dinner = day.tables.find(t => t.meal === 'dinner')
+          const homeMin = MINS(endsAt(day)) + (day.back ? day.back.durationSec / 60 : 0)
+          const dinnerAt = HHMM(Math.max(homeMin, 18 * 60 + 30))
+          return (day.from || dinner) ? (
+            <li className="jr-day-edge">
+              {day.back && (
+                <p className="jr-day-hop is-edge">
+                  <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor"
+                    strokeWidth="1.15" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                    <path d={TRANSPORT_MARK[day.back.transport]} />
+                  </svg>
+                  <b>{endsAt(day)}</b> back towards <b>{day.from?.name}</b>
+                  <i>{Math.round(day.back.durationSec / 60)} min {TRANSPORT_LABEL[day.back.transport].toLowerCase()}{day.back.estimated ? ', estimated' : ''}</i>
+                </p>
+              )}
+              {dinner && (
+                <div className="jr-day-table is-dinner">
+                  <Mark name="market" size={20} />
+                  <div>
+                    <b>{dinnerAt} · dinner · {dinner.name}</b>
+                    <span>
+                      {dinner.cuisine ? dinner.cuisine.replace(/;/g, ', ') : dinner.kind.replace('_', ' ')}
+                      {dinner.walkMin != null && <> · {dinner.walkMin} min from {trip.stays[0] && dinner.nearStopId === trip.stays[0].id ? 'the bed' : 'the last stop'}</>}
+                    </span>
+                    {dinner.why && <em>{dinner.why}</em>}
+                  </div>
+                </div>
+              )}
+            </li>
+          ) : null
+        })()}
       </ol>
 
       {/* Pencil in the corner: the things a plan should say out loud and

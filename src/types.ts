@@ -188,6 +188,9 @@ export type Plan = {
   from: Waypoint | null
   /** The hop from `from` to the first stop. Belongs to no stop. */
   approach: Leg | null
+  /** The way back from the last stop to `from` at the end of the day, so the
+      day is a loop from the bed and not a line that stops in the street. */
+  back: Leg | null
   /** One line under the title, counted from the day itself. */
   epigraph: string
   /** A short paragraph on how this particular day is shaped and why, written
@@ -210,6 +213,12 @@ export type Stay = LatLon & {
   address: string
   why: string               // the concierge's one line, from the tags it was shown
   source: Source
+  /** Whatever else OSM was told: website, phone, rooms, wheelchair, wifi… */
+  tags: Record<string, string>
+  /** Photographs taken within a stone's throw, from Wikimedia Commons — the
+      street and the building as they actually are. Labelled as nearby, never
+      passed off as the hotel's own. Empty when nobody has photographed it. */
+  photos: Photo[]
 }
 
 /** A place to eat, from OpenStreetMap, tied to one meal of one day. */

@@ -48,7 +48,6 @@ const guessSec = (a: LatLon, b: LatLon, transport: Transport) =>
 export async function bestOrder(
   points: LatLon[], wish: TransportWish = 'walk', budget: Budget = 'modest', fixedFirst = false,
 ): Promise<{ order: number[]; totalSec: number; estimated: boolean; minutes: number[][]; transport: Transport }> {
-  if (points.length > 9) throw new Error('brute-force routing is only for fewer than 10 stops')
   let far = 0
   for (let i = 0; i < points.length; i++) for (let j = i + 1; j < points.length; j++) far = Math.max(far, metresBetween(points[i], points[j]))
   const transport = modeFor(wish, budget, far / 2)
@@ -58,12 +57,43 @@ export async function bestOrder(
   const sec = (i: number, j: number) => m?.durationSec[i]?.[j] ?? guessSec(points[i], points[j], transport)
 
   const movable = points.map((_, i) => i).filter(i => !(fixedFirst && i === 0))
+  const cost = (order: number[]) => { let t = 0; for (let i = 1; i < order.length; i++) t += sec(order[i - 1], order[i]); return t }
   let best: number[] | null = null, bestSec = Infinity
-  for (const tail of permutations(movable)) {
-    const order = fixedFirst ? [0, ...tail] : tail
-    let total = 0
-    for (let i = 1; i < order.length && total < bestSec; i++) total += sec(order[i - 1], order[i])
-    if (total < bestSec) { bestSec = total; best = order }
+
+  if (movable.length <= 8) {
+    // Small enough to try every order.
+    for (const tail of permutations(movable)) {
+      const order = fixedFirst ? [0, ...tail] : tail
+      let total = 0
+      for (let i = 1; i < order.length && total < bestSec; i++) total += sec(order[i - 1], order[i])
+      if (total < bestSec) { bestSec = total; best = order }
+    }
+  } else {
+    /* A full day can be a dozen places. Nearest-neighbour from the start,
+       then 2-opt until no swap helps: not provably optimal, but within a few
+       minutes of it on a city's worth of points, and instant. */
+    const start = fixedFirst ? 0 : movable[0]
+    const left = new Set(movable.filter(i => i !== start))
+    const order = [start]
+    while (left.size) {
+      const here = order[order.length - 1]
+      let next = -1, nd = Infinity
+      for (const j of left) { const d = sec(here, j); if (d < nd) { nd = d; next = j } }
+      order.push(next); left.delete(next)
+    }
+    let improved = true
+    while (improved) {
+      improved = false
+      for (let i = fixedFirst ? 1 : 0; i < order.length - 2; i++) {
+        for (let k = i + 1; k < order.length - 1; k++) {
+          const a = order[i - 1] ?? order[i], b = order[i], c = order[k], d = order[k + 1]
+          const before = (i ? sec(a, b) : 0) + sec(c, d)
+          const after = (i ? sec(a, c) : 0) + sec(b, d)
+          if (after + 1e-6 < before) { order.splice(i, k - i + 1, ...order.slice(i, k + 1).reverse()); improved = true }
+        }
+      }
+    }
+    best = order; bestSec = cost(order)
   }
   if (!best) throw new Error('These places cannot be connected.')
   const minutes = points.map((_, i) => points.map((__, j) => i === j ? 0 : sec(i, j) / 60))

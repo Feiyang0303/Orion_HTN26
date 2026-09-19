@@ -2,6 +2,7 @@ import type { LatLon, Meal, Stay, Table, Wish } from '../types'
 import { BUDGET_LABEL, LODGING_LABEL, MINS, PARTY_LABEL } from '../types'
 import { askJson } from './json'
 import { addressOf, beds, describe, tables as osmTables, type OsmPlace } from './osm'
+import { photosNear } from './wikipedia'
 import { metresBetween } from './geo'
 import type { Candidate } from './crew'
 
@@ -69,7 +70,7 @@ export async function shapeDays(all: Candidate[], count: number, wish: Wish, bud
   const byId = new Map(all.map(c => [c.id, c]))
   const used = new Set<string>()
   const days: DayShape[] = (r.days ?? []).slice(0, count).map((d, i) => ({
-    title: String(d.title ?? `Day ${i + 1}`).trim().slice(0, 60),
+    title: honestTitle(String(d.title ?? '').trim().slice(0, 60), (d.ids ?? []).map(id => byId.get(id)).filter(Boolean) as Candidate[], i),
     why: String(d.why ?? '').trim(),
     ids: (d.ids ?? []).filter(id => byId.has(id) && !used.has(id) && used.add(id) !== undefined),
   }))
@@ -93,6 +94,21 @@ export async function shapeDays(all: Candidate[], count: number, wish: Wish, bud
   }
   return days
 }
+
+/* A title that is a brochure gets replaced with one that is a fact: the first
+   and last place of the day, or the one place if there is one. The prompt asks
+   for this and the model ignores it about half the time, so it is not asked
+   twice — it is fixed here. */
+const BROCHURE = /\b(highlights?|immersion|immersive|relaxation|experience|journey|adventure|exploration|explore|discover(y|ing)?|charm(s|ing)?|wonders?|treasures?|gems?|delights?|vibes?|essence|magic(al)?|unforgettable|hidden|iconic|ultimate|must-see|cultural|sacred|scenic|foundations?|retreats?|strolls?)\b/i
+function honestTitle(given: string, stops: Candidate[], i: number) {
+  const ok = given && !BROCHURE.test(given) && !/^day\s*\d/i.test(given)
+  if (ok) return given
+  const a = stops[0]?.name, b = stops[stops.length - 1]?.name
+  if (a && b && a !== b) return `${short(a)} to ${short(b)}`
+  if (a) return `Around ${short(a)}`
+  return `Day ${i + 1}`
+}
+const short = (n: string) => n.replace(/\s*\(.*?\)\s*/g, ' ').replace(/,.*$/, '').trim()
 
 /* -------------------------------------------------------------- the bedroom */
 
@@ -164,13 +180,15 @@ export async function chooseBeds(
     if (stays.some(s => s.id === p.id)) continue
     stays.push(toStay(p, `${Math.round(p.distM)} m from the middle of your days — the nearest the crew did not otherwise rank`))
   }
+  // Photographs of the street, where anyone has taken one.
+  await Promise.all(stays.map(async b => { b.photos = await photosNear(b, 120, 3) }))
   return { stays, looked: found.length }
 }
 
 const toStay = (p: OsmPlace, why: string): Stay => ({
   id: p.id, name: p.name, kind: p.kind, lat: p.lat, lon: p.lon,
   stars: p.tags.stars && /^\d+$/.test(p.tags.stars) ? Number(p.tags.stars) : null,
-  address: addressOf(p), why, source: p.source,
+  address: addressOf(p), why, source: p.source, tags: p.tags, photos: [],
 })
 
 /* ---------------------------------------------------------------- the table */
@@ -196,7 +214,13 @@ HARD RULES
 Reply with a JSON object: {"meals":[{"meal":"lunch"|"dinner","id":"<id>","why":"<max 14 words>"}]}`
 
 export async function chooseTables(
-  day: { number: number; title: string; stops: { id: string; name: string; lat: number; lon: number; arrival: string; visitMin?: number }[] },
+  day: {
+    number: number; title: string
+    stops: { id: string; name: string; lat: number; lon: number; arrival: string; visitMin?: number }[]
+    /** Where they sleep. Dinner is looked for here when there is one — the
+        last thing anyone wants after a day out is a bus back after eating. */
+    bed?: { id: string; name: string; lat: number; lon: number } | null
+  },
   wish: Wish, signal?: AbortSignal,
 ): Promise<Table[]> {
   const wanted = wish.meals
@@ -208,7 +232,7 @@ export async function chooseTables(
      list. Dinner is around the last stop. */
   const leaving = (st: typeof day.stops[number]) => MINS(st.arrival) + (st.visitMin ?? 30)
   const anchorFor = (meal: Meal) => {
-    if (meal !== 'lunch') return day.stops[day.stops.length - 1]
+    if (meal !== 'lunch') return day.bed ?? day.stops[day.stops.length - 1]
     return [...day.stops].sort((a, b) => Math.abs(leaving(a) - (12 * 60 + 45)) - Math.abs(leaving(b) - (12 * 60 + 45)))[0]
   }
 
@@ -224,16 +248,35 @@ export async function chooseTables(
     wish.diet.trim() ? `At the table they said: "${wish.diet.trim()}".` : 'No dietary requirements given.',
     ...lists.map(l => [
       '',
-      `${l.meal.toUpperCase()} — near ${l.anchor.name}, where they are at about ${l.anchor.arrival}:`,
+      `${l.meal.toUpperCase()} — near ${l.anchor.name}${'arrival' in l.anchor && l.anchor.arrival ? `, where they are at about ${l.anchor.arrival}` : l.meal === 'dinner' ? ', where they sleep, in the evening' : ''}:`,
       l.near.length ? l.near.map(describe).join('\n') : '(nothing named nearby)',
     ].join('\n')),
   ].join('\n')
 
-  const r = await askJson<{ meals: { meal: string; id: string; why: string }[] }>('narrator', TABLE_SYSTEM, user, 1200)
-    .catch(() => ({ meals: [] as { meal: string; id: string; why: string }[] }))
+  const r = await askJson<{ meals?: unknown }>('narrator', TABLE_SYSTEM, user, 1200).catch(() => ({ meals: [] }))
+
+  /* {meals:[{meal,id,why}]} is what was asked for. {meals:{lunch:{id,why}}},
+     {lunch:{...}, dinner:{...}} and {meals:[{lunch:"id"}]} are what arrives. */
+  const picks: { meal: string; id: string; why: string }[] = []
+  const take = (meal: string, v: unknown) => {
+    if (typeof v === 'string') picks.push({ meal, id: v, why: '' })
+    else if (v && typeof v === 'object') {
+      const o = v as Record<string, unknown>
+      if (typeof o.id === 'string') picks.push({ meal: String(o.meal ?? meal), id: o.id, why: String(o.why ?? '') })
+    }
+  }
+  const raw = (r as Record<string, unknown>).meals ?? r
+  if (Array.isArray(raw)) {
+    for (const item of raw) {
+      if (item && typeof item === 'object' && typeof (item as Record<string, unknown>).id === 'string') take(String((item as Record<string, unknown>).meal ?? ''), item)
+      else if (item && typeof item === 'object') for (const [k, v] of Object.entries(item as Record<string, unknown>)) take(k, v)
+    }
+  } else if (raw && typeof raw === 'object') {
+    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) if (k === 'lunch' || k === 'dinner' || k === 'breakfast') take(k, v)
+  }
 
   const out: Table[] = []
-  for (const m of r.meals ?? []) {
+  for (const m of picks) {
     const list = lists.find(l => l.meal === m.meal)
     const hit = list?.near.find(p => p.id === m.id)
     if (!list || !hit) continue

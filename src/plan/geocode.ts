@@ -155,3 +155,37 @@ export async function reverseGeocode(at: LatLon, signal?: AbortSignal): Promise<
     }
   } catch { return null }
 }
+
+/** Named places of a kind within a box around a point — "hotel", "restaurant"
+    — from Nominatim, with whatever extra tags it carries. The fallback when
+    Overpass is slow or down, which in a dense city it often is. */
+export type NearbyRow = LatLon & {
+  osmId: string; name: string; kind: string; region: string
+  tags: Record<string, string>
+}
+export async function nearby(what: string, centre: LatLon, radiusM: number, limit = 30, signal?: AbortSignal): Promise<NearbyRow[]> {
+  const dLat = radiusM / 111_000
+  const dLon = radiusM / (111_000 * Math.cos(centre.lat * Math.PI / 180))
+  const params = new URLSearchParams({
+    q: what, format: 'jsonv2', limit: String(Math.min(limit, 50)), addressdetails: '1', namedetails: '1', extratags: '1',
+    'accept-language': 'en', bounded: '1',
+    viewbox: [centre.lon - dLon, centre.lat + dLat, centre.lon + dLon, centre.lat - dLat].join(','),
+  })
+  type Full = Row & { osm_type?: string; osm_id?: number; type?: string; class?: string; extratags?: Record<string, string>; address?: Record<string, string> }
+  const rows = await search(params, signal) as Full[]
+  return rows.flatMap(r => {
+    const lat = Number(r.lat), lon = Number(r.lon)
+    const name = englishName(r)
+    if (!name || !Number.isFinite(lat)) return []
+    const a = r.address ?? {}
+    return [{
+      osmId: `${(r.osm_type ?? 'n')[0]}${r.osm_id ?? Math.round(lat * 1e5)}`, name, lat, lon,
+      kind: r.type ?? what, region: r.display_name.split(',').slice(1, 3).map(s => s.trim()).join(', '),
+      tags: {
+        ...(r.extratags ?? {}),
+        ...(a.road ? { 'addr:street': a.road } : {}), ...(a.house_number ? { 'addr:housenumber': a.house_number } : {}),
+        ...(a.city || a.town ? { 'addr:city': a.city ?? a.town } : {}),
+      },
+    }]
+  })
+}

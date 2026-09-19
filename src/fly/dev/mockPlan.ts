@@ -55,7 +55,7 @@ export const mockPlan: Plan = {
     interests: ['History'], pace: 'steady', transport: 'walk',
     party: 'solo', budget: 'modest', meals: [], days: 1, lodging: 'any', diet: '',
   },
-  from: null, approach: null, epigraph: '[mock] three places on the river.', preface: '',
+  from: null, approach: null, back: null, epigraph: '[mock] three places on the river.', preface: '',
   generatedAt: new Date(0).toISOString(),
   provenance: { router: 'code', timekeeper: 'code', scout: 'mock', critic: 'mock', narrator: 'mock', tts: 'none' },
 }
