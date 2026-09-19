@@ -22,7 +22,8 @@ const MIRRORS = [
   'https://overpass.private.coffee/api/interpreter',
   'https://overpass.kumi.systems/api/interpreter',
 ]
-const DIR = '.cache/overpass'
+// A Vercel function's checkout is read-only; /tmp is the one place it may write.
+const DIR = process.env.VERCEL ? '/tmp/.cache/overpass' : '.cache/overpass'
 const TTL_MS = 24 * 3600 * 1000
 const ATTEMPT_MS = 20_000
 const UA = process.env.WIKI_USER_AGENT || 'Orion-hackathon/0.1 (https://github.com/Feiyang0303/Orion_HTN26)'
