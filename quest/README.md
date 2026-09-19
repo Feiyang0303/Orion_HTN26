@@ -88,6 +88,12 @@ In the editor (no headset), press Play: the view is taken from where the head wo
 `ORION_FIXTURE=paris-short-v1` in the environment to fly the offline fixture instead of the trip
 last sent.
 
+```sh
+./build.sh smoke     # plays the flight headless; state in the log, Logs/smoke-N.png from the head camera; stops if the tile server refuses
+# the same without touching Google at all: a synthetic trip over a public sample tileset
+ORION_FIXTURE=sample-block ORION_TILESET_URL=https://raw.githubusercontent.com/CesiumGS/3d-tiles-samples/main/1.0/TilesetWithRequestVolume/city/tileset.json ./build.sh smoke
+```
+
 ## What has been verified
 
 | | |
@@ -100,5 +106,6 @@ last sent.
 | APK builds | **Yes**: 47 MB, arm64, IL2CPP, Vulkan, OpenXR loader + Meta Quest feature + Touch profile + foveation, multiview, `com.oculus.intent.category.VR`, INTERNET, Cesium's native library inside, all four Orion shaders compiled |
 | Editor play mode: app boots, trip parses, rig waits over the first stop, captions and route draw | **Yes** (`./build.sh smoke`, screenshots in `Logs/`) |
 | Editor play mode: a refusal from Google is shown and nothing retries | **Yes**: one request, "Google would not serve the city … (HTTP 429)", 72 fps |
-| Editor play mode: **the city loads, the flight plays** | **NOT YET.** The first smoke run found the per-frame reload bug (see above) by spending the key's daily quota; nothing can be loaded with this key until it resets (midnight Pacific) |
+| Editor play mode: **tiles load and the whole flight plays** | **Yes, over a public sample tileset** (Cesium's `3d-tiles-samples` city block, no key) with the `sample-block` fixture: tiles and their colliders load, stops are found by ray, the rig is placed behind a blink, captions/beam/pins/beads/ribbon draw, the guide turns to a target and the rig is moved behind a blink, both legs are ridden behind the guide orb with the vignette closing, the day ends at stop 3. 72 fps, no errors. Screenshots in `Logs/smoke-*.png` |
+| Editor play mode: the same over **Google's** tiles | **NOT YET.** The first smoke run found the per-frame reload bug (see above) by spending the key's daily quota; nothing can be loaded with this key until it resets (midnight Pacific). Unproven until then: Google's unlit material under URP, the attribution strip, real-city scale and load times |
 | Anything in the headset | only you can (`TESTING.md`) |

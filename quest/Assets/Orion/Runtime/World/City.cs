@@ -37,7 +37,14 @@ namespace Orion.World
             go.transform.SetParent(city.transform, false);
             var t = city.Tiles = go.AddComponent<Cesium3DTileset>();
             t.tilesetSource = CesiumDataSource.FromUrl;
-            t.url = $"https://tile.googleapis.com/v1/3dtiles/root.json?key={googleTilesKey}";
+            string url = $"https://tile.googleapis.com/v1/3dtiles/root.json?key={googleTilesKey}";
+#if UNITY_EDITOR
+            // Offline development: ORION_TILESET_URL flies over another tileset (with ORION_FIXTURE, a trip that is on it), so the
+            // flight can be worked on without spending Google's root requests.
+            string other = Environment.GetEnvironmentVariable("ORION_TILESET_URL");
+            if (!string.IsNullOrEmpty(other)) url = other;
+#endif
+            t.url = url;
             t.showCreditsOnScreen = true;                        // Google's terms: the attribution stays in view (see Credits)
             t.maximumScreenSpaceError = ScreenSpaceError;
             t.maximumCachedBytes = CacheBytes;

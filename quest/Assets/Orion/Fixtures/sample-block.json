@@ -1,0 +1,155 @@
+{
+ "id": "sample-block",
+ "city": "the sample block",
+ "origin": {
+  "lat": 40.04262421661339,
+  "lon": -75.61221848952314
+ },
+ "number": 1,
+ "title": "A block of test buildings",
+ "stops": [
+  {
+   "id": "s0",
+   "name": "South-west corner",
+   "lat": 40.041331763901574,
+   "lon": -75.61427437601249,
+   "targets": [
+    {
+     "id": "b00",
+     "name": "Building 1.1",
+     "lat": 40.04158555217405,
+     "lon": -75.61354123631061
+    },
+    {
+     "id": "b01",
+     "name": "Building 1.2",
+     "lat": 40.04202515275719,
+     "lon": -75.6141635190493
+    },
+    {
+     "id": "b02",
+     "name": "Building 1.3",
+     "lat": 40.041849526131024,
+     "lon": -75.61344686552548
+    }
+   ],
+   "beats": [
+    {
+     "text": "This is the first stop. Nothing here is real: it is a block of test buildings.",
+     "targetId": null,
+     "audioUrl": null,
+     "durationSec": 5
+    },
+    {
+     "text": "And this is one of its neighbours.",
+     "targetId": "b00",
+     "audioUrl": null,
+     "durationSec": 4
+    }
+   ]
+  },
+  {
+   "id": "s1",
+   "name": "The far side",
+   "lat": 40.04109122880154,
+   "lon": -75.61086330519015,
+   "targets": [
+    {
+     "id": "b10",
+     "name": "Building 2.1",
+     "lat": 40.0413465360265,
+     "lon": -75.61118396001592
+    },
+    {
+     "id": "b11",
+     "name": "Building 2.2",
+     "lat": 40.04162596263359,
+     "lon": -75.61092091376247
+    },
+    {
+     "id": "b12",
+     "name": "Building 2.3",
+     "lat": 40.04128839146159,
+     "lon": -75.61021041547667
+    }
+   ],
+   "beats": [
+    {
+     "text": "The second stop, reached down a leg with a bend in it.",
+     "targetId": null,
+     "audioUrl": null,
+     "durationSec": 5
+    }
+   ]
+  },
+  {
+   "id": "s2",
+   "name": "North-east corner",
+   "lat": 40.04365105689677,
+   "lon": -75.61045421897244,
+   "targets": [
+    {
+     "id": "b20",
+     "name": "Building 3.1",
+     "lat": 40.04342483294746,
+     "lon": -75.61081247354211
+    },
+    {
+     "id": "b21",
+     "name": "Building 3.2",
+     "lat": 40.0434352602182,
+     "lon": -75.61092091376247
+    },
+    {
+     "id": "b22",
+     "name": "Building 3.3",
+     "lat": 40.04311055722584,
+     "lon": -75.61110779613975
+    }
+   ],
+   "beats": []
+  }
+ ],
+ "legs": [
+  {
+   "fromStopId": "",
+   "toStopId": "",
+   "polyline": [
+    {
+     "lat": 40.041331763901574,
+     "lon": -75.61427437601249
+    },
+    {
+     "lat": 40.041331763901574,
+     "lon": -75.61086330519015
+    },
+    {
+     "lat": 40.04109122880154,
+     "lon": -75.61086330519015
+    }
+   ],
+   "distanceM": 317,
+   "durationSec": 244,
+   "transport": "walk",
+   "estimated": false
+  },
+  {
+   "fromStopId": "",
+   "toStopId": "",
+   "polyline": [
+    {
+     "lat": 40.04109122880154,
+     "lon": -75.61086330519015
+    },
+    {
+     "lat": 40.04365105689677,
+     "lon": -75.61045421897244
+    }
+   ],
+   "distanceM": 285,
+   "durationSec": 219,
+   "transport": "drive",
+   "estimated": false
+  }
+ ]
+}

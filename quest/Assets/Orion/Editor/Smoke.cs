@@ -16,7 +16,7 @@ namespace Orion.Editor
     public static class Smoke
     {
         const string Flag = "Orion.Smoke";
-        static readonly float[] Moments = { 12, 25, 40, 60, 85, 110 };
+        static readonly float[] Moments = { 6, 14, 22, 30, 38, 46, 56, 66, 78, 92 };
         static double started;
         static int taken;
 
@@ -62,7 +62,7 @@ namespace Orion.Editor
                 .Where(t => t.transform.parent != null && t.transform.parent.name == "Captions").Select(t => $"{t.name}: {t.text}"));
             Debug.Log($"[smoke {EditorApplication.timeSinceStartup - started:0}s] city {(tiles ? tiles.ComputeLoadProgress() : -1):0}%  tile renderers {(tiles ? tiles.GetComponentsInChildren<MeshRenderer>().Length : 0)}  "
                 + $"colliders {(tiles ? tiles.GetComponentsInChildren<MeshCollider>().Length : 0)}  rig {(rig ? rig.transform.position.ToString("0") : "none")} yaw {(rig ? rig.transform.eulerAngles.y : 0):0}  "
-                + $"veil {Object.FindFirstObjectByType<Veil>()?.Fade:0.00}  fps {1 / Time.smoothDeltaTime:0}  ||  {captions}");
+                + $"veil {Object.FindFirstObjectByType<Veil>()?.Fade:0.00}  guide {GameObject.Find("Guide") != null}  beam {GameObject.Find("Beam") != null}  fps {1 / Time.smoothDeltaTime:0}  ||  {captions}");
 
             var target = new RenderTexture(1280, 720, 24);
             head.targetTexture = target; head.Render(); head.targetTexture = null;
