@@ -1,13 +1,13 @@
 import { report, observeCrew } from '../telemetry'
-import type { Plan, Stop, Target, Wish } from '../types'
-import { HHMM, MINS } from '../types'
+import type { Leg, Plan, Stop, Target, Wish } from '../types'
+import { HHMM, MINS, TRANSPORT_LABEL } from '../types'
 import type { Agent, CrewEvent } from './events'
 import { verdict } from './events'
 import { geocode, locate } from './geocode'
 import { notable, photoFor, warmStopSources, wikiSource, type Article } from './wikipedia'
 import { bestOrder, legsFor, travelSecs } from './router'
 import { schedule, windowOf } from './timekeeper'
-import { narrate, withAudio, writePreface, type Draft, type Mode, type StopContext } from './narrator'
+import { narrate, withAudio, writeBridges, writePreface, type Draft, type Mode, type StopContext } from './narrator'
 import { estimateSec, speak } from './tts'
 import { auditText, repair, tally, unsupportedIn } from './auditor'
 import { findStops, matchWant, roomFor, tripRadius, type Candidate, type Skeleton } from './crew'
@@ -191,11 +191,44 @@ export async function writePages(skeleton: Skeleton, opts: PipelineOptions): Pro
   }))
   say('Narrator', 'agent', 'done', `${stops.length} pages written`)
 
+  /* The seams. Written last, because a bridge is about the two pages it joins,
+     and voiced like any other beat so the flight plays it without knowing it
+     is different. A leg whose line could not be written simply stays quiet. */
+  let spanned: Leg[] = legs
+  if (legs.length) {
+    say('Narrator', 'agent', 'working', `Writing ${legs.length} transition${legs.length === 1 ? '' : 's'}`)
+    const lines = await writeBridges(origin.name, legs.map((l, i) => ({
+      from: stops[i]?.name ?? '', to: stops[i + 1]?.name ?? '',
+      transport: TRANSPORT_LABEL[l.transport].toLowerCase(),
+      minutes: Math.round(l.durationSec / 60),
+      km: +(l.distanceM / 1000).toFixed(1),
+      fromAbout: stops[i]?.blurb, about: stops[i + 1]?.blurb,
+    }))).catch(() => legs.map(() => ''))
+    spanned = await Promise.all(legs.map(async (l, i): Promise<Leg> => {
+      const text = (lines[i] ?? '').trim()
+      if (!text) return l
+      const quiet = (): Leg => ({ ...l, bridge: withAudio({ text }, null, +estimateSec(text).toFixed(2)) })
+      if (!speakNow) return quiet()
+      return voiceQueue(async () => {
+        try {
+          const { bytes, durationSec } = await speak(text)
+          return { ...l, bridge: withAudio({ text }, await saveAudio(planId, `leg-${i}.mp3`, bytes), durationSec) }
+        } catch (e) {
+          if (!voiceFailed) { voiceFailed = true; say('Voice', 'agent', 'failed', String((e as Error).message)) }
+          return quiet()
+        }
+      })
+    }))
+    const written = spanned.filter(l => l.bridge).length
+    say('Narrator', 'agent', written ? 'done' : 'failed',
+      written ? `${written} of ${legs.length} legs have something said on the way` : 'The legs are flown in silence')
+  }
+
   const preface = await prefaceP
   say('Narrator', 'agent', preface ? 'done' : 'failed', preface ? 'The opening note is written' : 'No opening note — the counted line stands alone')
 
   const plan: Plan = {
-    id: planId, city: origin.name, origin: { lat: origin.lat, lon: origin.lon }, mode, stops, legs,
+    id: planId, city: origin.name, origin: { lat: origin.lat, lon: origin.lon }, mode, stops, legs: spanned,
     wish, from, approach, back,
     epigraph: epigraphFor(stops, legs, approach, window, clock.endsAt), preface,
     generatedAt: new Date().toISOString(),

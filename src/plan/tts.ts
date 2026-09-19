@@ -1,5 +1,5 @@
 import { postBytes } from './net'
-import type { Stop } from '../types'
+import type { Beat, Leg, Stop } from '../types'
 
 /* Voice. ElevenLabs via the proxy, mp3_44100_128, which is constant-bitrate,
    so duration is exactly bytes*8/128000 (plus a few ms of header).
@@ -29,22 +29,29 @@ function limiter(max: number) {
 const queue = limiter(CONCURRENT)
 
 /** Speak every beat that still has no clip. Used when a day is about to fly,
-    not when the journal is drawn. */
-export async function voiceDay<T extends { id: string; stops: Stop[] }>(
+    not when the journal is drawn. The legs' bridge lines are beats too: they
+    are what the day sounds like between the places, and a day flown with the
+    pages spoken and the seams silent is worse than either. */
+export async function voiceDay<T extends { id: string; stops: Stop[]; legs?: Leg[] }>(
   day: T,
   saveAudio: (planId: string, name: string, bytes: ArrayBuffer) => Promise<string>,
 ): Promise<T> {
-  const stops = await Promise.all(day.stops.map(async (st): Promise<Stop> => ({
-    ...st,
-    beats: await Promise.all(st.beats.map((b, i) => queue(async () => {
-      if (b.audioUrl || !b.text.trim()) return b
-      try {
-        const { bytes, durationSec } = await speak(b.text)
-        return { ...b, audioUrl: await saveAudio(day.id, `${st.id}-${i}.mp3`, bytes), durationSec }
-      } catch {
-        return b
-      }
+  const voice = async (b: Beat, name: string): Promise<Beat> => {
+    if (b.audioUrl || !b.text.trim()) return b
+    try {
+      const { bytes, durationSec } = await speak(b.text)
+      return { ...b, audioUrl: await saveAudio(day.id, name, bytes), durationSec }
+    } catch {
+      return b        // the caption still carries it; the flight is not stopped for a clip
+    }
+  }
+  const [stops, legs] = await Promise.all([
+    Promise.all(day.stops.map(async (st): Promise<Stop> => ({
+      ...st,
+      beats: await Promise.all(st.beats.map((b, i) => queue(() => voice(b, `${st.id}-${i}.mp3`)))),
     }))),
-  })))
-  return { ...day, stops }
+    Promise.all((day.legs ?? []).map(async (l, i): Promise<Leg> =>
+      l.bridge ? { ...l, bridge: await queue(() => voice(l.bridge!, `leg-${i}.mp3`)) } : l)),
+  ])
+  return { ...day, stops, ...(day.legs ? { legs } : {}) }
 }

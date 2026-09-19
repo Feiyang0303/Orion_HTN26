@@ -187,7 +187,9 @@ function Rig({ plan, begin, onStopReached, onFinish, onHud, control, tiles, load
     }
 
     // ---- guide audio: one clip per beat, driven by the same clock --------
-    const beatKey = beat ? `${(seg as Extract<Segment, { kind: 'dwell' }>).stop}:${beat.index}` : ''
+    // A travel segment carries its bridge line as a beat of its own, so the key
+    // has to say which kind of segment it came from or leg 0 and stop 0 collide.
+    const beatKey = beat ? `${seg.kind}${seg.kind === 'travel' ? seg.leg : seg.kind === 'dwell' ? seg.stop : ''}:${beat.index}` : ''
     if (beatKey !== st.beatKey) {
       st.audio?.pause(); st.audio = null; st.beatKey = beatKey
       if (beat?.beat.audioUrl) { st.audio = new Audio(beat.beat.audioUrl); st.audio.play().catch(() => {}) }
@@ -238,7 +240,7 @@ function Rig({ plan, begin, onStopReached, onFinish, onHud, control, tiles, load
 
     // ---- HUD (only when something the user can see changed) --------------
     const stopIdx = seg.kind === 'dwell' ? seg.stop : seg.kind === 'travel' ? seg.leg + 1 : 0
-    const target = beat?.beat.targetId ? plan.stops[dwellStop].targets.find(x => x.id === beat.beat.targetId) : undefined
+    const target = beat?.beat.targetId && dwellStop >= 0 ? plan.stops[dwellStop].targets.find(x => x.id === beat.beat.targetId) : undefined
     const hud: Hud = {
       phase: !st.started ? 'idle' : st.finished ? 'done' : seg.kind,
       stopIndex: stopIdx, stopCount: plan.stops.length, stopName: plan.stops[Math.min(stopIdx, plan.stops.length - 1)]?.name ?? '',

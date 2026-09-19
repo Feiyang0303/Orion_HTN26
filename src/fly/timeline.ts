@@ -13,6 +13,7 @@ export const DIVE_SEC = 5      // planning view → first stop
 export const LEAD_SEC = 1.4    // camera settles before the guide speaks
 export const BEAT_GAP = 0.35   // breath between beats
 export const TAIL_SEC = 1.0    // hold after the last beat before moving on
+export const BRIDGE_LEAD_SEC = 0.8   // the camera is under way before the line on the way is spoken
 export const FLY_MPS = 35      // cruising speed between stops (eased, so peak is higher)
 export const MIN_TRAVEL_SEC = 5
 export const MAX_TRAVEL_SEC = 16
@@ -22,7 +23,9 @@ export type BeatSlot = { index: number; t0: number; t1: number; beat: Beat }
 export type Segment =
   | { kind: 'dive'; t0: number; t1: number }
   | { kind: 'dwell'; stop: number; t0: number; t1: number; beats: BeatSlot[] }
-  | { kind: 'travel'; leg: number; t0: number; t1: number }
+  /** `beats` holds the leg's bridge line, if it has one: the same shape as a
+      dwell's, so playback, captions and pausing need know nothing about it. */
+  | { kind: 'travel'; leg: number; t0: number; t1: number; beats: BeatSlot[] }
 
 export type Timeline = {
   segments: Segment[]
@@ -56,7 +59,16 @@ export function buildTimeline(plan: Plan, travelSec = flatTravelSec): Timeline {
       return { kind: 'dwell', stop: i, t0, t1: Math.max(c + TAIL_SEC, t0 + LEAD_SEC + TAIL_SEC + 2), beats }
     })
     const leg = plan.legs[i]
-    if (leg) push(t0 => ({ kind: 'travel', leg: i, t0, t1: t0 + travelSec(leg.distanceM) }))
+    if (leg) push(t0 => {
+      const flat = travelSec(leg.distanceM)
+      const bridge = leg.bridge
+      if (!bridge) return { kind: 'travel', leg: i, t0, t1: t0 + flat, beats: [] }
+      /* A leg is never cut short of its own line: if the words outlast the
+         flight, the flight takes longer and the camera cruises to the end of
+         the sentence. */
+      const slot: BeatSlot = { index: 0, t0: t0 + BRIDGE_LEAD_SEC, t1: t0 + BRIDGE_LEAD_SEC + bridge.durationSec, beat: bridge }
+      return { kind: 'travel', leg: i, t0, t1: Math.max(t0 + flat, slot.t1 + TAIL_SEC), beats: [slot] }
+    })
   })
 
   const total = t
@@ -68,7 +80,8 @@ export function buildTimeline(plan: Plan, travelSec = flatTravelSec): Timeline {
   return { segments, total, dwellStart, at }
 }
 
-/** The beat being spoken at time t, or null during lead-in, gaps and travel. */
+/** The beat being spoken at time t, or null during lead-in and gaps. Travel
+    segments carry at most one — the leg's bridge line. */
 export function activeBeat(seg: Segment, t: number): BeatSlot | null {
-  return seg.kind === 'dwell' ? seg.beats.find(b => t >= b.t0 && t < b.t1) ?? null : null
+  return seg.kind === 'dive' ? null : seg.beats.find(b => t >= b.t0 && t < b.t1) ?? null
 }

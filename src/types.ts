@@ -173,6 +173,10 @@ export type Leg = {
       at a walking-speed guess. The book says so out loud; a confident line
       drawn across a river is the most expensive lie a travel app can tell. */
   estimated: boolean
+  /** One line spoken on the way, so the day sounds like a journey rather than
+      a set of pages read in a row. Absent when it could not be written; the
+      flight then crosses this leg in silence. The journal never plays it. */
+  bridge?: Beat
 }
 
 export type Plan = {

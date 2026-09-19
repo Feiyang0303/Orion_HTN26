@@ -19,30 +19,50 @@ import { askJson } from './json'
 export type Draft = { text: string; targetId?: string; claims?: import('../types').Claim[] }
 export type Mode = 'full' | 'short'
 
-const LIMITS = { short: { beats: 2, words: 22 }, full: { beats: 3, words: 34 } }
+const LIMITS = { short: { beats: 3, words: 30 }, full: { beats: 4, words: 46 } }
 
 const SYSTEM = `You are the guide on a flight over a real city. The listener is in the air,
 perhaps fifty metres above the place you are describing, looking down and
 along. They are not standing in the street and cannot see doorways, plaques or
 anything at eye level.
 
+You are the only voice they hear all day, and the day is one journey rather
+than a row of encyclopaedia entries read out in order. Write this page as the
+next thing you say to someone you have been talking to since morning.
+
 VOICE
-Warm, concrete, unhurried — a well-made guidebook read aloud by someone who is
+Warm, concrete, unhurried - a well-made guidebook read aloud by someone who is
 glad to be up here. No exclamation marks. No "welcome to", no "as you can see",
-no "imagine". Speak in the present.
+no "imagine". Speak in the present. Contractions are fine; you are talking.
 
 WHAT A BEAT IS
-Each beat is one or two spoken sentences and holds the camera for as long as it
-takes to say. You are writing the shape of a pause, not a paragraph.
-- The FIRST beat is about this place, and it begins with something visible from
-  above: the shape of the roof, the line of the walls, how the streets meet it,
-  what it sits beside. Then say the one thing that makes it matter.
+Each beat is two or three spoken sentences and holds the camera for as long as
+it takes to say, so a thin beat is a silence with a view. Give each one a small
+arc: something seen, then something understood.
+
+HOW THE PAGE IS SHAPED
+- The FIRST beat arrives. If you are told where they have come from, carry that
+  across in a few words before you land - then begin with something visible
+  from above: the shape of the roof, the line of the walls, how the streets
+  meet it, what it sits beside.
+- The MIDDLE beats are the substance, and this is where a page usually fails by
+  stopping too early. Say what the place is and what it was for. Say who made
+  it, or what happened here, when the text tells you. Then take the one detail
+  that rewards looking - the thing in the text a person would otherwise fly
+  straight over - and explain it. A fact stated is a label; a fact explained is
+  a guide. Two sentences on one good detail beat one sentence each on four.
 - A LATER beat may hand off to one nearby target: set "targetId" to that
   target's id and name the thing naturally, because the camera will turn to it
   as you say it. "Just north of it, ..." works; "on your left" does not, since
-  the listener has no left up here.
-- If targets were supplied, at least one later beat should use one. If none
-  were supplied, stay on the place itself.
+  the listener has no left up here. Say why it is worth turning for.
+- The LAST beat closes the thought on this place, and closes it — do not look
+  ahead to anywhere else. Something is said on the way to the next place, and
+  it is not yours to say here.
+
+KEEPING IT CONNECTED
+Do not open every beat with the name of the place. Let each beat pick up
+something from the one before - a word, a direction, a question it raised - so
+the page sounds like one person talking and not four captions stacked up.
 
 HARD RULES
 - State ONLY facts found in the supplied text. If the text does not say it, do
@@ -51,6 +71,26 @@ HARD RULES
 - Do not describe the weather, the crowd, the time of day, or how anything
   smells or sounds. You cannot know those and the listener can see the light.
 - Do not mention the flight, the camera, the tour, or yourself.
+- Never write "we", "our" or "us". The listener is "you", and you are not on
+  the journey with them — you are the voice beside it.
+- If the supplied text is thin, write fewer beats. A short honest page is
+  better than a long invented one, and padding is worse than silence.
+- No brochure words: iconic, magnificent, stunning, breathtaking, timeless,
+  majestic, a jewel, a testament to, steeped in, nestled. You were given facts;
+  the facts are the point, and an adjective you invented is still invented.
+
+HOW IT READS
+Bad:  "A true jewel on the island, its soaring elegance is a testament to the
+       ambition of the age."                      (all adjective, no fact)
+Bad:  "That's our next view, where Marie Antoinette was held."
+                                                  (the tour, out loud)
+Bad:  "From here we head to the Musée d'Orsay."    ("we", and it is not yours
+                                                   to say — the journey has
+                                                   its own line)
+Good: "Louis the Ninth built it for one reason: to hold the Crown of Thorns.
+       The building is the reliquary — that is why the walls are barely there."
+Good: "Fifteen windows, each fifteen metres. From up here you are level with
+       the top of the glass rather than the foot of it."
 
 Reply with a JSON object: {"beats":[{"text":"...","targetId":"<id, optional>"}]}`
 
@@ -93,6 +133,19 @@ export type StopContext = {
   last?: boolean
 }
 
+/* The two habits a model falls back into no matter how plainly the prompt
+   forbids them: the brochure adjective, and saying the tour out loud. Checked
+   in code, quoted back, and rewritten once — the same shape as the Auditor's
+   pass over the facts, applied to the voice. */
+const BROCHURE = /\b(iconic|magnificent|stunning|breathtaking|timeless|legendary|must-see|majestic|awe-inspiring|world-renowned|picturesque|a (?:true )?(?:jewel|gem)|testament to|steeped in|nestled|splendou?r|ethereal|resplendent|unparalleled|storied)\b/i
+const TOUR_TALK = /\b(our (?:next|tour|flight)|we(?:'ll|'re| will| shall| now| then| can| may)?(?: \w+)? (?:fly|flying|head|heading|move|moving|turn|turning|arrive|arriving|go|going|travel|travelling|traveling|continue|leave|leaving)|this (?:tour|flight)|your (?:tour|flight)|next view|coming up next|as you can see|welcome to)\b/i
+
+function beatStyleProblem(text: string): string | null {
+  if (TOUR_TALK.test(text)) return 'it mentions the tour or the camera, which the listener must never hear about'
+  if (BROCHURE.test(text)) return 'it uses a brochure adjective you were not given'
+  return null
+}
+
 const PARTY_NOTE: Record<Party, string> = {
   solo: '',
   couple: '',
@@ -129,13 +182,27 @@ export async function narrate(
       ? `\n\nA first draft said these things, and none of them is in the text above. Do not say them or anything like them; ` +
         `say only what the text says:\n${unsupported.map(u => `- ${u}`).join('\n')}`
       : '') +
-    `\n\nWrite exactly ${n} beats, each at most ${words} words.`
+    `\n\nWrite up to ${n} beats, each at most ${words} words. Use all ${n} when the text supports them; write fewer rather than padding.`
 
+  /* Two attempts, and the better of them is kept rather than the later one: a
+     rewrite told to drop a brochure adjective sometimes brings a fresh one,
+     and a page that slipped once is still better than a page that slipped
+     three times. Fewer slips wins; between equals, the fuller page wins. */
   let last: ReturnType<typeof validate> = { beats: [], problems: [] }
-  for (let attempt = 0; attempt < 2; attempt++) {       // one retry if validation empties the page
-    const r = await askJson<{ beats: Draft[] }>('narrator', SYSTEM, user, 2000)
-    last = validate(r.beats ?? [], source, targets, mode)
-    if (last.beats.length) break
+  let best = Infinity
+  let note = ''        // what the last attempt got wrong, quoted back to it
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const r = await askJson<{ beats: Draft[] }>('narrator', SYSTEM, user + note, 2000)
+    const got = validate(r.beats ?? [], source, targets, mode)
+    if (!got.beats.length) { note = ''; continue }      // nothing survived; ask again plainly
+    const wrong = got.beats.map(b => ({ text: b.text, why: beatStyleProblem(b.text) })).filter(x => x.why)
+    const score = wrong.length * 10 - got.beats.length
+    if (score < best) { best = score; last = got }
+    if (!wrong.length || attempt) break
+    note = `\n\nA first draft wrote these beats, and each one breaks a rule of the voice. ` +
+      `Write the page again — same facts, same targets, same number of beats — with these fixed, ` +
+      `and do not introduce a different word of the same kind:\n` +
+      wrong.map(x => `- "${x.text}" — ${x.why}.`).join('\n')
   }
   if (!last.beats.length) throw new Error(`the narrator produced nothing usable for ${stop.name}`)
   return last
@@ -226,5 +293,145 @@ export async function writePreface(f: PrefaceFacts): Promise<string> {
     return String(r.preface ?? '').trim()
   } catch {
     return ''   // the book prints the counted epigraph and nothing is missing
+  }
+}
+
+/* ------------------------------------------------------ the way in between */
+
+/* A day told as a set of pages is a set of pages; what makes it a journey is
+ * what is said on the way. Each leg gets one line, spoken while the camera is
+ * moving, and the whole day's legs are written in a single call so the lines
+ * can differ from one another — the same trick four times running is worse
+ * than silence.
+ *
+ * These lines know nothing about the ground they cross. They are written from
+ * the plan's own facts (two names, a mode, minutes, kilometres) and one line
+ * about where they are going, which is the destination's own supplied text.
+ */
+
+export type BridgeLeg = {
+  from: string
+  to: string
+  transport: string        // already a human label, e.g. "on foot"
+  minutes: number
+  km: number
+  /** One sentence about each end of the leg, from their own source text — the
+      two ends are what a line can be drawn between. */
+  fromAbout?: string
+  about?: string
+}
+
+const BRIDGE_SYSTEM = `You are the guide on a flight over a real city, speaking while the camera
+moves from one place to the next. These are the seams of the day: a few
+seconds of moving air between two things worth stopping for.
+
+You are given the legs of one day, in order. Write one line for each leg, in
+the same order.
+
+WHAT A LINE IS
+One sentence, two at most — twelve to twenty-five words. It is not an
+introduction. They will see where they are going and you will tell them about
+it when they get there; this line exists so the two places feel related.
+
+Ways a line can do that — vary them, and never use the same move twice in a
+row:
+- carry a thread forward: something the last place was about, continued or
+  answered by the next
+- name what changes between them: older to newer, sacred to secular, a palace
+  to the people who took it
+- put the crossing in human terms: a few streets, a long run across the city
+- open a small question the next place will answer
+
+RULES
+- Use ONLY the facts given for that leg — the two names and the two
+  descriptions. No history you were not told, nothing about the streets in
+  between, no invented connection between the places.
+- Never state a number that is not in that leg's facts.
+- Never write "we", "our" or "us". You are speaking to them, not for both of
+  you, and you are not on a coach.
+- Do not announce the arrival: no "next up", "now we head to", "we arrive at",
+  "our next stop is", "coming up". Naming the destination is allowed only when
+  the sentence is doing something more than naming it.
+- No praise words: iconic, magnificent, stunning, breathtaking, timeless,
+  legendary, must-see. No adjectives you were not given.
+- Do not describe weather, traffic, crowds or the time of day. Do not mention
+  the tour, the camera, or yourself.
+- No exclamation marks. Speak in the present.
+- No two lines in the day may begin with the same word.
+- If a leg's facts give you nothing to connect, write the plainest true
+  sentence you can rather than inventing a connection.
+
+HOW THEY READ
+Bad:  "Next up is the Musée d'Orsay, an iconic museum in a stunning old
+       railway station."            (announces it, praises it, adds adjectives)
+Bad:  "From one gothic jewel to another, we walk along the river."
+                                    ("we", and "jewel" was not in the facts)
+Good: "Relics were kept behind that glass. Where you are going, the thing kept
+       behind glass is paint."
+Good: "Twenty minutes of streets, and the century changes twice."
+Good: "That station stopped taking trains a long time ago. The tower ahead was
+       never meant to last either."
+
+Reply with a JSON object: {"bridges":["line for leg 1","line for leg 2"]} —
+exactly one line per leg, in order.`
+
+/* A small model reads a list of prohibitions as a list of suggestions, so the
+   habits that are actually audible — the coach-tour "we", the brochure
+   adjective, the announced arrival — are checked in code and sent back once
+   with the line quoted. Everything that survives a second pass is kept: a
+   slightly florid seam is better than a silent one. */
+const COACH = /\b(we|we'?re|we'?ll|our|us|let'?s)\b/i
+const ANNOUNCING = /\b(next up|our next stop|we (?:head|arrive|travel|make our way|move on)|coming up|now we)\b/i
+
+function styleProblem(text: string): string | null {
+  if (COACH.test(text)) return 'it says "we" — you are speaking to them, not for both of you'
+  if (ANNOUNCING.test(text)) return 'it announces the arrival instead of connecting the two places'
+  return beatStyleProblem(text)
+}
+
+/** One spoken line per leg, in order; an empty string where nothing usable
+    came back, which the flight simply flies in silence. */
+export async function writeBridges(city: string, legs: BridgeLeg[]): Promise<string[]> {
+  if (!legs.length) return []
+  const trim = (t: string) => t.replace(/\s+/g, ' ').slice(0, 220)
+  const factsFor = (l: BridgeLeg, i: number) =>
+    `Leg ${i + 1}: ${l.from} to ${l.to}. About ${l.minutes} minutes ${l.transport}, ${l.km} km.` +
+    (l.fromAbout ? `\n  Leaving: ${trim(l.fromAbout)}` : '') +
+    (l.about ? `\n  Arriving: ${trim(l.about)}` : '')
+  const facts = `City: ${city}. ${legs.length} leg${legs.length === 1 ? '' : 's'}.\n\n` +
+    legs.map(factsFor).join('\n')
+  const budget = Math.max(500, legs.length * 140)
+
+  /** Only lines whose every number is in that leg's own facts. */
+  const keep = (out: unknown[]) => legs.map((l, i) => {
+    const text = String(out[i] ?? '').trim().replace(/\s+/g, ' ')
+    if (!text) return ''
+    const hay = `${factsFor(l, i)} ${city}`.replace(/,/g, '')
+    return numbersIn(text).every(n => hay.includes(n)) ? text : ''
+  })
+
+  try {
+    const first = await askJson<{ bridges: string[] }>('narrator', BRIDGE_SYSTEM, facts, budget)
+    let lines = keep(Array.isArray(first.bridges) ? first.bridges : [])
+
+    const wrong = lines.map((t, i) => ({ i, t, why: t ? styleProblem(t) : null })).filter(x => x.why)
+    if (wrong.length) {
+      const again = `${facts}\n\nYou wrote these lines and each one breaks a rule. Rewrite ONLY these, ` +
+        `keeping the same idea and the same facts, and return the full list with the others unchanged:\n` +
+        wrong.map(x => `Leg ${x.i + 1}: "${x.t}" — ${x.why}.`).join('\n')
+      try {
+        const r2 = await askJson<{ bridges: string[] }>('narrator', BRIDGE_SYSTEM, again, budget)
+        const fixed = keep(Array.isArray(r2.bridges) ? r2.bridges : [])
+        // Take a rewrite only where it is both present and no worse.
+        lines = lines.map((t, i) => {
+          const f = fixed[i]
+          if (!f) return t
+          return styleProblem(f) && !styleProblem(t) ? t : f
+        })
+      } catch { /* the first pass stands */ }
+    }
+    return lines
+  } catch {
+    return legs.map(() => '')     // the seams go quiet; nothing else is lost
   }
 }
