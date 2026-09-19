@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import JournalPage from './JournalPage'
+import TripView from './TripView'
 import { SketchDefs } from './Sketches'
 import Icon from '../../ui/Icon'
 import type { Day, Trip } from '../../types'
@@ -10,7 +11,14 @@ import './journal-page.css'
  *
  * Turning to a day folds the page closed and unfolds it again, because the
  * unfolding is the point — you watch the route ink itself in from the hotel,
- * the pins land in order, the sketches get drawn. Arrow keys turn pages. */
+ * the pins land in order, the sketches get drawn. Arrow keys turn pages.
+ *
+ * The same trip can also be read plainly, and the bar switches between the
+ * two. They are not competing designs: the drawn page is for taking a day in
+ * at a glance and the plain one is for reading the detail — the guide's own
+ * words, the photographs, every leg with its mode — which no amount of
+ * watercolour will ever show as well. Whichever is open, it is one trip
+ * underneath, so the day you were looking at is the day you get back. */
 
 export default function Journal({ trip, onFly, onClose, onHome }: {
   trip: Trip
@@ -20,6 +28,10 @@ export default function Journal({ trip, onFly, onClose, onHome }: {
 }) {
   const [at, setAt] = useState(0)
   const [open, setOpen] = useState(false)
+  const [view, setView] = useState<'paper' | 'plain'>('paper')
+  /* The plain reader has day tabs of its own and can show the whole trip at
+     once, which the paper page cannot, so it keeps its own selection. */
+  const [plainDay, setPlainDay] = useState<number | 'all'>('all')
   const day = trip.days[Math.min(at, trip.days.length - 1)]
 
   /* One forecast for the whole book, read once when it opens. The trip carries
@@ -39,18 +51,28 @@ export default function Journal({ trip, onFly, onClose, onHome }: {
     return () => clearTimeout(t)
   }, [at])
 
+  const toPlain = () => { setPlainDay(day ? day.number : 'all'); setView('plain') }
+  const toPaper = () => {
+    if (typeof plainDay === 'number') {
+      const i = trip.days.findIndex(d => d.number === plainDay)
+      if (i >= 0) setAt(i)
+    }
+    setView('paper')
+  }
+
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { onClose(); return }
+      if (view !== 'paper') return          // the plain reader scrolls; the arrows are its own
       if (e.key === 'ArrowRight') setAt(a => Math.min(trip.days.length - 1, a + 1))
       else if (e.key === 'ArrowLeft') setAt(a => Math.max(0, a - 1))
-      else if (e.key === 'Escape') onClose()
     }
     addEventListener('keydown', key)
     return () => removeEventListener('keydown', key)
-  }, [trip.days.length, onClose])
+  }, [trip.days.length, onClose, view])
 
   return (
-    <div className="jn">
+    <div className={`jn is-${view}`}>
       <SketchDefs />
       <nav className="jn-bar">
         <button type="button" className="o-btn quiet small" onClick={onHome}>← New trip</button>
@@ -61,9 +83,25 @@ export default function Journal({ trip, onFly, onClose, onHome }: {
           ))}
           <button type="button" className="o-btn quiet small" onClick={() => setAt(a => Math.min(trip.days.length - 1, a + 1))} disabled={at >= trip.days.length - 1} aria-label="Next day"><Icon name="arrow" size={14} /></button>
         </div>
-        <button type="button" className="o-btn quiet small" onClick={onClose}>Close the journal</button>
+        <div className="jn-right">
+          {/* one trip, two ways of reading it */}
+          <div className="jn-view" role="group" aria-label="How to read this trip">
+            <button type="button" className="o-chip" aria-pressed={view === 'paper'} onClick={toPaper}>Paper</button>
+            <button type="button" className="o-chip" aria-pressed={view === 'plain'} onClick={toPlain}>Plan</button>
+          </div>
+          <button type="button" className="o-btn quiet small" onClick={onClose}>Close the journal</button>
+        </div>
       </nav>
-      {day && <JournalPage weather={weather[day.number - 1]} key={day.number} day={day} trip={trip} open={open} onFly={() => onFly(day)} />}
+      {view === 'paper'
+        ? day && <JournalPage weather={weather[day.number - 1]} key={day.number} day={day} trip={trip} open={open} onFly={() => onFly(day)} />
+        : (
+          <div className="jn-plain">
+            <TripView
+              trip={trip} day={plainDay} onDay={setPlainDay}
+              onFly={d => onFly(d)} onFocus={() => {}}
+            />
+          </div>
+        )}
     </div>
   )
 }
