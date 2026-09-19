@@ -18,13 +18,16 @@ const km = (m: number) => (m < 950 ? `${Math.round(m / 10) * 10} m` : `${(m / 10
 const mins = (s: number) => `${Math.max(1, Math.round(s / 60))} min`
 
 
-export default function TripView({ trip, day, onDay, onFly, onFocus, planning }: {
+export default function TripView({ trip, day, onDay, onFly, onFocus, planning, onBook }: {
   trip: Trip
   day: number | 'all'
   onDay: (d: number | 'all') => void
   onFly: (d: Day) => void
   onFocus: (at: LatLon | null) => void
   planning?: boolean
+  /** Open the same trip as a paper book: a spread per day, the map that
+      unfolds, the bed's page, the stops' pages. */
+  onBook?: () => void
 }) {
   const shown = day === 'all' ? trip.days : trip.days.filter(d => d.number === day)
   const places = trip.days.reduce((n, d) => n + d.stops.length, 0)
@@ -38,6 +41,11 @@ export default function TripView({ trip, day, onDay, onFly, onFocus, planning }:
         <h1 className="o-title">{trip.city}</h1>
         <p className="t-stats">{places} places<i />{km(distance)} on the ground<i />{trip.wish.startAt}–{trip.wish.endAt}</p>
         {trip.preface && <p className="t-preface">{trip.preface}</p>}
+        {onBook && (
+          <button type="button" className="o-btn small t-book-btn" onClick={onBook} disabled={planning}>
+            <Icon name="spark" size={14} /> Read it as a book
+          </button>
+        )}
       </header>
 
       {trip.days.length > 1 && (

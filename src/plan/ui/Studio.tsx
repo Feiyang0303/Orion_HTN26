@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import CrewStage from './CrewStage'
 import TripView from './TripView'
+import Storybook from './Storybook'
+import './journal.css'
 import Icon from '../../ui/Icon'
 import { dayColour } from '../../ui/palette'
 import type { MapView } from '../../fly/MapRig'
@@ -130,6 +132,10 @@ export default function Studio({ wish, mode, origin, onFly, onHome, onMap, onCre
   }, [draftMsg, trip, asking, saveAudio, onEvent])
 
   const last = useMemo(() => events.filter(e => e.type === 'crew').at(-1) as Extract<CrewEvent, { type: 'crew' }> | undefined, [events])
+  /* The same trip, read as a book: paper spreads, the map that unfolds, the
+     bed's page with the street outside it. It is a way of reading the plan,
+     not a second plan — the editor below still changes the one trip. */
+  const [book, setBook] = useState(false)
 
   if (stage === 'crew') {
     return <CrewStage city={origin.name} events={events} drafts={drafts} error={error} onRetry={() => setAttempt(a => a + 1)} onBack={onHome} />
@@ -140,7 +146,15 @@ export default function Studio({ wish, mode, origin, onFly, onHome, onMap, onCre
       <div className="tv-bar">
         <button className="o-btn quiet small" onClick={onHome}>← New trip</button>
       </div>
-      <TripView trip={trip!} day={dayIx} onDay={setDayIx} onFly={onFly} onFocus={setFocus} planning={asking} />
+      <TripView trip={trip!} day={dayIx} onDay={setDayIx} onFly={onFly} onFocus={setFocus} planning={asking} onBook={() => setBook(true)} />
+
+      <AnimatePresence>
+        {book && trip && (
+          <motion.div key="book" className="jr-bookstage" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: .45 }}>
+            <Storybook trip={trip} events={events} planning={asking} onFly={onFly} onHome={onHome} onClose={() => setBook(false)} />
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <motion.section className="ed o-glass" initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: .6, duration: .7, ease: [.22, .9, .24, 1] }}>
         <AnimatePresence initial={false}>
