@@ -258,7 +258,7 @@ export default function Studio({ wish, mode, origin, saved: given, onTrip, onFly
             where it is: the journal is a way of reading the plan, the editor
             is how the plan is changed, and both belong on screen together. */}
         {book && trip && (
-          <motion.div key="book" style={{ position: 'fixed', inset: 0, zIndex: 5 }} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: .45 }}>
+          <motion.div key="book" className="jn-host" style={{ position: 'fixed', inset: 0, zIndex: 5 }} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: .45 }}>
             <Journal trip={trip} onFly={onFly} onHome={onHome} onClose={() => setBook(false)} />
           </motion.div>
         )}

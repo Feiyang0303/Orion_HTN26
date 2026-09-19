@@ -84,6 +84,17 @@ export default function Journal({ trip, onFly, onClose, onHome }: {
           <button type="button" className="o-btn quiet small" onClick={() => setAt(a => Math.min(trip.days.length - 1, a + 1))} disabled={at >= trip.days.length - 1} aria-label="Next day"><Icon name="arrow" size={14} /></button>
         </div>
         <div className="jn-right">
+          {/* Export is the browser's own print, which is the honest way to get
+              this page out: the map is SVG and the writing is text, so a PDF
+              printed from it stays sharp at any size, where a screenshot of
+              the screen would not. The print stylesheet takes the fold, the
+              bar and the city behind it away and leaves the sheet. */}
+          {view === 'paper' && (
+            <button type="button" className="o-btn quiet small" onClick={() => print()}
+              title="Print this page, or save it as a PDF">
+              <Icon name="download" size={14} /> Export
+            </button>
+          )}
           {/* one trip, two ways of reading it */}
           <div className="jn-view" role="group" aria-label="How to read this trip">
             <button type="button" className="o-chip" aria-pressed={view === 'paper'} onClick={toPaper}>Paper</button>

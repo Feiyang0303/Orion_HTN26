@@ -284,3 +284,47 @@
 @media (prefers-reduced-motion: reduce) {
   .jp-sheet, .jp-panel, .jp-creases, .jp-pin, .jp-sk, .sk-ink path, .sk-pencil path, .sk-wash, .jp-title, .jp-plan, .jp-table, .jp-memo, .jp-pencil li { transition-duration: .01s !important; animation-duration: .01s !important; animation-delay: 0s !important; }
 }
+
+/* ------------------------------------------------------------- printing
+
+   Export is the browser's print, so this is the export format. Everything the
+   screen needs and paper does not comes off: the city behind the page, the
+   bars, the fold panels and the creases, the drop shadow, the dark scrim the
+   sheet floats on. What is left is the sheet at the width of the paper.
+
+   Two things have to be said explicitly or they come out wrong. Browsers drop
+   background colours when printing unless told not to, and this whole page is
+   a background colour — without print-color-adjust the paper prints white and
+   the washes vanish. And the sheet's ancestors are fixed and absolute layers
+   stacked over a full-screen app; a fixed element prints on every page, so
+   they are all put back in flow, inline styles included, which is what the
+   !important on `position` is for. */
+@media print {
+  @page { size: landscape; margin: 8mm; }
+
+  html, body { background: #fff !important; height: auto !important; overflow: visible !important; }
+
+  /* the city, the globe, the bars, the editor, the error chip: none of it is the page */
+  .orion-ground, .orion-veil, .orion-globe, .tv-bar, .t-panel, .ed, .orion-note,
+  .jn-bar, .jp-panel, .jp-creases { display: none !important; }
+
+  /* every layer between the document and the sheet goes back into flow */
+  .orion, .orion-layer, .jn-host, .jn {
+    position: static !important; inset: auto !important; overflow: visible !important;
+    background: none !important; backdrop-filter: none !important;
+    padding: 0 !important; margin: 0 !important; display: block !important;
+    opacity: 1 !important; transform: none !important;
+  }
+
+  .jp { width: 100% !important; max-width: none !important; }
+  /* The sheet stays absolute and inset into .jp: that is what gives it a box
+     at all, and everything drawn on it is positioned against that box. Only
+     the fold and the shadow come off. */
+  .jp-sheet { transform: none !important; filter: none !important; }
+  .jp, .jp-sheet, .jp-memo, .jp-map, .jp-title-wash {
+    -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important;
+  }
+
+  /* the way out of the page is a screen control, and a printed one is a lie */
+  .jp-fly { display: none !important; }
+}
