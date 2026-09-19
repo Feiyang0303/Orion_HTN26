@@ -25,7 +25,7 @@ namespace Orion.Flight
         /// <summary>Seconds the leg takes.</summary>
         public readonly float T;
         readonly List<float> d = new List<float>();
-        readonly float[] at;
+        readonly float[] at, v;                  // when each sample is reached, and the speed there
         readonly int join = -1;                  // the first sample after the blink: no distance is flown to reach it
 
         /// <summary>How long a leg of this length takes if it is straight: what the timeline is built
@@ -51,9 +51,8 @@ namespace Orion.Flight
             else for (float x = 0; x <= L; x += Step) d.Add(x);
 
             int n = d.Count;
-            at = new float[n];
+            at = new float[n]; v = new float[n];
             if (n < 2) return;
-            var v = new float[n];
             for (int i = 0; i < n; i++)
             {
                 float x = d[i];
@@ -78,8 +77,10 @@ namespace Orion.Flight
             if (d.Count < 2) return (0, 0);
             int lo = 0, hi = d.Count - 1;
             while (hi - lo > 1) { int mid = (lo + hi) >> 1; if (at[mid] <= t) lo = mid; else hi = mid; }
-            float f = at[hi] > at[lo] ? Mathf.Clamp01((t - at[lo]) / (at[hi] - at[lo])) : 1;
-            return (hi == join ? d[hi] : d[lo] + (d[hi] - d[lo]) * f, join >= 0 && hi >= join ? 1 : 0);
+            if (hi == join) return (d[hi], 1);
+            // Between two samples the speed changes steadily, which is what their times were worked out from: so the speed never jumps.
+            float gap = d[hi] - d[lo], tau = Mathf.Clamp(t - at[lo], 0, at[hi] - at[lo]), a = (v[hi] * v[hi] - v[lo] * v[lo]) / (2 * gap);
+            return (Mathf.Min(d[hi], d[lo] + v[lo] * tau + .5f * a * tau * tau), join >= 0 && hi >= join ? 1 : 0);
         }
     }
 
