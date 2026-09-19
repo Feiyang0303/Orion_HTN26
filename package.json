@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "concurrently -k -n web,proxy -c cyan,magenta \"vite\" \"node --import ./scripts/instrument.mjs scripts/proxy.mjs\"",
     "web": "vite",
+    "vr": "VR=1 concurrently -k -n web,proxy -c cyan,magenta \"vite\" \"node --import ./scripts/instrument.mjs scripts/proxy.mjs\"",
     "proxy": "node --import ./scripts/instrument.mjs scripts/proxy.mjs",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b",
@@ -15,8 +16,10 @@
   "dependencies": {
     "@react-three/drei": "^10.7.6",
     "@react-three/fiber": "^9.4.0",
+    "@react-three/xr": "^6.6.30",
     "@sentry/node": "^10.75.0",
     "@sentry/react": "^10.75.0",
+    "@vitejs/plugin-basic-ssl": "^2.3.0",
     "3d-tiles-renderer": "^0.5.3",
     "motion": "^12.43.0",
     "react": "~19.2.0",

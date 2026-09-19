@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'motion/react'
 import ErrorBoundary from './ui/ErrorBoundary'
 import FlyDev from './fly/dev/FlyDev'
 import PlanTest from './fly/dev/PlanTest'
+import VRPage from './vr/VRPage'
 import CrewDev from './globe/CrewDev'
 import GlobeScene from './globe/GlobeScene'
 import type { CrewEvent } from './plan/events'
@@ -53,6 +54,8 @@ function App() {
 
   useEffect(() => () => { audioUrls.current.forEach(URL.revokeObjectURL) }, [])
 
+  const vr = new URLSearchParams(location.search).get('vr')
+  if (vr) return <ErrorBoundary><VRPage id={vr} /></ErrorBoundary>
   if (import.meta.env.DEV) {
     const q = new URLSearchParams(location.search)
     if (q.has('crew-dev')) return <ErrorBoundary><CrewDev /></ErrorBoundary>

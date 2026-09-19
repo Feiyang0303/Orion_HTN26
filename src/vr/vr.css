@@ -1,0 +1,8 @@
+.vr { position: fixed; inset: 0; background: #07060a; }
+.vr-canvas { position: absolute; inset: 0; }
+.vr-door { position: absolute; left: 20px; top: 20px; width: min(360px, calc(100vw - 40px)); padding: 20px 22px 18px; text-align: left; }
+.vr-door h1 { margin: 6px 0 8px; font-size: 34px; }
+.vr-sub { margin: 0 0 18px; color: var(--o-dim, #cdbfa6); line-height: 1.5; }
+.vr-note { margin: 14px 0 0; font-size: 13px; color: var(--o-faint, #9a8763); line-height: 1.5; }
+.vr-error { padding: 32px; color: #f4e7c6; max-width: 520px; margin: 20vh auto; line-height: 1.6; }
+.vr-hint { position: absolute; }

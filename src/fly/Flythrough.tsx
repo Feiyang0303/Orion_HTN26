@@ -4,7 +4,8 @@ import { Html, Line } from '@react-three/drei'
 import * as THREE from 'three'
 import type { FlyProps, Plan } from '../types'
 import GoogleTiles, { probeTiles, type TilesHandle } from './GoogleTiles'
-import { GroundPlacer, type Anchor } from './ground'
+import { GroundPlacer } from './ground'
+import { anchorsFor, keyLeg, keyStop, keyTarget, SAMPLE_STEP_M } from './anchors'
 import { Path } from './routePath'
 import { frameFor } from './director'
 import { Governor, type Shot } from './quality'
@@ -29,24 +30,9 @@ import './fly.css'
  */
 
 const CHASE_UP = 55, CHASE_BACK = 110, CHASE_LOOK = 60
-const SAMPLE_STEP_M = 30
 const PRELOAD_AHEAD_SEC = 30       // tiles for shots this far ahead are fetched at full detail in advance
 const PRELOAD_ON = new URLSearchParams(location.search).get('preload') !== '0'
 const noHit = () => null
-
-const keyStop = (i: number) => `s${i}`
-const keyTarget = (i: number, id: string) => `t${i}:${id}`
-const keyLeg = (i: number, j: number) => `l${i}:${j}`
-
-function anchorsFor(plan: Plan): Anchor[] {
-  const out: Anchor[] = [{ key: 'origin', ...plan.origin }]
-  plan.stops.forEach((s, i) => {
-    out.push({ key: keyStop(i), lat: s.lat, lon: s.lon })
-    s.targets.forEach(t => out.push({ key: keyTarget(i, t.id), lat: t.lat, lon: t.lon }))
-  })
-  plan.legs.forEach((leg, i) => resample(leg.polyline, SAMPLE_STEP_M).forEach((p, j) => out.push({ key: keyLeg(i, j), ...p })))
-  return out
-}
 
 type RigProps = FlyProps & { plan: Plan; onHud: (h: Hud) => void; control: React.MutableRefObject<Control>; tiles: React.MutableRefObject<TilesHandle | null>; loadTick: number }
 

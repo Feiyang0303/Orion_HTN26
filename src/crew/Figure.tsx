@@ -181,9 +181,9 @@ function HatMesh({ hat, colour }: { hat: Hat; colour: string }) {
 
 /** The prop each role carries: a few shapes that say the job, and that move when it is being done. */
 function PropMesh({ kind, colour, work }: { kind: Prop; colour: string; work: React.MutableRefObject<{ work: number }> }) {
-  const a = useRef<THREE.Object3D>(null)
-  const b = useRef<THREE.Object3D>(null)
-  const c = useRef<THREE.Object3D>(null)
+  const a = useRef<THREE.Mesh & THREE.Group>(null)
+  const b = useRef<THREE.Mesh & THREE.Group>(null)
+  const c = useRef<THREE.Mesh & THREE.Group>(null)
   const g = useRef<THREE.Group>(null)
   const mat = useMemo(() => new THREE.MeshStandardMaterial({ color: colour, emissive: colour, emissiveIntensity: .5, roughness: .35, metalness: .1 }), [colour])
   const soft = useMemo(() => new THREE.MeshStandardMaterial({ color: dark(colour, .4), emissive: colour, emissiveIntensity: .12, roughness: .6, transparent: true, opacity: .9 }), [colour])
