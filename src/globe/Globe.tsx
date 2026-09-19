@@ -51,7 +51,7 @@ function stipple(samples: number): Land {
     const lon = Math.atan2(Math.sin(th) * rad, Math.cos(th) * rad) * 180 / Math.PI
     const land = isLand(lat, lon)
     const near = land ? coastDistance(lat, lon, 3) : 0        // 1 = shoreline, 4 = deep inland
-    const keep = !land ? .15 : near <= 1 ? 1 : near === 2 ? .94 : near === 3 ? .8 : .64
+    const keep = !land ? .1 : near <= 1 ? 1 : near === 2 ? .8 : near === 3 ? .58 : .38
     if (rand() > keep) continue
     // a little height on the land, so the surface has grain rather than sitting on one shell
     const v = toSphere(lat, lon, R * (land ? 1.0015 + rand() * .004 : .999))
@@ -201,7 +201,7 @@ const ARC_FRAG = /* glsl */`
     end at the city once there is one, so the world leans towards it. */
 function arcGeometry(city: THREE.Vector3 | null) {
   const rand = mulberry(19)
-  const SEG = 56, LINES = 18
+  const SEG = 44, LINES = 10
   const pos: number[] = [], ts: number[] = [], ids: number[] = []
   const landPoint = () => {
     for (let i = 0; i < 500; i++) {
@@ -278,9 +278,13 @@ export default function Globe({ city, cityWorld, energy, children }: {
   const beam = useRef<THREE.Mesh>(null)
   const shell = useRef<THREE.Points>(null)
   const halo = useRef<THREE.Points>(null)
-  /* Dense enough that the continents have a surface. Machines with few cores
-     are usually the ones with a weak GPU as well, so they get half of it. */
-  const land = useMemo(() => stipple((navigator.hardwareConcurrency ?? 8) <= 4 ? 140000 : 280000), [])
+  /* Enough points that the continents have a surface, and no more. Every one of
+     them is a soft transparent quad, so the count is paid twice: once in
+     vertices, and again in overdraw wherever they overlap — which is why this
+     is the most expensive number on the canvas and why it buys less than it
+     looks like it should. Raise the point size before raising this. Machines
+     with few cores usually have the weak GPU too, so they get half of it. */
+  const land = useMemo(() => stipple((navigator.hardwareConcurrency ?? 8) <= 4 ? 70000 : 130000), [])
   const cityDir = useRef(new THREE.Vector3(0, 0, 1))
   const s = useRef({ reveal: 0, glow: 0, wave: 1, lit: false, waveHold: 0, pulse: 0 })
   const tex = useMemo(() => glow(), [])
@@ -296,7 +300,7 @@ export default function Globe({ city, cityWorld, energy, children }: {
     const mat = new THREE.ShaderMaterial({
       vertexShader: VERT, fragmentShader: FRAG, transparent: true, depthWrite: false,
       uniforms: {
-        uTime: { value: 0 }, uReveal: { value: 0 }, uSize: { value: .0235 }, uPx: { value: 800 },
+        uTime: { value: 0 }, uReveal: { value: 0 }, uSize: { value: .028 }, uPx: { value: 800 },
         uGlow: { value: 0 }, uWave: { value: 1 }, uCity: { value: new THREE.Vector3(0, 0, 1) }, uSun: { value: SUN },
       },
     })
@@ -304,8 +308,8 @@ export default function Globe({ city, cityWorld, energy, children }: {
   }, [land])
 
   const dust = useMemo(() => ({
-    shell: dustGeometry(4200, 'shell', 31),
-    ring: dustGeometry(2600, 'ring', 53),
+    shell: dustGeometry(1500, 'shell', 31),
+    ring: dustGeometry(800, 'ring', 53),
     mat: new THREE.ShaderMaterial({
       vertexShader: DUST_VERT, fragmentShader: DUST_FRAG, transparent: true, depthWrite: false,
       blending: THREE.AdditiveBlending,

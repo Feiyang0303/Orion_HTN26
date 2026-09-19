@@ -41,13 +41,13 @@ export default function GlobeScene({ mode, city, events, places, className }: {
   const crewScale = useRef(0)
 
   return (
-    <Canvas className={className} dpr={[1, 1.6]} camera={{ position: [0, 6.2, 16.5], fov: 32 }} gl={{ alpha: true, antialias: true, preserveDrawingBuffer: true }} style={{ pointerEvents: 'none' }}>
+    <Canvas className={className} dpr={[1, 1.25]} camera={{ position: [0, 6.2, 16.5], fov: 32 }} gl={{ alpha: true, antialias: true, preserveDrawingBuffer: true }} style={{ pointerEvents: 'none' }}>
       <hemisphereLight args={['#a9bcff', '#2a1f16', .8]} />
       <directionalLight position={[5, 9, 6]} intensity={1.6} color="#ffe9c9" />
       <directionalLight position={[-6, 4, -7]} intensity={.7} color="#7fa6ff" />
       {/* two layers, so the sky has depth: a far dusting and a nearer, brighter few */}
-      <Stars radius={96} depth={60} count={3400} factor={2.7} fade speed={.18} />
-      <Stars radius={48} depth={26} count={900} factor={5.2} fade speed={.5} />
+      <Stars radius={96} depth={60} count={1400} factor={2.8} fade speed={.18} />
+      <Stars radius={48} depth={26} count={350} factor={5.2} fade speed={.5} />
 
       <Layout mode={mode} statusRef={statusRef} energy={energy} crewScale={crewScale}
         globe={<Globe city={city} cityWorld={cityWorld} energy={energy}><CityFX status={statusRef} places={places} /></Globe>}
@@ -62,8 +62,8 @@ export default function GlobeScene({ mode, city, events, places, className }: {
           to the camera is drawn as a quad subtending its size over its distance —
           at z = +8 a 2-unit mote fills a quarter of the screen as a glowing slab.
           Keeping |z| under 3 puts every one of them at least 13 units out. */}
-      <Sparkles count={130} scale={[17, 8, 5]} size={1.2} speed={.18} opacity={.3} color="#f0b45e" position={[0, 3, 0]} />
-      <Sparkles count={70} scale={[11, 5, 4]} size={1.7} speed={.1} opacity={.16} color="#8fb4ff" position={[0, 3.2, 0]} />
+      <Sparkles count={50} scale={[17, 8, 5]} size={1.2} speed={.18} opacity={.3} color="#f0b45e" position={[0, 3, 0]} />
+      <Sparkles count={24} scale={[11, 5, 4]} size={1.7} speed={.1} opacity={.16} color="#8fb4ff" position={[0, 3.2, 0]} />
     </Canvas>
   )
 }
