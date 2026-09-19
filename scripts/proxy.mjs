@@ -9,6 +9,8 @@
  *   POST /api/routes/walk     { from: LatLon, to: LatLon, transport? } -> { encodedPolyline, distanceM, durationSec }
  */
 import { createServer } from 'node:http'
+import { networkInterfaces } from 'node:os'
+import { randomBytes } from 'node:crypto'
 import * as Sentry from '@sentry/node'
 import { loadEnv, scrub } from './shared.mjs'
 import { handleWiki } from './wiki.mjs'
@@ -30,6 +32,45 @@ const readJson = req => new Promise((resolve, reject) => {
   let s = ''
   req.on('data', c => { s += c }).on('end', () => { try { resolve(JSON.parse(s || '{}')) } catch (e) { reject(new HttpError(400, 'bad JSON body')) } }).on('error', reject)
 })
+
+/* ---- Sharing a trip -------------------------------------------------------
+ * A trip is planned on a laptop and looked at in a headset, so it has to be
+ * reachable from a second device. It is held in memory (a demo's trips are
+ * short-lived and a restart should forget them), with its audio, which in the
+ * page is only blob URLs the headset could never open. */
+const shared = new Map()   // id -> { trip: string, audio: Map<name, Buffer> }
+const readBuf = (req, max = 20e6) => new Promise((resolve, reject) => {
+  const chunks = []; let n = 0
+  req.on('data', c => { n += c.length; if (n > max) { reject(new HttpError(413, 'too large')); req.destroy() } else chunks.push(c) })
+    .on('end', () => resolve(Buffer.concat(chunks))).on('error', reject)
+})
+const shareEntry = (id) => { const e = shared.get(id); if (!e) throw new HttpError(404, 'no such trip'); return e }
+
+async function shareCreate(req, res) {
+  const id = randomBytes(5).toString('hex')
+  shared.set(id, { trip: '', audio: new Map() })
+  if (shared.size > 40) shared.delete(shared.keys().next().value)
+  json(res, 200, { id })
+}
+async function shareAudio(req, res) {
+  const u = new URL(req.url, 'http://x')
+  const e = shareEntry(u.searchParams.get('id') ?? ''), name = (u.searchParams.get('name') ?? '').replace(/[^\w.-]/g, '')
+  if (req.method === 'PUT') { e.audio.set(name, await readBuf(req)); return json(res, 200, { ok: true }) }
+  const b = e.audio.get(name)
+  if (!b) throw new HttpError(404, 'no such clip')
+  res.writeHead(200, { 'content-type': 'audio/mpeg', 'content-length': b.length, 'cache-control': 'max-age=3600' }).end(b)
+}
+async function shareTrip(req, res) {
+  const u = new URL(req.url, 'http://x'), e = shareEntry(u.searchParams.get('id') ?? '')
+  if (req.method === 'PUT') { e.trip = (await readBuf(req)).toString('utf8'); return json(res, 200, { ok: true }) }
+  if (!e.trip) throw new HttpError(404, 'trip not uploaded yet')
+  res.writeHead(200, { 'content-type': 'application/json' }).end(e.trip)
+}
+/** The machine's address on the local network, for the link a headset opens. */
+function lan(_req, res) {
+  const ips = Object.values(networkInterfaces()).flat().filter(i => i && i.family === 'IPv4' && !i.internal).map(i => i.address)
+  json(res, 200, { ips })
+}
 
 /* ---- LLM ---------------------------------------------------------------- */
 async function llm(req, res) {
@@ -166,6 +207,12 @@ const routes = {
   }),
   'GET /api/wiki': handleWiki,
   'POST /api/overpass': (req, res) => handleOverpass(req, res, readJson),
+  'POST /api/share': shareCreate,
+  'PUT /api/share/audio': shareAudio,
+  'GET /api/share/audio': shareAudio,
+  'PUT /api/share/trip': shareTrip,
+  'GET /api/share/trip': shareTrip,
+  'GET /api/lan': lan,
   'POST /api/llm': llm,
   'POST /api/tts': tts,
   'POST /api/routes/matrix': routesMatrix,

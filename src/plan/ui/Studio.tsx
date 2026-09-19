@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'motion/react'
 import CrewStage from './CrewStage'
 import TripView from './TripView'
 import Icon from '../../ui/Icon'
+import { shareTrip } from '../../vr/share'
 import { dayColour } from '../../ui/palette'
 import type { MapView } from '../../fly/MapRig'
 import type { CrewEvent } from '../events'
@@ -53,6 +54,12 @@ export default function Studio({ wish, mode, origin, onFly, onHome, onMap, onCre
   const [editing, setEditing] = useState(false)
   const [asking, setAsking] = useState(false)
   const session = useRef<Session | null>(null)
+  const [vr, setVr] = useState<{ state: 'idle' | 'busy' | 'ready' | 'failed'; url?: string }>({ state: 'idle' })
+  const openInVr = useCallback(async () => {
+    if (!trip) return
+    setVr({ state: 'busy' })
+    try { setVr({ state: 'ready', url: (await shareTrip(trip)).url }) } catch { setVr({ state: 'failed' }) }
+  }, [trip])
 
   const onEvent = useCallback((e: CrewEvent) => {
     setEvents(list => [...list, e])
@@ -139,6 +146,14 @@ export default function Studio({ wish, mode, origin, onFly, onHome, onMap, onCre
     <div className="tv">
       <div className="tv-bar">
         <button className="o-btn quiet small" onClick={onHome}>← New trip</button>
+        <button className="o-btn small" onClick={openInVr} disabled={vr.state === 'busy' || asking}>{vr.state === 'busy' ? 'Preparing…' : 'View in VR'}</button>
+        {vr.state === 'ready' && vr.url && (
+          <p className="tv-vr o-glass">
+            Open this on the headset’s browser: <a href={vr.url} target="_blank" rel="noreferrer">{vr.url}</a>
+            {!vr.url.startsWith('https:') && <em> VR needs https: restart with “npm run vr”.</em>}
+          </p>
+        )}
+        {vr.state === 'failed' && <p className="tv-vr o-glass">Couldn’t prepare the trip for VR.</p>}
       </div>
       <TripView trip={trip!} day={dayIx} onDay={setDayIx} onFly={onFly} onFocus={setFocus} planning={asking} />
 
