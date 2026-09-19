@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Food, Sketch, TransportGlyph, foodFor, sketchFor } from './Sketches'
 import { paletteFor } from './decor'
-import { weatherLine, wearLine, type DayWeather } from '../weather'
+import { weatherLine, type DayWeather } from '../weather'
+import { fallbackMemo, type Note } from '../memo'
 import { HHMM, MINS, TRANSPORT_LABEL, type Day, type LatLon, type Trip } from '../../types'
 
 /* One day, as a page of a hand-drawn travel journal.
@@ -65,10 +66,12 @@ const mid = (pts: LatLon[]) => pts[Math.floor(pts.length / 2)] ?? pts[0]
 
 const WATER = /river|seine|thames|tiber|canal|bridge|pont|ponte|harbour|harbor|bay|lake|quay|beach|island|île|isola|kamo|lagoon/i
 
-export default function JournalPage({ day, trip, open, onFly, weather }: {
+export default function JournalPage({ day, trip, open, onFly, weather, notes }: {
   day: Day; trip: Trip; open: boolean; onFly: () => void
   /** The forecast for this day of the trip, when one reaches that far. */
   weather?: DayWeather
+  /** The foot of the page, written for this day. Absent until it arrives. */
+  notes?: Note[]
 }) {
   const [phase, setPhase] = useState<'folded' | 'opening' | 'live'>('folded')
   useEffect(() => {
@@ -140,16 +143,37 @@ export default function JournalPage({ day, trip, open, onFly, weather }: {
     }
 
     /* Where each sketch stands: beside its pin if it can, else the nearest
-       clear spot, and never over the schedule or the title. */
+       clear spot, and never over the schedule, the title, or anything already
+       drawn on the map.
+
+       This used to reserve only the other sketches, which is why the page came
+       out with names written across each other's pictures. Three things were
+       invisible to it. The numbered pins and the meal marks are drawn at the
+       stops themselves and were never reserved, so a caption could land on
+       one. The little way-glyphs — the footprints and the minutes between two
+       places — sit on the path and were not reserved either. And the box kept
+       for a sketch was the height of the drawing alone, when what stands there
+       is the drawing *and* its name and hours underneath, which for
+       "Notre-Dame de Paris" is two more lines of it. */
     type Box = { x: number; y: number; w: number; h: number }
+    const at = (p: Pt, w: number, h: number): Box => ({ x: p.x - w / 2, y: p.y - h / 2, w, h })
     const placed: Box[] = [
       { x: 0, y: 0, w: MAP.x0 - 6, h: H },                    // the schedule's column
       { x: MAP.x1 + 6, y: 0, w: W - MAP.x1, h: H },           // the table's column
       { x: 0, y: 0, w: W, h: MAP.y0 - 10 },                   // the title's band
       { x: 0, y: MAP.y1 + 16, w: W, h: H },                   // the memo's band
+      ...stops.map(st => at(st, 46, 46)),                     // the numbered pins
+      ...tables.map(t => at(t, 36, 36)),                      // the meal marks
+      ...(home ? [at(home, 40, 40)] : []),
+      ...glyphs.map(g => at(g, 84, 40)),                      // footprints and minutes
     ]
-    const SW = 142, SH = 138
-    const offsets: [number, number][] = [[100, -84], [-100, -84], [0, -128], [112, 44], [-112, 44], [0, 96], [156, -20], [-156, -20], [64, -150], [-64, -150]]
+    /* The drawing is 104 across; the box is what the drawing and its two
+       lines of writing take together, with a little air around them. */
+    const SW = 152, SH = 176
+    const offsets: [number, number][] = [
+      [104, -92], [-104, -92], [0, -136], [118, 52], [-118, 52], [0, 112],
+      [162, -24], [-162, -24], [70, -158], [-70, -158], [150, 96], [-150, 96],
+    ]
     const clear = (b: Box) => b.x >= MAP.x0 - 20 && b.x + b.w <= MAP.x1 + 20 && b.y >= MAP.y0 - 20 && b.y + b.h <= MAP.y1 + 16 &&
       !placed.some(o => b.x < o.x + o.w && b.x + b.w > o.x && b.y < o.y + o.h && b.y + b.h > o.y)
     const put = (x: number, y: number, w = SW, h = SH) => {
@@ -157,9 +181,9 @@ export default function JournalPage({ day, trip, open, onFly, weather }: {
         const b = { x: x + dx - w / 2, y: y + dy - h / 2, w, h }
         if (clear(b)) { placed.push(b); return { bx: b.x + w / 2, by: b.y + h / 2 } }
       }
-      for (let ring = 150; ring <= 420; ring += 38) {
-        for (let k = 0; k < 16; k++) {
-          const a = (k / 16) * Math.PI * 2 - Math.PI / 2
+      for (let ring = 150; ring <= 460; ring += 26) {
+        for (let k = 0; k < 24; k++) {
+          const a = (k / 24) * Math.PI * 2 - Math.PI / 2
           const b = { x: x + Math.cos(a) * ring - w / 2, y: y + Math.sin(a) * ring - h / 2, w, h }
           if (clear(b)) { placed.push(b); return { bx: b.x + w / 2, by: b.y + h / 2 } }
         }
@@ -176,7 +200,7 @@ export default function JournalPage({ day, trip, open, onFly, weather }: {
       }
       placed.push(b); return { bx: b.x + w / 2, by: b.y + h / 2 }
     }
-    const homeAt = home ? put(home.x, home.y, 120, 110) : null
+    const homeAt = home ? put(home.x, home.y, 128, 132) : null
     const sketchAt = stops.map(st => put(st.x, st.y))
 
     return { route, glyphs, stops, home, homeAt, sketchAt, tables, streets, blocks, trees, river }
@@ -200,17 +224,15 @@ export default function JournalPage({ day, trip, open, onFly, weather }: {
     day.stops[0] ? `check ${day.stops[0].name.split(',')[0]}'s hours first` : '',
   ].filter(Boolean).slice(0, 3)
 
-  /* The memo says two things, because two things were all it ever actually
-     knew. Carry your ID and buy a day pass are advice anyone could give about
-     anywhere; they took up half the note and told the reader nothing about
-     this day. What is left is what only this page can say: the forecast for
-     the day, and what to wear given that forecast and how far it walks — and
-     past the forecast's horizon it says so rather than inventing a number. */
+  /* The forecast is printed by code, because it is a fact and facts are not a
+     model's job. Everything beside it is written for this day from this day's
+     own numbers (see memo.ts), and until that comes back the page shows the
+     rule-written line, which is plainer and just as true. */
   const onFoot = [...(day.approach ? [day.approach] : []), ...day.legs, ...(day.back ? [day.back] : [])]
     .filter(l => l.transport === 'walk').reduce((n, l) => n + l.distanceM, 0) / 1000
-  const memo = [
+  const memo: [string, string][] = [
     ['Weather', weatherLine(weather)],
-    ['What to wear', wearLine(weather, onFoot)],
+    ...(notes?.length ? notes : fallbackMemo(weather, onFoot)).map(n => [n.label, n.text] as [string, string]),
   ]
 
   const style = {

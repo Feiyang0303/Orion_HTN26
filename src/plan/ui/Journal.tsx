@@ -5,6 +5,7 @@ import { SketchDefs } from './Sketches'
 import Icon from '../../ui/Icon'
 import type { Day, Trip } from '../../types'
 import { forecast, type DayWeather } from '../weather'
+import { writeMemo, type Note } from '../memo'
 import './journal-page.css'
 
 /* The journal: one hand-drawn page per day, and the trip's cover.
@@ -43,6 +44,21 @@ export default function Journal({ trip, onFly, onClose, onHome }: {
     void forecast(trip.origin, trip.days.length, ctl.signal).then(w => { if (!ctl.signal.aborted) setWeather(w) })
     return () => ctl.abort()
   }, [trip.origin, trip.days.length])
+
+  /* The foot of each page is written for that day once the forecast is in, and
+     kept: turning back to a day should not spend another call, and should not
+     quietly say something different the second time. */
+  const [notes, setNotes] = useState<Record<number, Note[]>>({})
+  useEffect(() => {
+    if (!day || notes[day.number]) return
+    const ctl = new AbortController()
+    const onFoot = [...(day.approach ? [day.approach] : []), ...day.legs, ...(day.back ? [day.back] : [])]
+      .filter(l => l.transport === 'walk').reduce((n, l) => n + l.distanceM, 0) / 1000
+    void writeMemo(trip, day, weather[day.number - 1], onFoot, ctl.signal)
+      .then(w => { if (!ctl.signal.aborted && w.length) setNotes(n => ({ ...n, [day.number]: w })) })
+    return () => ctl.abort()
+    // weather.length, not weather: the array is replaced once, when it arrives.
+  }, [day, trip, weather, notes])
 
   // Fold, then unfold: the same sheet cannot be seen to reprint itself.
   useEffect(() => {
@@ -104,7 +120,7 @@ export default function Journal({ trip, onFly, onClose, onHome }: {
         </div>
       </nav>
       {view === 'paper'
-        ? day && <JournalPage weather={weather[day.number - 1]} key={day.number} day={day} trip={trip} open={open} onFly={() => onFly(day)} />
+        ? day && <JournalPage weather={weather[day.number - 1]} notes={notes[day.number]} key={day.number} day={day} trip={trip} open={open} onFly={() => onFly(day)} />
         : (
           <div className="jn-plain">
             <TripView

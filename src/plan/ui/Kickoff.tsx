@@ -151,56 +151,60 @@ export default function Kickoff({ seedCity, onCity, onStart }: {
             <motion.div key="brief" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
               transition={{ duration: .7, ease: [.22, .9, .24, 1] }} style={{ overflow: 'hidden', margin: '0 -6px', padding: '0 6px' }}>
               <div className="k-grid">
-                <motion.div className="k-field" {...rise(0)}>
-                  <span className="k-label">How long</span>
-                  <div className="k-days">
-                    {DAYS.map(d => <button key={d} type="button" className="o-chip" aria-pressed={days === d} onClick={() => setDays(d)}>{d}</button>)}
-                  </div>
-                </motion.div>
+                <div className="k-pair">
+                  <motion.div className="k-field" {...rise(0)}>
+                    <span className="k-label">How long</span>
+                    <div className="k-days">
+                      {DAYS.map(d => <button key={d} type="button" className="o-chip" aria-pressed={days === d} onClick={() => setDays(d)}>{d}</button>)}
+                    </div>
+                  </motion.div>
 
-                <motion.div className="k-field" {...rise(1)}>
-                  <span className="k-label">Pace</span>
-                  <div className="k-chips">
-                    {PACES.map(p => <button key={p.id} type="button" className="o-chip" aria-pressed={pace === p.id} onClick={() => setPace(p.id)}>{p.label}</button>)}
-                  </div>
-                </motion.div>
+                  <motion.div className="k-field" {...rise(1)}>
+                    <span className="k-label">Pace</span>
+                    <div className="k-chips">
+                      {PACES.map(p => <button key={p.id} type="button" className="o-chip" aria-pressed={pace === p.id} onClick={() => setPace(p.id)}>{p.label}</button>)}
+                    </div>
+                  </motion.div>
+                </div>
 
-                <motion.div className="k-field wide" {...rise(2)}>
+                <motion.div className="k-field" {...rise(2)}>
                   <span className="k-label">Who is coming</span>
                   <div className="k-chips">
                     {PARTIES.map(p => <button key={p} type="button" className="o-chip" aria-pressed={party === p} onClick={() => setParty(p)}>{PARTY_LABEL[p]}</button>)}
                   </div>
                 </motion.div>
 
-                <motion.div className="k-field wide" {...rise(3)}>
+                <motion.div className="k-field" {...rise(3)}>
                   <span className="k-label">What draws you <em>steers the scout</em></span>
                   <div className="k-chips">
                     {INTERESTS.map(i => <button key={i} type="button" className="o-chip" aria-pressed={interests.includes(i)} onClick={() => setInterests(l => toggle(l, i))}>{i}</button>)}
                   </div>
                 </motion.div>
 
-                <motion.div className="k-field wide" {...rise(4)}>
+                <motion.div className="k-field" {...rise(4)}>
                   <span className="k-label">Getting around</span>
                   <div className="k-chips">
                     {TRANSPORTS.map(t => <button key={t} type="button" className="o-chip" aria-pressed={transport === t} onClick={() => setTransport(t)}>{TRANSPORT_WISH_LABEL[t]}</button>)}
                   </div>
                 </motion.div>
 
-                <motion.div className="k-field" {...rise(5)}>
-                  <span className="k-label">Each day</span>
-                  <div className="k-times">
-                    <input className="o-input" type="time" value={startAt} onChange={e => setStartAt(e.target.value)} aria-label="Start" />
-                    <span>to</span>
-                    <input className="o-input" type="time" value={endAt} onChange={e => setEndAt(e.target.value)} aria-label="End" />
-                  </div>
-                </motion.div>
+                <div className="k-pair k-hours">
+                  <motion.div className="k-field" {...rise(5)}>
+                    <span className="k-label">Each day</span>
+                    <div className="k-times">
+                      <input className="o-input" type="time" value={startAt} onChange={e => setStartAt(e.target.value)} aria-label="Start" />
+                      <span>to</span>
+                      <input className="o-input" type="time" value={endAt} onChange={e => setEndAt(e.target.value)} aria-label="End" />
+                    </div>
+                  </motion.div>
 
-                <motion.div className="k-field" {...rise(6)}>
-                  <span className="k-label">Anything to eat around <em>optional</em></span>
-                  <input className="o-input" value={diet} onChange={e => setDiet(e.target.value)} placeholder="vegetarian, we like noodles…" />
-                </motion.div>
+                  <motion.div className="k-field" {...rise(6)}>
+                    <span className="k-label">Anything to eat around <em>optional</em></span>
+                    <input className="o-input" value={diet} onChange={e => setDiet(e.target.value)} placeholder="vegetarian, we like noodles…" />
+                  </motion.div>
+                </div>
 
-                <motion.div className="k-field wide" {...rise(7)}>
+                <motion.div className="k-field" {...rise(7)}>
                   <span className="k-label">Places you already want <em>never dropped</em></span>
                   <input className="o-input" value={wantText} onChange={e => setWantText(e.target.value)} placeholder="Type a place and press Enter"
                     onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); void addWant() } }} />
