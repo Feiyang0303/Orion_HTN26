@@ -113,11 +113,12 @@ export default function Studio({ wish, mode, origin, saved: given, onTrip, onFly
   // Every trip is saved as soon as it exists and again after each change the editor makes.
   const tripKey = useRef(saved?.id ?? newId())
   const lastSaved = useRef<Trip | null>(saved?.trip ?? null)
+  const keepError = useRef('')
   const [keep, setKeep] = useState<'idle' | 'saving' | 'saved' | 'local' | 'failed'>('idle')
   const persist = useCallback(async (t: Trip) => {
     setKeep('saving')
     try { const r = await saveTrip(tripKey.current, t, mode, origin); lastSaved.current = t; setKeep(r.persistent ? 'saved' : 'local'); return true }
-    catch { setKeep('failed'); return false }
+    catch (e) { keepError.current = e instanceof Error ? e.message : String(e); report(e, 'trips.save', { level: 'warning' }); setKeep('failed'); return false }
   }, [mode, origin])
   useEffect(() => { if (trip) onTrip?.({ id: tripKey.current, trip, mode, origin, updatedAt: Date.now() }) }, [trip, mode, origin, onTrip])
   useEffect(() => {
@@ -126,14 +127,14 @@ export default function Studio({ wish, mode, origin, saved: given, onTrip, onFly
     return () => clearTimeout(t)
   }, [trip, persist])
 
-  const [vr, setVr] = useState<{ state: 'idle' | 'busy' | 'ready' | 'failed'; url?: string }>({ state: 'idle' })
+  const [vr, setVr] = useState<{ state: 'idle' | 'busy' | 'ready' | 'failed'; url?: string; why?: string }>({ state: 'idle' })
   const openInVr = useCallback(async () => {
     if (!trip) return
     setVr({ state: 'busy' })
     try {
       if (trip !== lastSaved.current && !(await persist(trip))) throw new Error('not saved')
       setVr({ state: 'ready', url: await vrLink(tripKey.current) })
-    } catch { setVr({ state: 'failed' }) }
+    } catch (e) { setVr({ state: 'failed', why: keepError.current || (e instanceof Error ? e.message : String(e)) }) }
   }, [trip, persist])
 
   /* ------------------------------------------------------------- the map -- */
@@ -209,7 +210,7 @@ export default function Studio({ wish, mode, origin, saved: given, onTrip, onFly
             {!vr.url.startsWith('https:') && <em> VR needs https: restart with “npm run vr”.</em>}
           </p>
         )}
-        {vr.state === 'failed' && <p className="tv-vr o-glass">Couldn’t prepare the trip for VR.</p>}
+        {vr.state === 'failed' && <p className="tv-vr o-glass">Couldn’t prepare the trip for VR{vr.why ? `: ${vr.why}` : '.'}</p>}
       </div>
       <TripView trip={trip!} day={dayIx} onDay={setDayIx} onFly={onFly} onFocus={setFocus} planning={asking} onBook={() => setBook(true)} />
 
