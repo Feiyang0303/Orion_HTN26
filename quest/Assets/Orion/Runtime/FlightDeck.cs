@@ -43,6 +43,7 @@ namespace Orion
 
         // the clock
         float t; bool playing = true;
+        float rate = 1;                                        // how fast the clock is running, 0 to 1: a pause on a leg brakes, it does not halt
         float settling;                                        // seconds spent waiting at this stop, or -1 once it has stopped waiting
 
         // the blink: anything that is not a gentle ride down a street happens behind it
@@ -172,8 +173,12 @@ namespace Orion
             float loaded = world.Tiles.ComputeLoadProgress();
             bool arriving = on.Kind == SegmentKind.Dwell && t - on.T0 < 1;
             if (!arriving) settling = 0;
-            else if (settling >= 0) settling = (settling < .5f || loaded < SettledAt) && settling < SettleMaxSec ? settling + dt : -1;
-            if (playing && ready && placed && !(arriving && settling >= 0)) t = Mathf.Min(timeline.Total, t + dt * (ride != null ? (on.T1 - on.T0) / ride.T : 1));
+            else if (settling >= 0 && placed) settling = (settling < .5f || loaded < SettledAt) && settling < SettleMaxSec ? settling + dt : -1;
+            // Pausing on a leg slows the clock at the rate a ride is allowed to brake, and playing again picks it up as gently.
+            // Anywhere else nothing is moving, so the clock simply stops and starts.
+            float goal = playing ? 1 : 0;
+            rate = ride != null ? Mathf.MoveTowards(rate, goal, dt * Ride.Push / Mathf.Max(ride.SpeedAt((t - on.T0) / (on.T1 - on.T0) * ride.T), Ride.Push)) : goal;
+            if (ready && placed && !(arriving && settling >= 0)) t = Mathf.Min(timeline.Total, t + dt * rate * (ride != null ? (on.T1 - on.T0) / ride.T : 1));
             if (t >= timeline.Total && playing) { playing = false; shown = null; }
             var (seg, u) = timeline.At(t);
             if (!smooth && seg.Kind == SegmentKind.Travel) { t = seg.T1; (seg, u) = timeline.At(t); ride = null; }     // "Ride: blinks": a leg is not ridden at all

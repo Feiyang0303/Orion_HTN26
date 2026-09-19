@@ -17,7 +17,7 @@ namespace Orion.Flight
     public class Ride
     {
         public const float Cruise = 30;          // m/s, the most a leg is ever flown at
-        const float Push = 3;                    // m/s², speeding up and slowing down
+        public const float Push = 3;             // m/s², speeding up and slowing down
         const float TurnG = 4;                   // m/s², sideways, through a bend
         const float MaxFlown = 1000;             // metres of a leg actually flown; the rest is blinked over
         const float Step = 5, BendSpan = 25;     // metres: how finely the ride is worked out, and the stretch a bend is measured over
@@ -70,6 +70,17 @@ namespace Orion.Flight
         }
 
         float Gap(int i) => i == join ? 0 : d[i] - d[i - 1];
+
+        /// <summary>How fast the person is going at `t` seconds, metres a second.</summary>
+        public float SpeedAt(float t)
+        {
+            if (d.Count < 2) return 0;
+            int lo = 0, hi = d.Count - 1;
+            while (hi - lo > 1) { int mid = (lo + hi) >> 1; if (at[mid] <= t) lo = mid; else hi = mid; }
+            if (hi == join) return v[hi];
+            float span = at[hi] - at[lo];
+            return span > 0 ? Mathf.Lerp(v[lo], v[hi], Mathf.Clamp01((t - at[lo]) / span)) : v[hi];
+        }
 
         /// <summary>Where the person is at `t` seconds: metres down the trail, and which side of the blink (0 before, 1 after).</summary>
         public (float s, int part) At(float t)

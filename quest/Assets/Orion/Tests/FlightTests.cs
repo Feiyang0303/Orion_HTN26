@@ -78,6 +78,19 @@ namespace Orion.Tests
         }
 
         [Test]
+        public void TheRidesSpeedIsTheSlopeOfItsDistance()
+        {
+            var ride = new Ride(Street((0, 0), (0, 300), (300, 300)));
+            Assert.AreEqual(.5f, ride.SpeedAt(0), 1e-3f, "it sets off from rest");
+            for (float t = .5f; t < ride.T - .5f; t += .37f)
+            {
+                float slope = (ride.At(t + .01f).s - ride.At(t - .01f).s) / .02f;
+                Assert.AreEqual(slope, ride.SpeedAt(t), .35f, $"at {t:0.00}s");
+                Assert.LessOrEqual(ride.SpeedAt(t), Ride.Cruise + 1e-3f);
+            }
+        }
+
+        [Test]
         public void ABendIsSlowedFor()
         {
             var straight = new Ride(Street((0, 0), (0, 600)));
