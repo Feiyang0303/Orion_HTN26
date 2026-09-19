@@ -4,6 +4,7 @@ import ErrorBoundary from './ui/ErrorBoundary'
 import FlyDev from './fly/dev/FlyDev'
 import PlanTest from './fly/dev/PlanTest'
 import VRPage from './vr/VRPage'
+import { CURRENT } from './vr/share'
 import CrewDev from './globe/CrewDev'
 import GlobeScene from './globe/GlobeScene'
 import type { CrewEvent } from './plan/events'
@@ -59,7 +60,8 @@ function App() {
 
   useEffect(() => () => { audioUrls.current.forEach(URL.revokeObjectURL) }, [])
 
-  const vr = new URLSearchParams(location.search).get('vr')
+  // /vr is the headset's address and always shows the trip last sent to it; /?vr=<id> opens one by name.
+  const vr = location.pathname === '/vr' ? CURRENT : new URLSearchParams(location.search).get('vr')
   if (vr) return <ErrorBoundary><VRPage id={vr} /></ErrorBoundary>
   // A saved trip, opened as it was: the same screen the crew ends on, with nothing planned again.
   const openSaved = useCallback((id: string) => {
