@@ -171,7 +171,8 @@ async function buildDay(s: Session, draft: DayDraft, number: number, opts: Pipel
 
   say(s, 'Router', 'tool', 'working', `Day ${number}: measuring real travel times`)
   const points = [...(from ? [from] : []), ...draft.stops]
-  const routed = await bestOrder(points, wish.transport, wish.budget, !!from)
+  // The day leaves the bed and comes back to it, so the way home is part of the order.
+  const routed = await bestOrder(points, wish.transport, wish.budget, !!from, !!from)
   const seq = routed.order.filter(k => !(from && k === 0)).map(k => from ? k - 1 : k)
   const ordered = seq.map(k => draft.stops[k])
   const bedPt = from ? { id: 'bed', lat: from.lat, lon: from.lon } : null

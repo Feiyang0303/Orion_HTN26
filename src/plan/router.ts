@@ -48,6 +48,11 @@ const guessSec = (a: LatLon, b: LatLon, transport: Transport) =>
     and the legs are priced properly afterwards anyway. */
 export async function bestOrder(
   points: LatLon[], wish: TransportWish = 'walk', budget: Budget = 'modest', fixedFirst = false,
+  /** The day comes back to where it started, so the journey home is part of
+      what the order costs. Without this the optimiser is free to finish on the
+      far side of the city, which costs nothing on an open path and three
+      quarters of an hour on a real evening. */
+  loop = false,
 ): Promise<{ order: number[]; totalSec: number; estimated: boolean; minutes: number[][]; transport: Transport }> {
   let far = 0
   for (let i = 0; i < points.length; i++) for (let j = i + 1; j < points.length; j++) far = Math.max(far, metresBetween(points[i], points[j]))
@@ -58,15 +63,20 @@ export async function bestOrder(
   const sec = (i: number, j: number) => m?.durationSec[i]?.[j] ?? guessSec(points[i], points[j], transport)
 
   const movable = points.map((_, i) => i).filter(i => !(fixedFirst && i === 0))
-  const cost = (order: number[]) => { let t = 0; for (let i = 1; i < order.length; i++) t += sec(order[i - 1], order[i]); return t }
+  const home = loop && fixedFirst ? 0 : -1        // the point the day returns to, if it returns to one
+  const backHome = (order: number[]) => home < 0 ? 0 : sec(order[order.length - 1], home)
+  const cost = (order: number[]) => {
+    let t = 0
+    for (let i = 1; i < order.length; i++) t += sec(order[i - 1], order[i])
+    return t + backHome(order)
+  }
   let best: number[] | null = null, bestSec = Infinity
 
   if (movable.length <= 8) {
     // Small enough to try every order.
     for (const tail of permutations(movable)) {
       const order = fixedFirst ? [0, ...tail] : tail
-      let total = 0
-      for (let i = 1; i < order.length && total < bestSec; i++) total += sec(order[i - 1], order[i])
+      const total = cost(order)
       if (total < bestSec) { bestSec = total; best = order }
     }
   } else {
@@ -85,9 +95,15 @@ export async function bestOrder(
     let improved = true
     while (improved) {
       improved = false
-      for (let i = fixedFirst ? 1 : 0; i < order.length - 2; i++) {
-        for (let k = i + 1; k < order.length - 1; k++) {
-          const a = order[i - 1] ?? order[i], b = order[i], c = order[k], d = order[k + 1]
+      /* `k` runs to the last index when the day loops, because reversing a tail
+         that ends the day is exactly the move that stops it ending far from
+         the bed — the one improvement an open path can never see. */
+      const last = order.length - (home < 0 ? 2 : 1)
+      for (let i = fixedFirst ? 1 : 0; i <= last; i++) {
+        for (let k = i + 1; k <= last; k++) {
+          const a = order[i - 1] ?? order[i], b = order[i], c = order[k]
+          const d = order[k + 1] ?? (home < 0 ? -1 : home)
+          if (d < 0) continue
           const before = (i ? sec(a, b) : 0) + sec(c, d)
           const after = (i ? sec(a, c) : 0) + sec(b, d)
           if (after + 1e-6 < before) { order.splice(i, k - i + 1, ...order.slice(i, k + 1).reverse()); improved = true }
@@ -101,31 +117,56 @@ export async function bestOrder(
   return { order: best, totalSec: bestSec, estimated: !m, minutes, transport }
 }
 
-/** One leg per consecutive pair, each priced in the mode that suits it. */
-export async function legsFor(
-  stops: { id: string; lat: number; lon: number }[], wish: TransportWish = 'walk', budget: Budget = 'modest',
-): Promise<Leg[]> {
-  return Promise.all(stops.slice(1).map(async (to, i) => {
-    const from = stops[i]
-    const transport = modeFor(wish, budget, metresBetween(from, to))
+/* Every leg of a day used to be asked for at once, and one that came back
+   unhappy was given up on immediately. A leg given up on is drawn as a
+   straight line across the city and printed as "not routed", which is how a
+   day comes out looking like two places that are not joined to the rest of it
+   — usually for a moment's rate limiting on a burst of eight simultaneous
+   requests. So the burst is capped and a leg is asked for again before the
+   map is allowed to lie about it. */
+const LEG_TRIES = 3
+const LEG_CONCURRENCY = 3
+const pause = (ms: number) => new Promise(r => setTimeout(r, ms))
+
+type Point = { id: string; lat: number; lon: number }
+
+async function routeLeg(from: Point, to: Point, transport: Transport): Promise<Leg> {
+  for (let attempt = 0; attempt < LEG_TRIES; attempt++) {
     try {
-      const r = await postJson<{ encodedPolyline: string; distanceM: number; durationSec: number }>(
+      const r = await postJson<{ encodedPolyline: string; distanceM: number; durationSec: number; how?: string }>(
         'routes/walk', { from, to, transport })
       return {
         fromStopId: from.id, toStopId: to.id, polyline: decodePolyline(r.encodedPolyline),
         distanceM: r.distanceM, durationSec: r.durationSec, transport, estimated: false,
+        // Which line, from which station: the guide says it on the way.
+        ...(r.how ? { how: r.how } : {}),
       }
     } catch {
-      breadcrumb('router', 'leg fell back to a straight-line estimate', { from: from.id, to: to.id, transport })
-      return {
-        fromStopId: from.id, toStopId: to.id,
-        polyline: [{ lat: from.lat, lon: from.lon }, { lat: to.lat, lon: to.lon }],
-        distanceM: Math.round(metresBetween(from, to) * DETOUR),
-        durationSec: Math.round(guessSec(from, to, transport)),
-        transport, estimated: true,
-      }
+      if (attempt < LEG_TRIES - 1) await pause(300 * 2 ** attempt)      // 300 ms, then 600
     }
-  }))
+  }
+  breadcrumb('router', `leg fell back to a straight-line estimate after ${LEG_TRIES} tries`, { from: from.id, to: to.id, transport })
+  return {
+    fromStopId: from.id, toStopId: to.id,
+    polyline: [{ lat: from.lat, lon: from.lon }, { lat: to.lat, lon: to.lon }],
+    distanceM: Math.round(metresBetween(from, to) * DETOUR),
+    durationSec: Math.round(guessSec(from, to, transport)),
+    transport, estimated: true,
+  }
+}
+
+/** One leg per consecutive pair, each priced in the mode that suits it. */
+export async function legsFor(
+  stops: Point[], wish: TransportWish = 'walk', budget: Budget = 'modest',
+): Promise<Leg[]> {
+  const pairs = stops.slice(1).map((to, i) => ({ from: stops[i], to, transport: modeFor(wish, budget, metresBetween(stops[i], to)) }))
+  const out: Leg[] = new Array(pairs.length)
+  let next = 0
+  const worker = async () => {
+    for (let i = next++; i < pairs.length; i = next++) out[i] = await routeLeg(pairs[i].from, pairs[i].to, pairs[i].transport)
+  }
+  await Promise.all(Array.from({ length: Math.min(LEG_CONCURRENCY, pairs.length) }, worker))
+  return out
 }
 
 export const walkingLegs = legsFor

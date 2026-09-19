@@ -70,6 +70,15 @@ export async function writePages(skeleton: Skeleton, opts: PipelineOptions): Pro
     say('Timekeeper', 'tool', 'done',
       clock.breaks.map(b => `${b.minutes} min kept clear for ${b.label} after ${chosen[b.after]?.name}`).join('; '))
   }
+  /* What was given up, said out loud. A day quietly squeezed is a day that
+     lies about how long you get at the places in it. */
+  if (clock.trimmedMin) {
+    say('Timekeeper', 'tool', clock.overruns ? 'failed' : 'done',
+      `${clock.trimmedMin} min trimmed from the stops to end by ${wish.endAt}` +
+      (clock.overruns ? `, and it still runs to ${clock.endsAt} — there are too many places in this day` : ''))
+  } else if (clock.overruns) {
+    say('Timekeeper', 'tool', 'failed', `The day runs to ${clock.endsAt}, past the ${wish.endAt} you asked for`)
+  }
 
   /* The forecast for THIS day of the trip, read as the journal reads it: the
      days from tomorrow, in order, and honest about not reaching far ahead. It
@@ -108,7 +117,7 @@ export async function writePages(skeleton: Skeleton, opts: PipelineOptions): Pro
     meals: clock.breaks.map(b => ({ label: b.label, minutes: b.minutes, after: chosen[b.after]?.name ?? '' })),
     totalKm,
     stops: pages.map(({ c, index, before, targets }) => ({
-      name: c.name, arrival: clock.arrivals[index], stayMin: c.visitMin, why: before?.fits ?? c.why,
+      name: c.name, arrival: clock.arrivals[index], stayMin: clock.stays[index], why: before?.fits ?? c.why,
       asked: c.asked, askedAs: c.askedAs, movedM: c.movedM,
       hasArticle: !!(before?.sources.length || c.article),
       targets: targets.length,
@@ -120,14 +129,14 @@ export async function writePages(skeleton: Skeleton, opts: PipelineOptions): Pro
   const stops: Stop[] = await Promise.all(pages.map(async ({ c, index, before, targets, photo }): Promise<Stop> => {
     if (before) {
       const brk = clock.breaks.find(b => b.after === index)
-      const stop: Stop = { ...before, visitMin: c.visitMin, arrival: clock.arrivals[index], ...(brk ? { breakMin: brk.minutes } : { breakMin: undefined }) }
+      const stop: Stop = { ...before, visitMin: clock.stays[index], arrival: clock.arrivals[index], ...(brk ? { breakMin: brk.minutes } : { breakMin: undefined }) }
       onEvent({ type: 'stop', index, stop })
       return stop
     }
     const a = c.article
     const ctx: StopContext = {
       city: origin.name, index, total: chosen.length,
-      arrival: clock.arrivals[index], visitMin: c.visitMin,
+      arrival: clock.arrivals[index], visitMin: clock.stays[index],
       previous: index ? chosen[index - 1].name : from?.name,
       legMin: index ? legs[index - 1]?.durationSec / 60 : approach ? approach.durationSec / 60 : undefined,
       transport: index ? legs[index - 1]?.transport : approach?.transport,
@@ -191,7 +200,7 @@ export async function writePages(skeleton: Skeleton, opts: PipelineOptions): Pro
       id: c.id, name: c.name, lat: c.lat, lon: c.lon,
       blurb: a ? firstSentence(a.extract) : c.why,
       photo, sources: a ? [wikiSource(a)] : [], targets, beats,
-      visitMin: c.visitMin, arrival: clock.arrivals[index], fits: c.why, asked: c.asked,
+      visitMin: clock.stays[index], arrival: clock.arrivals[index], fits: c.why, asked: c.asked,
       ...(c.askedAs ? { askedAs: c.askedAs, movedM: c.movedM } : {}),
       ...(brk ? { breakMin: brk.minutes } : {}),
     }

@@ -86,29 +86,89 @@ export type Schedule = {
   arrivals: string[]
   breaks: { after: number; minutes: number; label: string }[]
   endsAt: string
+  /** How long is actually spent at each stop. The same as what was asked for
+      unless the day had to be squeezed to fit its hours — see `trimmedMin`. */
+  stays: number[]
+  /** Minutes taken out of the stops to bring the day back inside its window.
+      0 when nothing had to give. The book prints it rather than hiding it. */
+  trimmedMin: number
+  /** True when the day still ends after the hour asked for, even squeezed.
+      Then there are simply too many places in it, and saying so is the only
+      honest thing left. */
+  overruns: boolean
 }
+
+/* A stop can be shortened but not to nothing: below this it is a photograph,
+   not a visit, and the plan would be lying about what the day contains. */
+const FLOOR_MIN = 25
+/* And no stop gives up more than this share of itself, so a day that is
+   wildly too full overruns and says so instead of quietly turning four
+   galleries into four coffee breaks. */
+const MOST_GIVEN_UP = 0.4
 
 /** The clock, walked forward. `approachSec` is the hop from a given starting
     point to the first stop; it happens before the first arrival, not at it. */
 export function schedule(
   visitMins: number[], legSecs: number[], window: DayWindow, approachSec = 0, meals: Meal[] = [],
 ): Schedule {
-  const pending = meals.slice().sort((a, b) => MEAL[a].after - MEAL[b].after)
-  const breaks: Schedule['breaks'] = []
-  let clock = window.startMin + approachSec / 60
-  const arrivals = visitMins.map((stay, i) => {
-    const at = clock
-    clock += stay
-    const due = pending[0]
-    if (due && clock >= MEAL[due].after && i < visitMins.length - 1) {
-      breaks.push({ after: i, minutes: MEAL[due].min, label: MEAL[due].label })
-      clock += MEAL[due].min
-      pending.shift()
+  /* The clock used to be walked forward and whatever hour it landed on was
+     the answer, so a day asked to end at six could be handed back ending at
+     twenty to ten. The hours a person gives are not a suggestion: the stops
+     are squeezed, within reason, until the day fits inside them. Travel and
+     meals cannot be squeezed — a leg takes as long as it takes — so only the
+     stays give. */
+  const walk = (stays: number[]) => {
+    const pending = meals.slice().sort((a, b) => MEAL[a].after - MEAL[b].after)
+    const breaks: Schedule['breaks'] = []
+    let clock = window.startMin + approachSec / 60
+    const arrivals = stays.map((stay, i) => {
+      const at = clock
+      clock += stay
+      const due = pending[0]
+      if (due && clock >= MEAL[due].after && i < stays.length - 1) {
+        breaks.push({ after: i, minutes: MEAL[due].min, label: MEAL[due].label })
+        clock += MEAL[due].min
+        pending.shift()
+      }
+      clock += (legSecs[i] ?? 0) / 60
+      return HHMM(at)
+    })
+    return { arrivals, breaks, endMin: clock }
+  }
+
+  const asked = visitMins.map(m => Math.round(m))
+  /** Every stay scaled by `k`, but never under its own floor. */
+  const squeeze = (k: number) => asked.map(m => Math.max(Math.min(m, FLOOR_MIN), Math.round(m * k)))
+
+  let stays = asked
+  let run = walk(stays)
+  if (run.endMin > window.endMin) {
+    /* The gentlest squeeze that fits, found by bisection on the scale. The
+       invariant is that `lo` is a scale already checked to fit, so the answer
+       is always a day that was actually walked and actually fitted — which
+       matters because this is not smooth: a stop at its floor stops giving,
+       and a meal break can land on the other side of a stop once the clock
+       moves under it. */
+    const most = 1 - MOST_GIVEN_UP
+    const fits = (k: number) => walk(squeeze(k)).endMin <= window.endMin
+    let k = most
+    if (fits(most)) {
+      let lo = most, hi = 1
+      for (let i = 0; i < 18; i++) { const mid = (lo + hi) / 2; if (fits(mid)) lo = mid; else hi = mid }
+      k = lo
     }
-    clock += (legSecs[i] ?? 0) / 60
-    return HHMM(at)
-  })
-  return { arrivals, breaks, endsAt: HHMM(clock) }
+    // Squeezed as far as it is allowed to go and still too long: take it anyway,
+    // because it is closer, and let `overruns` say the day has too much in it.
+    const fitted = squeeze(k)
+    const best = walk(fitted)
+    if (best.endMin < run.endMin) { stays = fitted; run = best }
+  }
+
+  const trimmedMin = asked.reduce((n, m, i) => n + (m - stays[i]), 0)
+  return {
+    arrivals: run.arrivals, breaks: run.breaks, endsAt: HHMM(run.endMin),
+    stays, trimmedMin, overruns: run.endMin > window.endMin,
+  }
 }
 
 export const arrivals = (v: number[], l: number[], w: DayWindow, a = 0, m: Meal[] = []) => schedule(v, l, w, a, m).arrivals
