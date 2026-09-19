@@ -182,6 +182,7 @@ export default function Scene({ days, store: xr, onReady }: { days: Day[]; store
     return seg.kind === 'dwell' ? seg.stop : seg.kind === 'travel' ? seg.leg + 1 : 0
   }, [tl])
 
+  const leaving = useRef(0)
   const orb = useRef<THREE.Group>(null)
   const beam = useRef<THREE.Group>(null)
   const beamLine = useRef<THREE.Mesh>(null)
@@ -250,6 +251,13 @@ export default function Scene({ days, store: xr, onReady }: { days: Day[]; store
       side(0, 1, 0); side(1, -1, 0); side(2, 0, 1); side(3, 0, -1)
       P[4].normal.set(0, 1, 0); P[4].constant = -(g.yMin - .01 * tableScale)
     } else P.forEach(pl => { pl.normal.set(0, 1, 0); pl.constant = 1e9 })
+
+    /* a way out that needs no aiming: hold B or Y (the upper face button on either controller) */
+    if (inXR) {
+      const held = [...(gl.xr.getSession()?.inputSources ?? [])].some(src => src.gamepad?.buttons[5]?.pressed)
+      leaving.current = held ? leaving.current + dt : 0
+      if (leaving.current > .8) { leaving.current = 0; void gl.xr.getSession()?.end() }
+    } else leaving.current = 0
 
     /* the guide */
     if (p.playing && g.ready && tiles.current && tiles.current.stats.visible > 8) p.t = Math.min(tl.total, p.t + dt)   // the guide waits for the city
@@ -518,6 +526,7 @@ function Console({ xr, hud, many, dayNo, dayName, mode, zoomAt, colour, onPrev, 
     <group position={[0, .76, -.3]} rotation={[-.75, 0, 0]}>
       {layout(row1, .05)}
       {layout(row2, -.02)}
+      <Text font={FONT} fontSize={.014} color="#9a8763" anchorX="center" anchorY="middle" position={[0, -.075, 0]}>To leave at any time, hold B or Y</Text>
     </group>
   )
 }
