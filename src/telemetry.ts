@@ -225,7 +225,13 @@ export function observeCrew<E extends { type: string }>(onEvent: (e: E) => void)
   if (!DSN || observed.has(onEvent)) return onEvent
   const open = new Map<string, Sentry.Span>()
   const wrapped = (e: E) => {
-    const c = e as unknown as { agent?: string; kind?: string; state?: string; detail?: string }
+    const c = e as unknown as { agent?: string; kind?: string; state?: string; detail?: string; judge?: string; ok?: boolean; issues?: { text: string; owner: string }[] }
+    if (e.type === 'verdict' && c.judge) {
+      const n = c.issues?.length ?? 0
+      const attrs = { judge: c.judge, ok: !!c.ok, issues: n }
+      ;(c.ok ? log.info : log.warn)(`${c.judge} verdict: ${c.ok ? 'approved' : n + ' issue(s)'}`, attrs)
+      breadcrumb('crew', `${c.judge} verdict`, { ...attrs, detail: c.issues?.map(i => i.text).join('; ')?.slice(0, 300) })
+    }
     if (e.type === 'crew' && c.agent) {
       const attrs = { agent: c.agent, kind: c.kind, state: c.state, detail: c.detail?.slice(0, 300) }
       ;(c.state === 'failed' ? log.warn : log.info)(`${c.agent} ${c.state}: ${c.detail ?? ''}`.slice(0, 300), attrs)

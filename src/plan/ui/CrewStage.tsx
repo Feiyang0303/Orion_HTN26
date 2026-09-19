@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import { fold, MEMBER, type LedgerEntry } from '../../crew/roster'
+import { fold, MEMBER, type BoardItem, type LedgerEntry } from '../../crew/roster'
 import type { CrewEvent } from '../events'
 import type { DayDraft } from '../session'
 import { dayColour } from '../../ui/palette'
@@ -14,6 +14,7 @@ import Fault from '../../ui/Fault'
 
 const PHASES = [
   { id: 'Scout', label: 'Choosing places', agent: 'Scout' },
+  { id: 'Critic', label: 'Judging', agent: 'Critic' },
   { id: 'Router', label: 'Routing the days', agent: 'Router' },
   { id: 'Narrator', label: 'Writing the guide', agent: 'Narrator' },
   { id: 'Auditor', label: 'Checking every line', agent: 'Auditor' },
@@ -28,7 +29,7 @@ export default function CrewStage({ city, events, drafts, error, eventId, onRetr
   onRetry: () => void
   onBack: () => void
 }) {
-  const { status, ledger } = useMemo(() => fold(events), [events])
+  const { status, ledger, board } = useMemo(() => fold(events), [events])
   const active = PHASES.findIndex(p => status[p.agent].state === 'working')
   const reached = Math.max(active, ...PHASES.map((p, i) => (status[p.agent].state !== 'idle' ? i : -1)))
 
@@ -71,6 +72,16 @@ export default function CrewStage({ city, events, drafts, error, eventId, onRetr
         <div className="cw-centre" aria-hidden />
 
         <aside className="cw-found">
+          {board.length > 0 && (
+            <section className="cw-board o-glass" aria-live="polite">
+              <p className="o-eyebrow">The Judger</p>
+              <ul>
+                <AnimatePresence initial={false}>
+                  {board.map(item => <IssueCard key={item.id} item={item} />)}
+                </AnimatePresence>
+              </ul>
+            </section>
+          )}
           <p className="o-eyebrow">Taking shape</p>
           <div className="cw-found-list">
             <AnimatePresence>
@@ -93,6 +104,23 @@ export default function CrewStage({ city, events, drafts, error, eventId, onRetr
         </aside>
       </div>
     </div>
+  )
+}
+
+function IssueCard({ item }: { item: BoardItem }) {
+  const owner = MEMBER[item.owner]
+  const judge = MEMBER[item.judge]
+  return (
+    <motion.li
+      layout
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      className={`cw-issue ${item.open ? (item.fixing ? 'is-fixing' : 'is-open') : 'is-fixed'}`}
+      style={{ ['--c' as string]: (item.open ? owner : judge).colour }}
+    >
+      <b>{item.open ? (item.fixing ? `${owner.name} is fixing` : `${owner.name} must fix`) : 'Fixed'}</b>
+      <span>{item.text}</span>
+    </motion.li>
   )
 }
 

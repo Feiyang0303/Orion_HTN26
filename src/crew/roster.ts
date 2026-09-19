@@ -1,4 +1,4 @@
-import type { Agent, CrewEvent } from '../plan/events'
+import type { Agent, CrewEvent, Issue } from '../plan/events'
 
 /* The crew, as it is drawn. Kept apart from the scene so the same roster names
    the figures, colours their work in every other screen, and says which of them
@@ -24,7 +24,7 @@ export const CREW: Member[] = [
   { id: 'Scout',      name: 'Scout',        kind: 'agent', colour: '#6fe0b5', role: 'Naming places worth flying to',        prop: 'spyglass', hat: 'hood',  skin: '#c99a76' },
   { id: 'Router',     name: 'Router',       kind: 'tool',  colour: '#5cc8ff', role: 'Measuring real streets',               prop: 'compass',  hat: 'beret', skin: '#f0d9c2' },
   { id: 'Timekeeper', name: 'Timekeeper',   kind: 'tool',  colour: '#ffc266', role: 'Fitting the day to the clock',         prop: 'clock',    hat: 'band',  skin: '#b98764' },
-  { id: 'Critic',     name: 'Critic',       kind: 'agent', colour: '#ff8f8f', role: 'Reading the plan critically',          prop: 'lens',     hat: 'bun',   skin: '#e4bf9f' },
+  { id: 'Critic',     name: 'Judger',       kind: 'agent', colour: '#ff8f8f', role: 'Finding what is wrong, sending others back', prop: 'lens',     hat: 'bun',   skin: '#e4bf9f' },
   { id: 'Narrator',   name: 'Narrator',     kind: 'agent', colour: '#c8a2ff', role: 'Writing what the guide will say',      prop: 'quill',    hat: 'beret', skin: '#d9ad86' },
   { id: 'Auditor',    name: 'Auditor',      kind: 'tool',  colour: '#a6e86b', role: 'Tracing every sentence to a source',   prop: 'stamp',    hat: 'cap',   skin: '#efd2b6' },
   { id: 'Voice',      name: 'Voice',        kind: 'agent', colour: '#ff9ad5', role: 'Recording the narration',              prop: 'mic',      hat: 'none',  skin: '#c08d69' },
@@ -33,12 +33,14 @@ export const MEMBER = Object.fromEntries(CREW.map(m => [m.id, m])) as Record<Age
 
 export type Status = { state: 'idle' | 'working' | 'done' | 'failed'; detail: string; serial: number }
 export type LedgerEntry = { id: number; agent: Agent; text: string; failed: boolean }
+export type BoardItem = Issue & { judge: Agent; open: boolean; fixing: boolean }
 
-/** Fold the crew's event stream into what each figure is doing and what has been
-    written to the ledger. Pure, so the scene can be driven from a recording. */
-export function fold(events: CrewEvent[]): { status: Record<Agent, Status>; ledger: LedgerEntry[] } {
+/** Fold the crew's event stream into what each figure is doing, the ledger, and
+    the Judger's board: objections that are still open, and who is fixing them. */
+export function fold(events: CrewEvent[]): { status: Record<Agent, Status>; ledger: LedgerEntry[]; board: BoardItem[] } {
   const status = Object.fromEntries(CREW.map(m => [m.id, { state: 'idle', detail: '', serial: 0 }])) as Record<Agent, Status>
   const ledger: LedgerEntry[] = []
+  const scopes = new Map<string, BoardItem[]>()
   let n = 0
   for (const e of events) {
     if (e.type === 'crew') {
@@ -48,9 +50,23 @@ export function fold(events: CrewEvent[]): { status: Record<Agent, Status>; ledg
       s.detail = e.detail
       s.serial = ++n
       if (e.state === 'done' || e.state === 'failed') ledger.push({ id: n, agent: e.agent, text: e.detail, failed: e.state === 'failed' })
+    } else if (e.type === 'verdict') {
+      const key = `${e.judge}:${e.scope}`
+      scopes.set(key, e.ok && !e.issues.length
+        ? (scopes.get(key) ?? []).map(i => ({ ...i, open: false }))
+        : e.issues.map(i => ({ ...i, judge: e.judge, open: !e.ok, fixing: false })))
+      if (!e.ok || e.issues.length) {
+        ledger.push({
+          id: ++n, agent: e.judge,
+          text: e.ok ? 'Approved' : e.issues.map(i => i.text).join(' · '),
+          failed: !e.ok,
+        })
+      }
     } else if (e.type === 'stop') {
       ledger.push({ id: ++n, agent: 'Narrator', text: `Page written: ${e.stop.name}`, failed: false })
     }
   }
-  return { status, ledger }
+  const busy = new Set(CREW.filter(m => status[m.id].state === 'working').map(m => m.id))
+  const board = [...scopes.values()].flat().map(i => ({ ...i, fixing: i.open && busy.has(i.owner) }))
+  return { status, ledger, board }
 }

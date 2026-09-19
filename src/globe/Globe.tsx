@@ -92,9 +92,9 @@ const VERT = /* glsl */`
     vec3 n = normalize(position);
 
     float d = acos(clamp(dot(n, normalize(uCity)), -1.0, 1.0));
-    float near = uGlow * smoothstep(0.34, 0.0, d);
+    float near = uGlow * smoothstep(0.3, 0.02, d);
     float wave = uGlow * exp(-pow((d - uWave * 1.9) * 9.0, 2.0)) * (1.0 - uWave);
-    vHeat = clamp(near * 1.5 + wave, 0.0, 1.0);
+    vHeat = clamp(near * 1.15 + wave * 0.9, 0.0, 1.0);
 
     /* The sun is fixed in view space, so the terminator stays where the light
        is while the planet turns under it. */
@@ -109,7 +109,7 @@ const VERT = /* glsl */`
     // dim what is on the far side of the sphere; it is still there, just not competing
     vAlpha = mix(0.04, 1.0, smoothstep(-0.12, 0.34, nv.z)) * tw * st * (0.62 + 0.38 * day + lamps);
     vColour = aColour;
-    gl_PointSize = uSize * uPx * aSize * (1.0 + vHeat * 2.0 + lamps * 1.0) / -mv.z;
+    gl_PointSize = uSize * uPx * aSize * (1.0 + vHeat * 1.4 + lamps * 1.0) / -mv.z;
     gl_Position = projectionMatrix * mv;
   }`
 
@@ -124,7 +124,7 @@ const FRAG = /* glsl */`
     vec3 night = vColour * vec3(0.42, 0.56, 0.9);
     float lamp = max(0.0, vLight - 1.0);
     vec3 base = mix(night, vColour, clamp(vLight, 0.0, 1.0));
-    vec3 col = mix(base, amber, clamp(vHeat + lamp, 0.0, 1.0)) * (0.95 + 0.45 * vLand + vHeat * 1.6 + lamp * 1.8);
+    vec3 col = mix(base, amber, clamp(vHeat + lamp, 0.0, 1.0)) * (0.95 + 0.45 * vLand + vHeat * 0.8 + lamp * 1.8);
     gl_FragColor = vec4(col, vAlpha * soft * (0.5 + 0.5 * vLand));
   }`
 
@@ -167,10 +167,10 @@ function dustGeometry(count: number, mode: 'shell' | 'ring', seedBase: number) {
       const r = 1.18 + Math.pow(rand(), .6) * 1.5
       x = Math.cos(a) * s * r; y = u * r; z = Math.sin(a) * s * r
     } else {
-      const a = rand() * Math.PI * 2, r = 1.26 + Math.pow(rand(), 1.6) * .42
-      x = Math.cos(a) * r; z = Math.sin(a) * r; y = (rand() - .5) * .05
+      const a = rand() * Math.PI * 2, r = 1.22 + Math.pow(rand(), .8) * 1.05
+      x = Math.cos(a) * r; z = Math.sin(a) * r; y = (rand() - .5) * .16
     }
-    pos.push(x, y, z); seed.push(rand()); size.push(.5 + rand() * (mode === 'ring' ? 1.1 : 1.6))
+    pos.push(x, y, z); seed.push(rand()); size.push(.45 + rand() * (mode === 'ring' ? .8 : 1.6))
   }
   const g = new THREE.BufferGeometry()
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
@@ -189,13 +189,13 @@ const ARC_VERT = /* glsl */`
     float head = fract(uTime * 0.09 + aArc * 0.137) * 1.5 - 0.25;
     float d = head - aT;
     float trail = smoothstep(0.4, 0.0, d) * step(0.0, d);
-    vA = trail * smoothstep(0.0, 0.05, aT) * smoothstep(1.0, 0.95, aT) * (0.45 + 0.55 * uGlow) * uReveal;
+    vA = trail * smoothstep(0.0, 0.05, aT) * smoothstep(1.0, 0.95, aT) * (0.7 + 0.5 * uGlow) * uReveal;
     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
   }`
 
 const ARC_FRAG = /* glsl */`
   varying float vA;
-  void main() { gl_FragColor = vec4(1.0, 0.78, 0.45, vA * 0.8); }`
+  void main() { gl_FragColor = vec4(1.0, 0.80, 0.48, vA); }`
 
 /** Great-circle hops between real land, lifted off the surface. Half of them
     end at the city once there is one, so the world leans towards it. */
@@ -403,8 +403,8 @@ export default function Globe({ city, cityWorld, energy, children }: {
         <lineSegments geometry={arcGeo} material={arcs.mat} />
 
         <group ref={marker} visible={false}>
-          <sprite scale={[.55, .55, 1]}>
-            <spriteMaterial map={tex} color="#ffb85c" transparent opacity={.9} depthWrite={false} blending={THREE.AdditiveBlending} />
+          <sprite scale={[.34, .34, 1]}>
+            <spriteMaterial map={tex} color="#ffb040" transparent opacity={.5} depthWrite={false} blending={THREE.AdditiveBlending} />
           </sprite>
           <mesh ref={beam} position={[0, .28, 0]}>
             <cylinderGeometry args={[.004, .012, .56, 10, 1, true]} />
@@ -428,6 +428,10 @@ export default function Globe({ city, cityWorld, energy, children }: {
       </group>
 
       <mesh material={atmo} scale={1.13}><sphereGeometry args={[R, 48, 32]} /></mesh>
+      {/* a breath of light behind the planet, so it sits in space instead of on black */}
+      <sprite scale={[4.6, 4.6, 1]} position={[0, 0, -.6]}>
+        <spriteMaterial map={tex} color="#4f7ad8" transparent opacity={.2} depthWrite={false} depthTest={false} blending={THREE.AdditiveBlending} />
+      </sprite>
       {/* one thin astrolabe ring, and nothing else: an accessory, not a diagram */}
       <mesh rotation={[Math.PI / 2 + .41, 0, 0]}>
         <torusGeometry args={[1.34, .004, 6, 160]} />

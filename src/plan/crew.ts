@@ -1,5 +1,6 @@
 import type { LatLon, Leg, Waypoint, Wish } from '../types'
 import type { Agent, CrewEvent } from './events'
+import { verdict } from './events'
 import { notable, type Article } from './wikipedia'
 import { nearestWorthIt, scout, type Kind, type NearChoice, type ScoutPick } from './scout'
 import { critic } from './critic'
@@ -164,7 +165,10 @@ export async function findStops(opts: {
   let picks: ScoutPick[] = []
   let complaints: string[] = []
 
+  // Scout proposes, Timekeeper and Judger object, Scout tries again. The last
+  // pass is still judged so leftover errors stay on the board instead of vanishing.
   for (let attempt = 0; attempt < 2; attempt++) {
+    const last = attempt === 1
     say('Scout', 'agent', attempt ? 'reworking' : 'working',
       attempt ? 'Choosing again to fix: ' + complaints.join('; ') : `Naming ${count} well-known place${count === 1 ? '' : 's'} in ${city}`)
     const chosen = await scout({
@@ -177,25 +181,30 @@ export async function findStops(opts: {
       `${chosen.rejected.length} suggestion${chosen.rejected.length === 1 ? '' : 's'} could not be verified and ${chosen.rejected.length === 1 ? 'was' : 'were'} dropped: ` +
       chosen.rejected.slice(0, 4).map(r => `${r.title} (${r.reason})`).join('; '))
     say('Scout', 'agent', 'done', picks.map(p => p.article.title).join(' · '))
-    if (attempt) break
 
     const all = [...fixed, ...picks.map(p => fromPick(p, wish))]
     const secs = legSecs ? await legSecs(all).catch(() => []) : []
     const t = audit(all.map(c => c.visitMin), secs, window, wish.transport === 'auto' ? 'transit' : wish.transport, meals)
+    const clockIssues = t.complaints.map((text, i) => ({ id: `time-${i}`, text, owner: 'Scout' as const }))
+    onEvent(verdict('Timekeeper', 'day', clockIssues))
     say('Timekeeper', 'tool', t.complaints.length ? 'failed' : 'done',
       t.complaints.join('; ') ||
       `${Math.round(t.totalMin)} min in all${t.mealMin ? `, ${t.mealMin} of them at the table` : ''}, inside ${wish.startAt}–${wish.endAt}`)
-    complaints = t.complaints
 
-    if (!complaints.length) {
-      say('Critic', 'agent', 'working', 'Reviewing the day')
-      const review = await critic(summarise(all, secs, wish))
-      // A place the person named is not the Critic's to reject.
-      const fair = review.complaints.filter(c => !all.some(s => s.asked && c.toLowerCase().includes(s.name.toLowerCase())))
-      say('Critic', 'agent', fair.length ? 'failed' : 'done', fair.join('; ') || 'Approved')
-      complaints = fair
+    if (t.complaints.length) {
+      complaints = t.complaints
+      if (last) break
+      continue
     }
-    if (!complaints.length) break
+
+    say('Critic', 'agent', 'working', 'Judging the day')
+    const review = await critic(summarise(all, secs, wish))
+    // A place the person named is not the Judger's to reject.
+    const fair = review.complaints.filter(c => !all.some(s => s.asked && c.text.toLowerCase().includes(s.name.toLowerCase())))
+    onEvent(verdict('Critic', 'day', fair.map((c, i) => ({ id: `judge-${i}`, text: c.text, owner: c.owner }))))
+    say('Critic', 'agent', fair.length ? 'failed' : 'done', fair.map(c => c.text).join('; ') || 'Approved')
+    complaints = fair.map(c => c.text)
+    if (!complaints.length || last) break
   }
   return picks.map(p => fromPick(p, wish))
 }

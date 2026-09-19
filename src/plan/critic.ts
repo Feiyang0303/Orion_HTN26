@@ -1,4 +1,5 @@
 import { askJson } from './json'
+import type { Agent } from './events'
 
 /* CRITIC (LLM). The arithmetic checks live in timekeeper.audit and run first;
    this call is only for the judgement the numbers cannot make — and the one
@@ -27,12 +28,20 @@ one will be discarded.
 
 If the day is good, approve it and say nothing.
 
-Reply with a JSON object: {"ok": true|false, "complaints":[{"stopId":"<id or omit>","issue":"<one sentence, and what would fix it>"}]}`
+Reply with a JSON object:
+{"ok": true|false, "complaints":[{"stopId":"<id or omit>","owner":"Scout|Timekeeper|Narrator|Router","issue":"<one sentence, and what would fix it>"}]}
+owner is who must change something: Scout re-picks places, Timekeeper is for a day that does not fit the hours (Scout should drop or shorten), Narrator is only for wording, Router for order. Default Scout.`
 
-export type Review = { ok: boolean; complaints: string[] }
+export type Review = { ok: boolean; complaints: { text: string; owner: Agent; stopId?: string }[] }
+
+const OWNERS: Agent[] = ['Scout', 'Timekeeper', 'Narrator', 'Router']
 
 export async function critic(summary: string): Promise<Review> {
-  const r = await askJson<{ ok: boolean; complaints?: { stopId?: string; issue: string }[] }>('critic', SYSTEM, summary, 3000)
-  const complaints = (r.complaints ?? []).map(c => (c.stopId ? `${c.stopId}: ` : '') + c.issue)
+  const r = await askJson<{ ok: boolean; complaints?: { stopId?: string; owner?: string; issue: string }[] }>('critic', SYSTEM, summary, 3000)
+  const complaints = (r.complaints ?? []).map(c => ({
+    text: (c.stopId ? `${c.stopId}: ` : '') + c.issue,
+    owner: (OWNERS as string[]).includes(c.owner ?? '') ? c.owner as Agent : 'Scout' as const,
+    stopId: c.stopId,
+  }))
   return { ok: r.ok !== false && complaints.length === 0, complaints }
 }

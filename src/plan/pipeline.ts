@@ -2,6 +2,7 @@ import { report, observeCrew } from '../telemetry'
 import type { Plan, Stop, Target, Wish } from '../types'
 import { HHMM, MINS } from '../types'
 import type { Agent, CrewEvent } from './events'
+import { verdict } from './events'
 import { geocode, locate } from './geocode'
 import { notable, photoFor, wikiSource, type Article } from './wikipedia'
 import { bestOrder, legsFor } from './router'
@@ -122,13 +123,18 @@ export async function writePages(skeleton: Skeleton, opts: PipelineOptions): Pro
     const weak = unsupportedIn(drafts)
     if (weak.length) {
       say('Auditor', 'tool', 'failed', `${c.name}: ${weak.length} statement${weak.length === 1 ? '' : 's'} not in the source — sent back to the narrator`)
+      onEvent(verdict('Auditor', c.id, weak.map((text, i) => ({ id: `${c.id}-${i}`, text: `${c.name}: ${text}`, owner: 'Narrator' }))))
       try { drafts = audit((await narrate({ name: c.name, extract: a?.extract ?? '' }, targets, mode, ctx, weak)).beats) } catch { /* keep the first draft; it is repaired below */ }
     }
     drafts = drafts.flatMap(d => repair(d) ?? [])
     const traced = tally(drafts)
-    if (first.total) say('Auditor', 'tool', 'done',
-      `${c.name}: ${first.traced} of ${first.total} statements traced at first` +
-      (weak.length ? `, all ${traced.total} after the rewrite` : ''))
+    if (first.total) {
+      const leftover = unsupportedIn(drafts)
+      onEvent(verdict('Auditor', c.id, leftover.map((text, i) => ({ id: `${c.id}-${i}`, text: `${c.name}: ${text}`, owner: 'Narrator' }))))
+      say('Auditor', 'tool', leftover.length ? 'failed' : 'done',
+        `${c.name}: ${first.traced} of ${first.total} statements traced at first` +
+        (weak.length ? `, ${traced.traced} of ${traced.total} after the rewrite` : ''))
+    }
 
     const beats = await Promise.all(drafts.map((d, i) => voice(async () => {
       try {

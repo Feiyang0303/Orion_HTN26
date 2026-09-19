@@ -262,6 +262,17 @@ input[type='time'].o-input { color-scheme: dark; padding: .7em .9em; }
 .cw-error { padding: 12px 14px; border-radius: 14px; background: rgba(40, 14, 16, .9); border: 1px solid rgba(255, 143, 143, .4); color: #ffd0d0; font-size: 13px; }
 .cw-error p { margin: 0 0 10px; }
 
+.cw-board { padding: 14px 16px 10px; border-radius: 18px; }
+.cw-board ul { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.cw-issue {
+  display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--c) 45%, transparent); font-size: 13px; line-height: 1.4; color: var(--ink);
+  background: color-mix(in srgb, var(--c) 12%, rgba(10, 11, 15, .55));
+}
+.cw-issue b { font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--c); font-weight: 600; }
+.cw-issue.is-fixed { opacity: .55; border-style: dashed; }
+.cw-issue.is-fixed b { color: var(--ok); }
+.cw-issue.is-fixing { box-shadow: 0 0 18px color-mix(in srgb, var(--c) 35%, transparent); }
 .cw-found { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .cw-found-list { display: flex; flex-direction: column; gap: 12px; overflow: auto; max-height: calc(100vh - 210px); padding-right: 2px; }
 .cw-found-list::-webkit-scrollbar { width: 0; }
