@@ -21,6 +21,7 @@ namespace Orion.Editor
 {
     /* The project, from the command line. Nothing here is clicked through a menu:
      *
+     *   Unity -batchmode       -projectPath quest -buildTarget Android -executeMethod Orion.Editor.Build.ImportText
      *   Unity -batchmode -quit -projectPath quest -buildTarget Android -executeMethod Orion.Editor.Build.Setup
      *   Unity -batchmode -quit -projectPath quest -buildTarget Android -executeMethod Orion.Editor.Build.Apk
      *
@@ -35,11 +36,13 @@ namespace Orion.Editor
 
         public static void Setup()
         {
-            Text();
             Pipeline();
             Player();
             Headset();
             MainScene();
+            // The XR packages leave empty, numbered twins of their own folders behind on a first run.
+            foreach (string stray in new[] { "Assets/XR 1", "Assets/XR/Settings 1" })
+                if (AssetDatabase.IsValidFolder(stray) && Directory.GetFileSystemEntries(stray).Length == 0) AssetDatabase.DeleteAsset(stray);
             AssetDatabase.SaveAssets();
         }
 
@@ -70,17 +73,27 @@ namespace Orion.Editor
             AssetDatabase.ImportAsset(ConfigPath);
         }
 
-        /// <summary>TextMeshPro's font and shaders, which ship inside its package as something to import.</summary>
-        static void Text()
+        /// <summary>TextMeshPro's font and shaders, which ship inside its package as something to import. The import
+        /// finishes after this returns, so this is run on its own, without -quit, and closes the editor itself.</summary>
+        public static void ImportText()
         {
-            if (!Directory.Exists("Assets/TextMesh Pro")) AssetDatabase.ImportPackage("Packages/com.unity.ugui/Package Resources/TMP Essential Resources.unitypackage", false);
+            if (Directory.Exists("Assets/TextMesh Pro")) { EditorApplication.Exit(0); return; }
+            AssetDatabase.importPackageCompleted += _ => EditorApplication.Exit(0);
+            AssetDatabase.importPackageFailed += (_, error) => { Debug.LogError($"TextMeshPro's resources would not import: {error}"); EditorApplication.Exit(1); };
+            AssetDatabase.ImportPackage("Packages/com.unity.ugui/Package Resources/TMP Essential Resources.unitypackage", false);
+        }
+
+        /// <summary>A folder the asset database knows about: one made behind its back gets a second, numbered twin.</summary>
+        static void Folder(string parent, string name)
+        {
+            if (!AssetDatabase.IsValidFolder($"{parent}/{name}")) AssetDatabase.CreateFolder(parent, name);
         }
 
         /// <summary>A render pipeline a mobile GPU can hold 72 Hz with: no HDR, no shadows, no depth or opaque
         /// copies, no post-processing. The city's lighting is in its photographs.</summary>
         static void Pipeline()
         {
-            Directory.CreateDirectory(Settings);
+            Folder("Assets/Orion", "Settings");
             string rendererPath = $"{Settings}/OrionRenderer.asset", pipelinePath = $"{Settings}/OrionPipeline.asset";
             var pipeline = AssetDatabase.LoadAssetAtPath<UniversalRenderPipelineAsset>(pipelinePath);
             if (pipeline == null)
@@ -127,7 +140,7 @@ namespace Orion.Editor
             const BuildTargetGroup group = BuildTargetGroup.Android;
             if (!EditorBuildSettings.TryGetConfigObject(XRGeneralSettings.settingsKey, out XRGeneralSettingsPerBuildTarget perTarget))
             {
-                Directory.CreateDirectory("Assets/XR");
+                Folder("Assets", "XR");
                 perTarget = ScriptableObject.CreateInstance<XRGeneralSettingsPerBuildTarget>();
                 AssetDatabase.CreateAsset(perTarget, "Assets/XR/XRGeneralSettingsPerBuildTarget.asset");
                 EditorBuildSettings.AddConfigObject(XRGeneralSettings.settingsKey, perTarget, true);
