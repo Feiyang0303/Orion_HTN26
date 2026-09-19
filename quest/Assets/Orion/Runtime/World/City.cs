@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 using CesiumForUnity;
 using Orion.Flight;
 using UnityEngine;
@@ -61,8 +62,14 @@ namespace Orion.World
             return city;
         }
 
-        // Only the status is passed on: Cesium's own message carries the tileset's address, and the key is in it.
-        void OnLoadFailure(Cesium3DTilesetLoadFailureDetails failure) { if (failure.tileset == Tiles) Refused?.Invoke(failure.httpStatusCode); }
+        // Only the status is passed on: Cesium's own message carries the tileset's address, and the key is in it. The
+        // status is read out of that message, because the struct's own httpStatusCode says 200 for a refused root request.
+        void OnLoadFailure(Cesium3DTilesetLoadFailureDetails failure)
+        {
+            if (failure.tileset != Tiles) return;
+            var said = Regex.Match(failure.message ?? "", @"status code (\d+)");
+            Refused?.Invoke(said.Success ? long.Parse(said.Groups[1].Value) : failure.httpStatusCode);
+        }
 
         void OnDestroy() => Cesium3DTileset.OnCesium3DTilesetLoadFailure -= OnLoadFailure;
 

@@ -26,7 +26,7 @@ namespace Orion.Editor
             EditorApplication.update += Tick;                                              // entering play mode reloads this class
             Cesium3DTileset.OnCesium3DTilesetLoadFailure += failure =>                     // never keep asking a server that has said no
             {
-                Debug.LogError($"[smoke] the tile server refused: HTTP {failure.httpStatusCode}. Stopping.");
+                Debug.LogError("[smoke] the tile server refused the tileset. Stopping.");
                 pendingExit = 3;
             };
         }
