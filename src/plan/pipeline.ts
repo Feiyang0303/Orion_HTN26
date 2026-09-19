@@ -244,6 +244,11 @@ const toTarget = (a: Article): Target => ({
 
 const firstSentence = (s: string) => {
   const clean = s.replace(/\s+/g, ' ').trim()
+  /* The browser's sentence segmenter knows "St. Mary" and "553.3 m (1,815 ft)"
+     are not sentence ends; the regex it replaces did not, and printed pages
+     that ended at "Basilica of St." */
+  const Seg = (Intl as unknown as { Segmenter?: new (l: string, o: { granularity: string }) => { segment(t: string): Iterable<{ segment: string }> } }).Segmenter
+  if (Seg) { for (const { segment } of new Seg('en', { granularity: 'sentence' }).segment(clean)) return segment.trim() || clean }
   return clean.split(/(?<=[.!?])\s+(?=[A-Z"“(])/)[0] || clean
 }
 

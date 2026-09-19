@@ -2,8 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import CrewStage from './CrewStage'
 import TripView from './TripView'
-import Storybook from './Storybook'
-import './journal.css'
+import Journal from './Journal'
 import Icon from '../../ui/Icon'
 import { dayColour } from '../../ui/palette'
 import type { MapView } from '../../fly/MapRig'
@@ -149,9 +148,12 @@ export default function Studio({ wish, mode, origin, onFly, onHome, onMap, onCre
       <TripView trip={trip!} day={dayIx} onDay={setDayIx} onFly={onFly} onFocus={setFocus} planning={asking} onBook={() => setBook(true)} />
 
       <AnimatePresence>
+        {/* Fixed and above the trip panel, below the editor bar, which stays
+            where it is: the journal is a way of reading the plan, the editor
+            is how the plan is changed, and both belong on screen together. */}
         {book && trip && (
-          <motion.div key="book" className="jr-bookstage" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: .45 }}>
-            <Storybook trip={trip} events={events} planning={asking} onFly={onFly} onHome={onHome} onClose={() => setBook(false)} />
+          <motion.div key="book" style={{ position: 'fixed', inset: 0, zIndex: 5 }} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: .45 }}>
+            <Journal trip={trip} onFly={onFly} onHome={onHome} onClose={() => setBook(false)} />
           </motion.div>
         )}
       </AnimatePresence>

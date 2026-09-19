@@ -43,7 +43,7 @@ export default function TripView({ trip, day, onDay, onFly, onFocus, planning, o
         {trip.preface && <p className="t-preface">{trip.preface}</p>}
         {onBook && (
           <button type="button" className="o-btn small t-book-btn" onClick={onBook} disabled={planning}>
-            <Icon name="spark" size={14} /> Read it as a book
+            <Icon name="spark" size={14} /> Open the journal
           </button>
         )}
       </header>
