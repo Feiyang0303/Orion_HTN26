@@ -10,6 +10,8 @@ import { Path } from '../fly/routePath'
 import { anchorsFor, keyLeg, keyStop, keyTarget, SAMPLE_STEP_M } from '../fly/anchors'
 import { activeBeat, buildTimeline } from '../fly/timeline'
 import { resample, smootherstep } from '../fly/geo'
+import { legStyle, smoothHeights } from '../fly/legStyle'
+import type { Transport } from '../types'
 import { dayColour } from '../ui/palette'
 import { report } from '../telemetry'
 import { store } from './store'
@@ -114,7 +116,7 @@ export default function Scene({ days, store: xr, onReady }: { days: Day[]; store
       const pts: THREE.Vector3[] = []
       const n = resample(leg.polyline, SAMPLE_STEP_M).length
       for (let j = 0; j < n; j++) { const p = at(keyLeg(i, j)); if (p) pts.push(p) }
-      return new Path(pts)
+      return new Path(smoothHeights(pts))
     })
     const placed = stops.filter(Boolean) as THREE.Vector3[]
     const c = new THREE.Vector3()
@@ -308,7 +310,7 @@ export default function Scene({ days, store: xr, onReady }: { days: Day[]; store
 
       {/* the table, and everything on it */}
       {geo.ready && rig.mode === 'table' && <Plinth centre={geo.c} yMin={geo.yMin} half={TABLE.half * tableScale} yaw={rig.yaw} unit={tableScale} />}
-      {geo.legs.map((p, i) => p.pts.length > 1 && <Route key={`${day.number}:${i}`} path={p} colour={c} unit={unit} played={hud.stop > i} />)}
+      {geo.legs.map((p, i) => p.pts.length > 1 && <Route key={`${day.number}:${i}`} path={p} colour={c} unit={unit} played={hud.stop > i} transport={day.legs[i].transport} estimated={day.legs[i].estimated} />)}
       {day.stops.map((stop, i) => {
         const pos = geo.stops[i]; if (!pos) return null
         return <Pin key={stop.id} refFn={g => { pinPulse.current[i] = g }} pos={pos} n={i + 1} name={stop.name} colour={c} unit={unit} active={hud.stop === i} showName={rig.mode === 'table' || hud.stop === i}
@@ -356,13 +358,42 @@ function Plinth({ centre, yMin, half, yaw, unit }: { centre: THREE.Vector3; yMin
   )
 }
 
-function Route({ path, colour, unit, played }: { path: Path; colour: string; unit: number; played: boolean }) {
-  const geo = useMemo(() => {
+/** Each way of travelling is a different object on the table: footsteps are beads, a bicycle's
+    line is longer beads, and a bus or a car is a ribbon with a glow around it. */
+function Route({ path, colour, unit, played, transport, estimated }: { path: Path; colour: string; unit: number; played: boolean; transport: Transport; estimated?: boolean }) {
+  const st = legStyle(transport, estimated)
+  const opacity = played ? .4 : st.opacity
+  const tube = useMemo(() => {
+    if (st.beads) return null
     const curve = new THREE.CatmullRomCurve3(path.pts.map(p => new THREE.Vector3(p.x, p.y + .0015 * unit + 2, p.z)), false, 'centripetal')
-    return new THREE.TubeGeometry(curve, Math.min(600, path.pts.length * 3), .0024 * unit, 6, false)
-  }, [path, unit])
-  useEffect(() => () => geo.dispose(), [geo])
-  return <mesh geometry={geo} raycast={noHit}><meshBasicMaterial color={colour} transparent opacity={played ? .4 : .95} toneMapped={false} /></mesh>
+    const n = Math.min(600, path.pts.length * 3)
+    return { main: new THREE.TubeGeometry(curve, n, st.tube * unit, 6, false), glow: st.glow ? new THREE.TubeGeometry(curve, n, st.tube * 2.6 * unit, 6, false) : null }
+  }, [path, unit, st.beads, st.tube, st.glow])
+  useEffect(() => () => { tube?.main.dispose(); tube?.glow?.dispose() }, [tube])
+  const beads = useMemo(() => {
+    if (!st.beads) return []
+    const gap = st.beads * unit, out: THREE.Vector3[] = []
+    for (let s = 0; s <= path.length; s += gap) out.push(path.at(s).clone().add(new THREE.Vector3(0, .0015 * unit + 2, 0)))
+    return out
+  }, [path, unit, st.beads])
+  const dummy = useMemo(() => new THREE.Object3D(), [])
+  const inst = useRef<THREE.InstancedMesh>(null)
+  useEffect(() => {
+    const m = inst.current; if (!m) return
+    beads.forEach((p, i) => { dummy.position.copy(p); dummy.updateMatrix(); m.setMatrixAt(i, dummy.matrix) })
+    m.count = beads.length; m.instanceMatrix.needsUpdate = true
+  }, [beads, dummy])
+  return (
+    <>
+      {tube && <mesh geometry={tube.main} raycast={noHit}><meshBasicMaterial color={colour} transparent opacity={opacity} toneMapped={false} /></mesh>}
+      {tube?.glow && <mesh geometry={tube.glow} raycast={noHit}><meshBasicMaterial color={colour} transparent opacity={.14} depthWrite={false} toneMapped={false} /></mesh>}
+      {st.beads && beads.length > 0 && (
+        <instancedMesh key={beads.length} ref={inst} args={[undefined, undefined, beads.length]} raycast={noHit} frustumCulled={false}>
+          <sphereGeometry args={[st.tube * 1.35 * unit, 10, 8]} /><meshBasicMaterial color={colour} transparent opacity={opacity} toneMapped={false} />
+        </instancedMesh>
+      )}
+    </>
+  )
 }
 
 function Pin({ pos, n, name, colour, unit, active, showName, onPick, refFn }: {

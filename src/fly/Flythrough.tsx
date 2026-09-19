@@ -7,6 +7,8 @@ import GoogleTiles, { probeTiles, type TilesHandle } from './GoogleTiles'
 import { GroundPlacer } from './ground'
 import { anchorsFor, keyLeg, keyStop, keyTarget, SAMPLE_STEP_M } from './anchors'
 import { Path } from './routePath'
+import { smoothHeights } from './legStyle'
+import RouteLine from './RouteLine'
 import { frameFor } from './director'
 import { Governor, type Shot } from './quality'
 import { activeBeat, buildTimeline, type Segment } from './timeline'
@@ -60,7 +62,7 @@ function Rig({ plan, begin, onStopReached, onFinish, onHud, control, tiles, load
       const n = resample(leg.polyline, SAMPLE_STEP_M).length
       const pts: THREE.Vector3[] = []
       for (let j = 0; j < n; j++) { const p = at(keyLeg(i, j)); if (p) pts.push(p) }
-      return new Path(pts)
+      return new Path(smoothHeights(pts))
     })
     const legStart: number[] = []
     let acc = 0
@@ -343,10 +345,7 @@ function Rig({ plan, begin, onStopReached, onFinish, onHud, control, tiles, load
   const curLeg = Math.max(0, Math.min(plan.legs.length - 1, hudLeg(s.current.hud)))
   return (
     <>
-      {legPaths.map((p, i) => p.pts.length > 1 && (
-        <Line key={i} points={p.pts.map(v => [v.x, v.y + 2, v.z] as [number, number, number])}
-          color="#f0b45e" lineWidth={i < curLeg ? 2 : 4} transparent opacity={i < curLeg ? 0.35 : 0.95} raycast={noHit} />
-      ))}
+      {legPaths.map((p, i) => <RouteLine key={i} pts={p.pts} colour="#f0b45e" transport={plan.legs[i].transport} estimated={plan.legs[i].estimated} dim={i < curLeg} lift={2} />)}
       {plan.stops.map((stop, i) => {
         const c = ground.get(keyStop(i)); if (!c) return null
         return (

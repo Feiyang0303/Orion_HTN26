@@ -465,3 +465,9 @@ input[type='time'].o-input { color-scheme: dark; padding: .7em .9em; }
 .tv-vr { margin: 0 0 0 10px; padding: 8px 14px; font-size: 12.5px; line-height: 1.45; max-width: 460px; align-self: center; }
 .tv-vr a { color: var(--o-amber, #f0b45e); word-break: break-all; }
 .tv-vr em { display: block; color: #9a8763; font-style: normal; }
+
+/* how long a leg takes, written on the leg */
+.route-pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px 4px 8px; border-radius: 999px; white-space: nowrap;
+  font: 500 11.5px var(--sans, 'DM Sans', system-ui, sans-serif); color: #f4e7c6; background: color-mix(in srgb, #0c0a08 82%, transparent);
+  border: 1px solid color-mix(in srgb, var(--c) 55%, transparent); backdrop-filter: blur(6px); animation: pin-in .6s var(--ease) both; }
+.route-pill svg { color: var(--c); }

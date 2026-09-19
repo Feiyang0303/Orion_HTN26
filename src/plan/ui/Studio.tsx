@@ -109,12 +109,14 @@ export default function Studio({ wish, mode, origin, onFly, onHome, onMap, onCre
     const routes: MapView['routes'] = []
     if (stay) pins.push({ id: 'stay', lat: stay.lat, lon: stay.lon, label: '⌂', name: stay.name, colour: '#ffffff', home: true })
     if (days.length) {
+      // How long each leg takes is written on it, unless several days are on the map at once and it would be a thicket.
+      const pills = !!trip && (dayIx !== 'all' || days.length === 1)
       days.forEach((d, di) => {
         const c = dayColour((d.number ?? di + 1) - 1)
         const dim = dayIx !== 'all' && dayIx !== d.number
         d.stops.forEach((s, k) => pins.push({ id: `${d.number}:${s.id}`, lat: s.lat, lon: s.lon, label: String(k + 1), name: dim ? undefined : s.name, colour: c }))
-        d.legs.forEach((l, k) => routes.push({ id: `${d.number}:${k}`, points: l.polyline, colour: c, dim }))
-        if (d.approach) routes.push({ id: `${d.number}:approach`, points: d.approach.polyline, colour: c, dim })
+        d.legs.forEach((l, k) => routes.push({ id: `${d.number}:${k}`, points: l.polyline, colour: c, dim, transport: l.transport, estimated: l.estimated, label: pills ? `${Math.max(1, Math.round(l.durationSec / 60))} min` : undefined }))
+        if (d.approach) routes.push({ id: `${d.number}:approach`, points: d.approach.polyline, colour: c, dim, transport: d.approach.transport, estimated: d.approach.estimated, label: pills ? `${Math.max(1, Math.round(d.approach.durationSec / 60))} min` : undefined })
       })
     } else {
       drafts.forEach((d, di) => d.stops.forEach((c, k) => pins.push({ id: `${di}:${c.id}`, lat: c.lat, lon: c.lon, label: String(k + 1), name: c.name, colour: dayColour(di), fresh: true })))

@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
-import { Html, Line } from '@react-three/drei'
+import { Html } from '@react-three/drei'
 import * as THREE from 'three'
-import type { LatLon } from '../types'
+import type { LatLon, Transport } from '../types'
 import type { TilesHandle } from './GoogleTiles'
 import { GroundPlacer, type Anchor } from './ground'
 import { resample } from './geo'
+import { smoothHeights } from './legStyle'
+import RouteLine from './RouteLine'
 
 /* The map. Not a picture of a map: the same photorealistic city the flight
  * uses, seen from above and slightly to the side, with the crew's work laid on
@@ -19,7 +21,7 @@ import { resample } from './geo'
  * views of one place. */
 
 export type MapPin = { id: string; lat: number; lon: number; label: string; name?: string; colour: string; fresh?: boolean; home?: boolean }
-export type MapRoute = { id: string; points: LatLon[]; colour: string; dim?: boolean }
+export type MapRoute = { id: string; points: LatLon[]; colour: string; dim?: boolean; transport?: Transport; estimated?: boolean; label?: string }
 export type MapView = {
   pins: MapPin[]
   routes: MapRoute[]
@@ -30,7 +32,6 @@ export type MapView = {
 }
 
 const STEP_M = 40
-const noHit = () => null
 
 export default function MapRig({ view, origin, tiles, loadTick }: {
   view: MapView
@@ -105,17 +106,15 @@ export default function MapRig({ view, origin, tiles, loadTick }: {
   // World-space lines, rebuilt as the ground refines under them.
   const lines = useMemo(() => view.routes.map(r => {
     const n = resample(r.points, STEP_M).length
-    const pts: [number, number, number][] = []
-    for (let j = 0; j < n; j++) { const c = ground.get(`r:${r.id}:${j}`); if (c) pts.push([c.x, c.y + 3, c.z]) }
-    return { ...r, pts }
+    const pts: THREE.Vector3[] = []
+    for (let j = 0; j < n; j++) { const c = ground.get(`r:${r.id}:${j}`); if (c) pts.push(new THREE.Vector3(c.x, c.y, c.z)) }
+    return { ...r, pts: smoothHeights(pts) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [view.routes, ground, version])
 
   return (
     <>
-      {lines.map(l => l.pts.length > 1 && (
-        <Line key={l.id} points={l.pts} color={l.colour} lineWidth={l.dim ? 2 : 4} transparent opacity={l.dim ? 0.35 : 0.95} raycast={noHit} />
-      ))}
+      {lines.map(l => <RouteLine key={l.id} pts={l.pts} colour={l.colour} transport={l.transport ?? 'walk'} estimated={l.estimated} dim={l.dim} label={l.label} />)}
       {view.pins.map(p => {
         const c = ground.get(`p:${p.id}`)
         if (!c) return null
