@@ -79,7 +79,9 @@ export default function Studio({ wish, mode, origin, saved, onFly, onHome, onMap
         if (saved) {
           // Resuming: the trip is as it was, so the editor is handed what it needs to change it without writing the rest again.
           for (const d of saved.trip.days) for (const st of d.stops) s.written.set(st.id, st)
-          setStay(saved.trip.stays[0] ?? null); setTrip(saved.trip)
+          // The bed matters as much: days are routed out from it, so an edit that rebuilds one must still start there.
+          s.bed = saved.trip.stays[0] ?? null; s.offered.push(...saved.trip.stays.map(b => b.id))
+          setStay(s.bed); setTrip(saved.trip)
           return
         }
         const found = await stagePlaces(s)
