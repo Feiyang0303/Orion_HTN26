@@ -46,7 +46,7 @@ export default function GlobeScene({ mode, city, events, places, className }: {
       <directionalLight position={[5, 9, 6]} intensity={1.6} color="#ffe9c9" />
       <directionalLight position={[-6, 4, -7]} intensity={.7} color="#7fa6ff" />
       {/* two layers, so the sky has depth: a far dusting and a nearer, brighter few */}
-      <Stars radius={96} depth={60} count={5200} factor={2.6} fade speed={.18} />
+      <Stars radius={96} depth={60} count={3400} factor={2.7} fade speed={.18} />
       <Stars radius={48} depth={26} count={900} factor={5.2} fade speed={.5} />
 
       <Layout mode={mode} statusRef={statusRef} energy={energy} crewScale={crewScale}

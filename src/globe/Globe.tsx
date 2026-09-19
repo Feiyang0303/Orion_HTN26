@@ -41,7 +41,7 @@ function stipple(samples: number): Land {
   const golden = Math.PI * (3 - Math.sqrt(5))
   const pos: number[] = [], sca: number[] = [], col: number[] = [], seed: number[] = [], size: number[] = [], isl: number[] = []
   const shore = new THREE.Color('#f6e9c8'), inland = new THREE.Color('#9aa08f'), warm = new THREE.Color('#dcbb86')
-  const deep = new THREE.Color('#1b3350'), shallow = new THREE.Color('#2f5a77')
+  const deep = new THREE.Color('#24425f'), shallow = new THREE.Color('#3a6d8c')
   const rand = mulberry(7)
   for (let i = 0; i < samples; i++) {
     const y = 1 - (i / (samples - 1)) * 2
@@ -51,7 +51,7 @@ function stipple(samples: number): Land {
     const lon = Math.atan2(Math.sin(th) * rad, Math.cos(th) * rad) * 180 / Math.PI
     const land = isLand(lat, lon)
     const near = land ? coastDistance(lat, lon, 3) : 0        // 1 = shoreline, 4 = deep inland
-    const keep = !land ? .2 : near <= 1 ? 1 : near === 2 ? .94 : near === 3 ? .8 : .64
+    const keep = !land ? .15 : near <= 1 ? 1 : near === 2 ? .94 : near === 3 ? .8 : .64
     if (rand() > keep) continue
     // a little height on the land, so the surface has grain rather than sitting on one shell
     const v = toSphere(lat, lon, R * (land ? 1.0015 + rand() * .004 : .999))
@@ -66,7 +66,7 @@ function stipple(samples: number): Land {
     } else {
       // a hint of shelf near the coast, so the sea is not one flat colour
       c = deep.clone().lerp(shallow, Math.pow(rand(), 2.2))
-      size.push(.34 + rand() * .3)
+      size.push(.4 + rand() * .32)
     }
     col.push(c.r, c.g, c.b)
     seed.push(rand())
@@ -125,7 +125,7 @@ const FRAG = /* glsl */`
     float lamp = max(0.0, vLight - 1.0);
     vec3 base = mix(night, vColour, clamp(vLight, 0.0, 1.0));
     vec3 col = mix(base, amber, clamp(vHeat + lamp, 0.0, 1.0)) * (0.95 + 0.45 * vLand + vHeat * 0.8 + lamp * 1.8);
-    gl_FragColor = vec4(col, vAlpha * soft * (0.5 + 0.5 * vLand));
+    gl_FragColor = vec4(col, vAlpha * soft * (0.64 + 0.36 * vLand));
   }`
 
 /* ------------------------------------------------------------- the dust */
@@ -280,7 +280,7 @@ export default function Globe({ city, cityWorld, energy, children }: {
   const halo = useRef<THREE.Points>(null)
   /* Dense enough that the continents have a surface. Machines with few cores
      are usually the ones with a weak GPU as well, so they get half of it. */
-  const land = useMemo(() => stipple((navigator.hardwareConcurrency ?? 8) <= 4 ? 150000 : 330000), [])
+  const land = useMemo(() => stipple((navigator.hardwareConcurrency ?? 8) <= 4 ? 140000 : 280000), [])
   const cityDir = useRef(new THREE.Vector3(0, 0, 1))
   const s = useRef({ reveal: 0, glow: 0, wave: 1, lit: false, waveHold: 0, pulse: 0 })
   const tex = useMemo(() => glow(), [])
