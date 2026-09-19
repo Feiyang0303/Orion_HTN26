@@ -2,10 +2,12 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import ErrorBoundary from './ui/ErrorBoundary'
 import FlyDev from './fly/dev/FlyDev'
 import Flythrough from './fly/Flythrough'
-import Desk, { type DeskResult } from './plan/ui/Desk'
+import Desk from './plan/ui/Desk'
+import Home from './plan/ui/Home'
 import Storybook from './plan/ui/Storybook'
 import type { CrewEvent } from './plan/events'
-import { planTour } from './plan/pipeline'
+import { writePages } from './plan/pipeline'
+import type { Skeleton } from './plan/crew'
 import type { LatLon, Plan } from './types'
 import { HHMM, MINS } from './types'
 import './plan/ui/journal.css'
@@ -23,11 +25,19 @@ import './plan/ui/journal.css'
  * written the city underneath it is already there, which is why "Begin the
  * flight" dives instead of loading.
  */
-export type Phase = 'ask' | 'planning' | 'reading' | 'flying' | 'done'
+export type Phase = 'home' | 'ask' | 'planning' | 'reading' | 'flying' | 'done'
+
+/* The front page is not a black screen with type on it: it is the thing the
+   app does, already happening. The tiles of a real city load under the title
+   from the first frame — which also means that by the time anyone has read the
+   three panels, the renderer has warmed up and a session with Google is open.
+   Paris, because its coverage is complete and it is recognisable from above
+   within a second of the tiles landing. */
+const LANDING: LatLon = { lat: 48.8584, lon: 2.2945 }
 
 export default function App() {
-  const [phase, setPhase] = useState<Phase>('ask')
-  const [origin, setOrigin] = useState<LatLon | null>(null)
+  const [phase, setPhase] = useState<Phase>('home')
+  const [origin, setOrigin] = useState<LatLon | null>(LANDING)
   const [plan, setPlan] = useState<Plan | null>(null)
   const [events, setEvents] = useState<CrewEvent[]>([])
   const [error, setError] = useState('')
@@ -45,15 +55,15 @@ export default function App() {
 
   /* ------------------------------------------------------------ planning -- */
 
-  const run = useCallback(async ({ wish, mode, origin: city }: DeskResult) => {
+  const run = useCallback(async (skeleton: Skeleton) => {
     abort.current?.abort()
     const ctl = new AbortController()
     abort.current = ctl
-    setOrigin({ lat: city.lat, lon: city.lon })
+    setOrigin({ lat: skeleton.origin.lat, lon: skeleton.origin.lon })
     setPlan(null); setEvents([]); setError(''); setPhase('planning')
     try {
-      const made = await planTour(wish, {
-        mode, signal: ctl.signal,
+      const made = await writePages(skeleton, {
+        signal: ctl.signal,
         onEvent: e => {
           if (ctl.signal.aborted) return
           setEvents(list => [...list, e])
@@ -107,7 +117,7 @@ export default function App() {
         {/* Always mounted, from the first frame: while there is no plan it holds
             a slow view over the city and loads tiles; `begin` is what turns it
             into the flight. */}
-        <div className="orion-ground" aria-hidden={!flying}>
+        <div className={`orion-ground ${phase === 'home' ? 'is-landing' : ''}`} aria-hidden={!flying}>
           <Flythrough
             plan={flying ? plan : null}
             origin={origin}
@@ -120,10 +130,11 @@ export default function App() {
 
         {!flying && (
           <div className="jr-stage orion-overlay">
+            {phase === 'home' && <Home onStart={() => setPhase('ask')} />}
             {phase === 'ask' && (
               <Desk
                 onCity={p => p && setOrigin({ lat: p.lat, lon: p.lon })}
-                onUnfold={r => void run(r)}
+                onUnfold={s => void run(s)}
                 error={error}
               />
             )}
@@ -141,7 +152,7 @@ export default function App() {
           <div className="orion-done">
             <p>That was the day.</p>
             <button className="jr-btn" onClick={() => setPhase('reading')}>Back to the book</button>
-            <button className="jr-btn ghost" onClick={() => setPhase('ask')}>Plan another</button>
+            <button className="jr-btn ghost" onClick={() => setPhase('home')}>Plan another</button>
           </div>
         )}
       </main>

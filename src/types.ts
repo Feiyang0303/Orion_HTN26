@@ -36,6 +36,21 @@ export type Pace = 'gentle' | 'steady' | 'full'
     Derived from the journal's 85 / 60 / 42 minutes against a 60-minute middle. */
 export const PACE_FACTOR: Record<Pace, number> = { gentle: 1.4, steady: 1, full: 0.7 }
 
+/** Who is travelling. It changes what is worth choosing, how long a stop
+    takes, and how the guide speaks. */
+export type Party = 'solo' | 'couple' | 'family' | 'easy'
+export const PARTY_LABEL: Record<Party, string> = {
+  solo: 'On my own', couple: 'Two of us', family: 'With children', easy: 'Taking it easy',
+}
+/** What the day is allowed to cost. Not a number: nobody knows the number, and
+    the only thing it can honestly change is whether paid interiors are worth a
+    stop at all. */
+export type Budget = 'free' | 'modest' | 'any'
+export const BUDGET_LABEL: Record<Budget, string> = {
+  free: 'Free things only', modest: 'The odd ticket', any: 'Cost is not the point',
+}
+export type Meal = 'lunch' | 'dinner'
+
 /** The desk, as data. Everything on it changes the plan; nothing on it is
     decoration. `wants` are places named by the person and are never dropped. */
 export type Wish = {
@@ -47,6 +62,11 @@ export type Wish = {
   interests: string[]
   pace: Pace
   transport: Transport
+  party: Party
+  budget: Budget
+  /** Gaps the Timekeeper keeps clear. A day that schedules you into a
+      cathedral at one o'clock with no lunch is not a plan, it is a timetable. */
+  meals: Meal[]
 }
 
 /** A name resolved to a point on the earth. */
@@ -103,6 +123,9 @@ export type Stop = LatLon & {
   /** True when the person named this place themselves. Those are never
       dropped, reordered away, or overruled by the Critic. */
   asked: boolean
+  /** Minutes of nothing, kept clear after this stop: a meal the Timekeeper was
+      told to leave room for. Zero for most stops. */
+  breakMin?: number
 }
 
 /** legs[i] is the journey from stops[i] to stops[i+1]; legs.length === stops.length - 1. */

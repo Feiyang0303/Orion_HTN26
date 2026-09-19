@@ -32,7 +32,7 @@ const guessSec = (a: LatLon, b: LatLon, transport: Transport) =>
     means. Falls back to straight-line times when the matrix is unavailable. */
 export async function bestOrder(
   points: LatLon[], transport: Transport = 'walk', fixedFirst = false,
-): Promise<{ order: number[]; totalSec: number; estimated: boolean }> {
+): Promise<{ order: number[]; totalSec: number; estimated: boolean; minutes: number[][] }> {
   if (points.length > 8) throw new Error('brute-force routing is only for fewer than 9 stops')
   let m: Matrix | null = null
   try { m = await postJson<Matrix>('routes/matrix', { points, transport }) } catch { m = null }
@@ -49,7 +49,12 @@ export async function bestOrder(
     if (total < bestSec) { bestSec = total; best = order }
   }
   if (!best) throw new Error('These places cannot be connected.')
-  return { order: best, totalSec: bestSec, estimated: !m }
+  // The matrix comes back too: the planning page prints the hop between each
+  // pair while the person reorders them, and asking twice for the same numbers
+  // would be both slower and, when one call estimates and the other does not,
+  // inconsistent.
+  const minutes = points.map((_, i) => points.map((__, j) => i === j ? 0 : sec(i, j) / 60))
+  return { order: best, totalSec: bestSec, estimated: !m, minutes }
 }
 
 /** One leg per consecutive pair. A leg that the router will not answer for is

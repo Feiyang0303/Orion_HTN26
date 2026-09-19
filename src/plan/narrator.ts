@@ -1,33 +1,64 @@
-import type { Beat, Target } from '../types'
+import type { Beat, Party, Target, Transport } from '../types'
 import { askJson } from './json'
 
 /* NARRATOR (LLM, fast, one call per stop, run in parallel). It may only say
-   what the supplied text says, and may only point at supplied targets. Both
-   are enforced below, not just requested. */
+ * what the supplied text says, and may only point at supplied targets. Both
+ * are enforced below, not just requested.
+ *
+ * The frame matters more than the voice. The listener is not standing on the
+ * pavement: they are fifty-five metres up and moving, the beat's own length is
+ * what holds the camera there, and a beat with a targetId is the instant the
+ * camera turns towards that thing. Written as a walking tour, the narration
+ * says "look to your left" over a roof, names doorways nobody can see, and
+ * describes what it is like to arrive somewhere the listener is flying over.
+ * So the prompt puts the writer in the air, and hands it the things that make
+ * the day theirs: the hour, where they have just come from, how they got here,
+ * who is travelling.
+ */
 
 export type Draft = { text: string; targetId?: string }
 export type Mode = 'full' | 'short'
 
 const LIMITS = { short: { beats: 2, words: 22 }, full: { beats: 3, words: 34 } }
 
-const SYSTEM = `You are a walking-tour guide speaking aloud, standing at one stop. Voice: warm,
-concrete, unhurried, like a well-made guidebook read aloud. No exclamation marks.
+const SYSTEM = `You are the guide on a flight over a real city. The listener is in the air,
+perhaps fifty metres above the place you are describing, looking down and
+along. They are not standing in the street and cannot see doorways, plaques or
+anything at eye level.
 
-Hard rules:
-- State ONLY facts found in the supplied text. If the text does not say it, do not say it.
-  Do not add dates, numbers, names or history from memory.
-- Each beat is one or two spoken sentences. The first beat is about the stop itself.
-- A beat may point at one nearby target: set "targetId" to that target's id and
-  mention it naturally ("Look to your left..."). Never invent a target.
-- Later beats should usually point at a target, if any were supplied.
+VOICE
+Warm, concrete, unhurried — a well-made guidebook read aloud by someone who is
+glad to be up here. No exclamation marks. No "welcome to", no "as you can see",
+no "imagine". Speak in the present.
+
+WHAT A BEAT IS
+Each beat is one or two spoken sentences and holds the camera for as long as it
+takes to say. You are writing the shape of a pause, not a paragraph.
+- The FIRST beat is about this place, and it begins with something visible from
+  above: the shape of the roof, the line of the walls, how the streets meet it,
+  what it sits beside. Then say the one thing that makes it matter.
+- A LATER beat may hand off to one nearby target: set "targetId" to that
+  target's id and name the thing naturally, because the camera will turn to it
+  as you say it. "Just north of it, ..." works; "on your left" does not, since
+  the listener has no left up here.
+- If targets were supplied, at least one later beat should use one. If none
+  were supplied, stay on the place itself.
+
+HARD RULES
+- State ONLY facts found in the supplied text. If the text does not say it, do
+  not say it. No dates, numbers, names, materials or history from memory.
+- Never invent a target, and never point at something that was not supplied.
+- Do not describe the weather, the crowd, the time of day, or how anything
+  smells or sounds. You cannot know those and the listener can see the light.
+- Do not mention the flight, the camera, the tour, or yourself.
 
 Reply with a JSON object: {"beats":[{"text":"...","targetId":"<id, optional>"}]}`
 
 const numbersIn = (s: string) => (s.match(/\d[\d,.]*\d|\d/g) ?? []).map(n => n.replace(/[,.]+$/, '').replace(/,/g, ''))
 
-/** Beats that keep their targetId only if it was supplied, and that contain
-    no number absent from the source text. Returns what survived plus why
-    anything was dropped. */
+/** Beats that keep their targetId only if it was supplied, and that contain no
+    number absent from the source text. Returns what survived plus why anything
+    was dropped. */
 export function validate(drafts: Draft[], source: string, targets: Target[], mode: Mode) {
   const haystack = source.replace(/,/g, '')
   const ids = new Set(targets.map(t => t.id))
@@ -45,14 +76,55 @@ export function validate(drafts: Draft[], source: string, targets: Target[], mod
   return { beats: beats.slice(0, LIMITS[mode].beats), problems }
 }
 
+/** Everything about the day that this one stop's writer is allowed to know.
+    All of it is already in the Plan; handing it over is what stops the
+    narration reading like a gazetteer entry that happens to be next in a list. */
+export type StopContext = {
+  city: string
+  index: number            // 0-based
+  total: number
+  arrival?: string         // 'HH:MM'
+  visitMin?: number
+  previous?: string        // the stop flown from
+  legMin?: number          // how long that journey takes on the ground
+  transport?: Transport
+  party?: Party
+  interests?: string[]
+  last?: boolean
+}
+
+const PARTY_NOTE: Record<Party, string> = {
+  solo: '',
+  couple: '',
+  family: 'Children are listening: concrete and vivid, no long clauses.',
+  easy: 'Keep it calm and unhurried.',
+}
+
 export async function narrate(
-  stop: { name: string; extract: string }, targets: Target[], mode: Mode,
+  stop: { name: string; extract: string }, targets: Target[], mode: Mode, ctx?: StopContext,
 ): Promise<{ beats: Draft[]; problems: string[] }> {
   const { beats: n, words } = LIMITS[mode]
   const source = [stop.name, stop.extract, ...targets.flatMap(t => [t.name, t.summary])].join('\n')
-  const user = `Stop: ${stop.name}\n${stop.extract}\n\nNearby targets you may point at:\n` +
+
+  /* Context is given as plain statements of fact, never as instructions to
+     repeat them. A writer told "it is the third of five" writes a better third
+     beat; a writer told "say it is the third of five" writes a worse one. */
+  const where = ctx ? [
+    `This is stop ${ctx.index + 1} of ${ctx.total} in ${ctx.city}.`,
+    ctx.index === 0 ? 'It is the first place of the day; the listener has just arrived over the city.' : '',
+    ctx.last && ctx.total > 1 ? 'It is the last place of the day.' : '',
+    ctx.previous ? `They have just come from ${ctx.previous}${ctx.legMin ? `, about ${Math.round(ctx.legMin)} minutes away on the ground` : ''}.` : '',
+    ctx.arrival ? `They are due here at ${ctx.arrival}${ctx.visitMin ? ` and will stay about ${ctx.visitMin} minutes` : ''}.` : '',
+    ctx.interests?.length ? `They said they are interested in ${ctx.interests.join(', ')} — lean that way when the text gives you the choice.` : '',
+    ctx.party ? PARTY_NOTE[ctx.party] : '',
+  ].filter(Boolean).join('\n') : ''
+
+  const user = `Stop: ${stop.name}\n${stop.extract || '(no description is available for this place — write only from the targets below)'}\n\n` +
+    (where ? `${where}\n\n` : '') +
+    `Nearby targets you may point at:\n` +
     (targets.length ? targets.map(t => `${t.id} | ${t.name} | ${t.summary.replace(/\s+/g, ' ').slice(0, 300)}`).join('\n') : '(none)') +
     `\n\nWrite exactly ${n} beats, each at most ${words} words.`
+
   let last: ReturnType<typeof validate> = { beats: [], problems: [] }
   for (let attempt = 0; attempt < 2; attempt++) {       // one retry if validation empties the page
     const r = await askJson<{ beats: Draft[] }>('narrator', SYSTEM, user, 2000)

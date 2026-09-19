@@ -759,7 +759,14 @@
 }
 
 .orion-overlay { background: none; z-index: 2; }
-.orion-overlay.jr-stage { justify-content: center; }
+/* Centred with auto margins, never with justify-content: a flex item taller
+   than its scrolling parent gets its overflowing top clipped away by
+   justify-content: center, and no amount of scrolling brings it back. Auto
+   margins centre the same way and still let the top scroll into view. */
+.orion-overlay.jr-stage { justify-content: flex-start; align-items: stretch; padding: 18px; }
+.orion-overlay.jr-stage > * { margin-block: auto; }
+/* The desk sheet is a page and centres; the planner is a workspace and fills. */
+.orion-overlay.jr-stage > .jr-desk { width: min(660px, 100%); margin-inline: auto; }
 
 .orion-waiting { align-items: flex-start; }
 .orion-waiting .jr-caption { max-width: 46ch; }
@@ -774,3 +781,118 @@
 
 /* The desk is a sheet on a table, and the table is now a city at night. */
 .orion-overlay .jr-desk { box-shadow: 0 30px 70px rgba(0,0,0,.66), 0 1px 0 #fff8e8 inset; }
+
+/* ======================================================================
+   The desk's map. A flat, familiar slippy map — this is the planning page,
+   and a person moving five pins around wants the thing they already know
+   how to use. It is tinted towards the paper it sits on, because a cold
+   grey map beside a warm sheet reads as two programs sharing a window.
+   ====================================================================== */
+
+.om {
+  position: absolute; inset: 0; overflow: hidden; touch-action: none;
+  background: #e9e2d2; cursor: grab;
+  border: 1px solid #cdbd99; border-radius: 3px;
+}
+.om:active { cursor: grabbing; }
+.om.is-picking { cursor: crosshair; }
+.om canvas { display: block; filter: sepia(.32) saturate(.82) contrast(.96) brightness(1.02); }
+
+.om-pin {
+  position: absolute; transform: translate(-50%, -50%); pointer-events: none;
+  display: flex; align-items: center; gap: 6px; white-space: nowrap;
+}
+.om-pin-disc {
+  width: 26px; height: 26px; border-radius: 50%; flex: none;
+  display: grid; place-items: center;
+  background: var(--c); color: #fbf3e2; font-family: var(--display); font-size: 15px;
+  border: 2px solid #fbf3e2; box-shadow: 0 2px 6px rgba(0,0,0,.4);
+}
+.om-pin.is-start .om-pin-disc { width: 18px; height: 18px; font-size: 12px; }
+.om-pin-name {
+  font-size: 11.5px; letter-spacing: .01em; color: #3f3426;
+  background: rgba(251,243,226,.88); border: 1px solid #d3c3a0; border-radius: 2px;
+  padding: 2px 6px; max-width: 190px; overflow: hidden; text-overflow: ellipsis;
+}
+.om-pin-x {
+  pointer-events: auto; border: 0; background: none; color: #8a5a2b; font-size: 15px;
+  line-height: 1; padding: 2px 4px; opacity: 0; transition: opacity .12s;
+}
+.om-pin:hover .om-pin-x { opacity: 1; }
+.om-pin.is-fresh .om-pin-disc { animation: om-drop .5s cubic-bezier(.2,1.4,.4,1); }
+@keyframes om-drop {
+  from { transform: translateY(-16px) scale(.6); opacity: 0 }
+  to { transform: none; opacity: 1 }
+}
+
+.om-zoom { position: absolute; right: 10px; top: 10px; display: grid; gap: 4px; }
+.om-zoom button {
+  width: 30px; height: 30px; font-size: 17px; line-height: 1;
+  background: rgba(251,243,226,.94); color: #3f3426; border: 1px solid #cdbd99; border-radius: 2px;
+}
+.om-zoom button:hover { background: #fff8e8; }
+
+.om-hint, .om-busy, .om-credit {
+  position: absolute; margin: 0; font-size: 10.5px; color: #52452f;
+  background: rgba(251,243,226,.88); border: 1px solid #d3c3a0; padding: 3px 7px; border-radius: 2px;
+}
+.om-hint { left: 10px; top: 10px; }
+.om-busy { left: 10px; bottom: 32px; display: flex; align-items: center; gap: 7px; }
+.om-credit { right: 10px; bottom: 10px; opacity: .8; font-size: 9.5px; }
+
+/* The map pane fills its half of the desk. */
+.jr-planner-map { position: relative; min-height: 0; }
+.orion-overlay .jr-planner {
+  width: min(1240px, 100%); flex: 1; min-height: 0;
+}
+.orion-overlay.jr-stage > .jr-planner { margin-block: 0; }
+
+/* ---------------------------------------------------------- the front page */
+
+/* Paper, like every other surface in Orion. The city still turns behind it —
+   the sheet is on a desk, not in a void — but the page itself is a printed
+   card and its ink is the same dark brown the book uses. */
+.orion-home {
+  width: min(880px, 100%); margin: auto;
+  color: #3f3426;
+  background: #efe4cb;
+  border: 1px solid #cdbd99; border-radius: 2px;
+  box-shadow: 0 30px 70px rgba(0,0,0,.6), 0 1px 0 #fff8e8 inset;
+  background-image:
+    repeating-linear-gradient(0deg, rgba(120,95,60,.035) 0 1px, transparent 1px 3px),
+    radial-gradient(130% 90% at 12% 0%, rgba(255,250,236,.7), transparent 55%);
+  display: flex; flex-direction: column; align-items: center; gap: 24px; text-align: center;
+  padding: 40px 38px 34px;
+}
+.orion-home header { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.orion-home .jr-kicker { color: #9a6b3f; }
+.orion-home h1 {
+  margin: 0; font-family: var(--display); font-size: clamp(52px, 10vw, 96px);
+  font-weight: 400; letter-spacing: .03em; line-height: .96; color: #3f3426;
+}
+.orion-home-lede {
+  margin: 4px 0 0; max-width: 46ch; font-family: var(--display); font-size: 19px;
+  line-height: 1.5; color: #4a3e2e;
+}
+
+.orion-home-stages {
+  list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; width: 100%;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); text-align: left;
+}
+.orion-home-stages li {
+  position: relative; padding: 18px 18px 16px;
+  background: rgba(255,250,236,.5); border: 1px solid #d9caa9; border-radius: 2px;
+}
+.orion-home-no {
+  position: absolute; right: 12px; top: 8px;
+  font-family: var(--display); font-size: 28px; color: #c2b18d;
+}
+.orion-home-stages h2 {
+  margin: 8px 0 4px; font-family: var(--display); font-weight: 400; font-size: 20px; color: #3f3426;
+}
+.orion-home-stages p { margin: 0; font-size: 13px; line-height: 1.55; color: #6a5c47; }
+.orion-home-stages .jr-mark { color: #9a6b3f; }
+
+.orion-home-fine {
+  margin: 0; max-width: 72ch; font-size: 11px; line-height: 1.6; color: #8a7a60;
+}

@@ -131,3 +131,27 @@ export async function suggest(query: string, near: LatLon, signal?: AbortSignal)
     .sort((a, b) => metresBetween(near, a) - metresBetween(near, b))
     .slice(0, 5)
 }
+
+/** What is at this point on the ground. Used when a pin is dropped on the map
+    rather than typed: a click beside the square should come back as the
+    square, not as a pair of decimals. */
+export async function reverseGeocode(at: LatLon, signal?: AbortSignal): Promise<Place | null> {
+  const params = new URLSearchParams({
+    lat: String(at.lat), lon: String(at.lon), format: 'jsonv2', zoom: '18',
+    namedetails: '1', 'accept-language': 'en',
+  })
+  try {
+    const r = await queue(async () => {
+      const res = await fetch(`https://nominatim.openstreetmap.org/reverse?${params}`,
+        { headers: { Accept: 'application/json', ...net.headers }, signal })
+      if (!res.ok) throw new Error(`nominatim ${res.status}`)
+      return res.json() as Promise<Row & { error?: string }>
+    })
+    if (!r || r.error) return null
+    const name = englishName(r)
+    return {
+      asked: name, name, lat: at.lat, lon: at.lon,
+      region: r.display_name.split(',').slice(1, 3).map(s => s.trim()).join(', '),
+    }
+  } catch { return null }
+}
