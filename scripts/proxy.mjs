@@ -195,7 +195,8 @@ const routes = {
   'POST /api/routes/walk': routesWalk,
 }
 
-createServer(async (req, res) => {
+/** One request, start to finish. The local server below and the Vercel function (api/index.js) both call this. */
+export async function handle(req, res) {
   const { pathname } = new URL(req.url, 'http://localhost')
   const handler = routes[`${req.method} ${pathname}`]
   if (!handler) return json(res, 404, { error: 'no such route' })
@@ -207,4 +208,7 @@ createServer(async (req, res) => {
     }
     json(res, status, { error: scrub(e?.message ?? e) })
   }
-}).listen(PORT, '127.0.0.1', () => console.log(`orion proxy on :${PORT}`))
+}
+
+// On Vercel the platform does the listening and api/index.js hands each request to handle().
+if (!process.env.VERCEL) createServer(handle).listen(PORT, '127.0.0.1', () => console.log(`orion proxy on :${PORT}`))

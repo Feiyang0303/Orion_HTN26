@@ -15,7 +15,8 @@ import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import * as Sentry from '@sentry/node'     // a no-op until instrument.mjs has initialised it
 
-const DIR = '.cache/wiki'
+// A Vercel function's checkout is read-only; /tmp is the one place it may write.
+const DIR = process.env.VERCEL ? '/tmp/.cache/wiki' : '.cache/wiki'
 const TTL_MS = 7 * 24 * 3600 * 1000
 const UA = process.env.WIKI_USER_AGENT || 'Orion-hackathon/0.1 (https://github.com/Feiyang0303/Orion_HTN26)'
 const ALLOWED = [
