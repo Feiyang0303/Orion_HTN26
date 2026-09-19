@@ -43,18 +43,40 @@ export function SketchDefs() {
   return (
     <svg width="0" height="0" style={{ position: 'absolute' }} aria-hidden>
       <defs>
+        {/* the nib: every line runs through a little turbulence */}
         <filter id="ink" x="-10%" y="-10%" width="120%" height="120%">
           <feTurbulence type="fractalNoise" baseFrequency=".035" numOctaves="3" seed="7" result="n" />
           <feDisplacementMap in="SourceGraphic" in2="n" scale="1.8" xChannelSelector="R" yChannelSelector="G" />
         </filter>
-        <filter id="wash" x="-20%" y="-20%" width="140%" height="140%">
-          <feTurbulence type="fractalNoise" baseFrequency=".05" numOctaves="2" seed="3" result="n" />
-          <feDisplacementMap in="SourceGraphic" in2="n" scale="9" xChannelSelector="R" yChannelSelector="G" result="d" />
-          <feGaussianBlur in="d" stdDeviation=".7" />
+        {/* the pencil: rougher, fainter, slightly off the ink */}
+        <filter id="pencil" x="-10%" y="-10%" width="120%" height="120%">
+          <feTurbulence type="fractalNoise" baseFrequency=".08" numOctaves="2" seed="21" result="n" />
+          <feDisplacementMap in="SourceGraphic" in2="n" scale="3.2" xChannelSelector="R" yChannelSelector="G" />
         </filter>
+        {/* watercolour: the shape bleeds past its edge, the pigment gathers at
+            the rim (a darker band where the shape ends), and the whole thing
+            is a shade uneven, the way a wash dries */}
+        <filter id="wash" x="-25%" y="-25%" width="150%" height="150%">
+          <feTurbulence type="fractalNoise" baseFrequency=".045" numOctaves="3" seed="3" result="n" />
+          <feDisplacementMap in="SourceGraphic" in2="n" scale="11" xChannelSelector="R" yChannelSelector="G" result="bled" />
+          <feGaussianBlur in="bled" stdDeviation=".8" result="soft" />
+          <feMorphology in="soft" operator="erode" radius="2.2" result="inner" />
+          <feComposite in="soft" in2="inner" operator="out" result="rim" />
+          <feColorMatrix in="rim" type="matrix" values="0.65 0 0 0 0  0 0.65 0 0 0  0 0 0.65 0 0  0 0 0 .9 0" result="darkrim" />
+          <feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="1" seed="5" result="grain" />
+          <feColorMatrix in="grain" type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 .35 0" result="grainA" />
+          <feComposite in="soft" in2="grainA" operator="in" result="grainy" />
+          <feMerge><feMergeNode in="soft" /><feMergeNode in="grainy" /><feMergeNode in="darkrim" /></feMerge>
+        </filter>
+        {/* the paper: fibre and a little foxing */}
         <filter id="paper" x="0" y="0" width="100%" height="100%">
           <feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="2" seed="11" result="g" />
-          <feColorMatrix in="g" type="matrix" values="0 0 0 0 .42  0 0 0 0 .35  0 0 0 0 .25  0 0 0 .08 0" />
+          <feColorMatrix in="g" type="matrix" values="0 0 0 0 .42  0 0 0 0 .35  0 0 0 0 .25  0 0 0 .1 0" />
+        </filter>
+        {/* the deckle: the sheet's own edge, torn by turbulence */}
+        <filter id="deckle" x="-3%" y="-3%" width="106%" height="106%">
+          <feTurbulence type="fractalNoise" baseFrequency=".02" numOctaves="4" seed="9" result="n" />
+          <feDisplacementMap in="SourceGraphic" in2="n" scale="14" xChannelSelector="R" yChannelSelector="G" />
         </filter>
       </defs>
     </svg>
@@ -210,18 +232,128 @@ const ART: Record<SketchName, { wash: React.ReactNode; ink: React.ReactNode }> =
   },
 }
 
-/** One illustration. `wash` is the watercolour colour; `ink` the line colour. */
-export function Sketch({ name, size = 96, wash = '#c9a27a', ink = '#3f3020', className = '', delay = 0 }: {
-  name: SketchName; size?: number; wash?: string; ink?: string; className?: string; delay?: number
+/** One illustration. `wash` is the watercolour colour, `wash2` a second tone
+    laid under it off-register, `ink` the line colour. The pencil layer is the
+    same drawing, fainter and a little off, the way a sketch is inked over its
+    own construction lines. */
+export function Sketch({ name, size = 96, wash = '#c9a27a', wash2, ink = '#3f3020', className = '', delay = 0 }: {
+  name: SketchName; size?: number; wash?: string; wash2?: string; ink?: string; className?: string; delay?: number
 }) {
   const art = ART[name]
   return (
-    <svg className={`sk ${className}`} viewBox="0 0 120 120" width={size} height={size} aria-hidden
+    <svg className={`sk ${className}`} viewBox="-6 -6 132 132" width={size} height={size} aria-hidden
       style={{ ['--d' as string]: `${delay}ms` }}>
-      <g className="sk-wash" fill={wash} filter="url(#wash)" opacity=".42">{art.wash}</g>
+      <g className="sk-wash sk-wash2" fill={wash2 ?? wash} filter="url(#wash)" opacity=".3" transform="translate(3 4) scale(1.04)">{art.wash}</g>
+      <g className="sk-wash" fill={wash} filter="url(#wash)" opacity=".5">{art.wash}</g>
+      <g className="sk-pencil" {...PEN} strokeWidth={1.1} color="#8a8078" opacity=".55" filter="url(#pencil)" transform="translate(-1.5 1)">
+        {art.ink}
+      </g>
       <g className="sk-ink" {...PEN} color={ink} filter="url(#ink)">
         {art.ink}
       </g>
     </svg>
+  )
+}
+
+/* ---------------------------------------------------------------- the table */
+
+export type FoodName = 'pizza' | 'pasta' | 'noodles' | 'dumplings' | 'sushi' | 'croissant' | 'coffee' | 'tapas' | 'sandwich' | 'curry' | 'plate' | 'wine'
+
+/** What to draw for a table, from OpenStreetMap's cuisine tag. Nothing here
+    claims the dish is famous; it is the kind of food the tag says they serve. */
+export function foodFor(cuisine: string, kind: string): FoodName {
+  const c = (cuisine || '').toLowerCase()
+  if (/pizza/.test(c)) return 'pizza'
+  if (/italian|pasta/.test(c)) return 'pasta'
+  if (/ramen|noodle|udon|soba|pho|vietnam|thai|lamian/.test(c)) return 'noodles'
+  if (/dumpling|dim.?sum|gyoza|chinese|cantonese|sichuan|taiwan/.test(c)) return 'dumplings'
+  if (/sushi|japanese|sashimi/.test(c)) return 'sushi'
+  if (/french|bakery|boulangerie|pastry|crêpe|crepe|brasserie/.test(c)) return 'croissant'
+  if (/coffee|cafe|café|tea/.test(c) || kind === 'cafe') return 'coffee'
+  if (/tapas|spanish|mezze|greek|meze/.test(c)) return 'tapas'
+  if (/burger|sandwich|deli|kebab|fast/.test(c) || kind === 'fast_food') return 'sandwich'
+  if (/indian|curry|nepal/.test(c)) return 'curry'
+  if (/wine|bar|pub/.test(c) || kind === 'bar') return 'wine'
+  return 'plate'
+}
+
+const FOOD: Record<FoodName, { wash: React.ReactNode; wash2?: React.ReactNode; ink: React.ReactNode }> = {
+  pizza: {
+    wash: <path d="M14 96 L60 14 L106 96 Z" />, wash2: <><circle cx="52" cy="60" r="7" /><circle cx="70" cy="76" r="7" /><circle cx="44" cy="82" r="6" /></>,
+    ink: <><path d="M14 96 L60 14 L106 96 Z" /><path d="M20 90 C40 82 80 82 100 90" /><circle cx="52" cy="60" r="6" /><circle cx="70" cy="76" r="6" /><circle cx="44" cy="82" r="5" /><path d="M60 40 c4 4 4 10 0 14 M62 30 c2 6 8 6 10 2" /></>,
+  },
+  pasta: {
+    wash: <ellipse cx="60" cy="78" rx="46" ry="16" />, wash2: <ellipse cx="60" cy="66" rx="28" ry="12" />,
+    ink: <><path d="M14 78 a46 16 0 0 0 92 0 a46 16 0 0 0 -92 0" /><path d="M34 70 c6-10 14-10 20 0 s14 10 20 0 M30 66 c8-14 18-6 26-2 s16 6 26-4 M40 60 c6-8 12-4 18 0 s12 6 18-2" /><path d="M78 40 L92 22 M84 44 L98 28" /></>,
+  },
+  noodles: {
+    wash: <path d="M18 60 H102 C102 92 84 104 60 104 C36 104 18 92 18 60 Z" />, wash2: <ellipse cx="60" cy="60" rx="40" ry="10" />,
+    ink: <><path d="M18 60 H102 C102 92 84 104 60 104 C36 104 18 92 18 60 Z" /><path d="M20 60 a40 10 0 0 0 80 0" /><path d="M36 58 c6-8 12-8 18 0 s12 8 18 0 M44 52 c4-6 10-6 14 0" /><path d="M70 46 L96 14 M78 48 L104 20" /><path d="M46 36 c-3-6 3-8 0-14 M58 34 c-3-6 3-8 0-14" /></>,
+  },
+  dumplings: {
+    wash: <><path d="M24 78 C24 60 40 50 60 50 C80 50 96 60 96 78 Z" /><path d="M18 90 a42 8 0 0 0 84 0 Z" /></>,
+    ink: <><path d="M18 90 a42 8 0 0 0 84 0 a42 8 0 0 0 -84 0" /><path d="M24 78 C24 60 40 50 60 50 C80 50 96 60 96 78" /><path d="M30 72 c4-6 10-6 14 0 c4-6 10-6 14 0 c4-6 10-6 14 0 c4-6 10-6 14 0" /><path d="M52 40 c-3-6 3-8 0-14 M66 40 c-3-6 3-8 0-14" /></>,
+  },
+  sushi: {
+    wash: <><rect x="20" y="62" width="34" height="22" rx="4" /><rect x="64" y="62" width="34" height="22" rx="4" /></>, wash2: <><path d="M20 62 C26 50 48 50 54 62" /><path d="M64 62 C70 50 92 50 98 62" /></>,
+    ink: <><path d="M20 84 V66 C20 54 54 54 54 66 V84 Z" /><path d="M64 84 V66 C64 54 98 54 98 66 V84 Z" /><path d="M24 74 h26 M68 74 h26" /><path d="M14 96 H106" /><path d="M30 60 c6-6 12-6 18 0 M74 60 c6-6 12-6 18 0" /></>,
+  },
+  croissant: {
+    wash: <path d="M16 70 C16 44 44 34 60 40 C76 34 104 44 104 70 C100 80 84 78 60 68 C36 78 20 80 16 70 Z" />,
+    ink: <><path d="M16 70 C16 44 44 34 60 40 C76 34 104 44 104 70 C100 80 84 78 60 68 C36 78 20 80 16 70 Z" /><path d="M34 46 L40 68 M48 40 L52 66 M72 40 L68 66 M86 46 L80 68" /><path d="M14 92 H106" /></>,
+  },
+  coffee: {
+    wash: <path d="M28 56 H84 V78 a28 22 0 0 1 -56 0 Z" />, wash2: <ellipse cx="60" cy="98" rx="40" ry="6" />,
+    ink: <><path d="M28 56 H84 V78 a28 22 0 0 1 -56 0 Z" /><path d="M84 62 a10 8 0 0 1 0 18" /><path d="M20 98 a40 6 0 0 0 80 0" /><path d="M44 46 c-4-6 4-8 0-14 M56 46 c-4-6 4-8 0-14 M68 46 c-4-6 4-8 0-14" /></>,
+  },
+  tapas: {
+    wash: <><ellipse cx="40" cy="74" rx="22" ry="9" /><ellipse cx="82" cy="70" rx="18" ry="8" /><circle cx="40" cy="66" r="8" /></>,
+    ink: <><path d="M18 74 a22 9 0 0 0 44 0 a22 9 0 0 0 -44 0" /><path d="M64 70 a18 8 0 0 0 36 0 a18 8 0 0 0 -36 0" /><circle cx="40" cy="66" r="8" /><path d="M76 62 h12 v6 h-12 z M82 56 v6" /><path d="M14 92 H106" /></>,
+  },
+  sandwich: {
+    wash: <><path d="M18 60 H102 L96 46 H24 Z" /><path d="M18 60 H102 V78 H18 Z" /></>,
+    ink: <><path d="M24 46 H96 L102 60 H18 Z" /><path d="M18 60 H102 V80 H18 Z" /><path d="M20 66 c6 4 10 4 16 0 s10-4 16 0 10 4 16 0 10-4 16 0" /><path d="M60 40 V28" /><path d="M14 92 H106" /></>,
+  },
+  curry: {
+    wash: <><path d="M14 66 H106 C106 90 86 100 60 100 C34 100 14 90 14 66 Z" /><ellipse cx="60" cy="66" rx="34" ry="8" /></>,
+    ink: <><path d="M14 66 H106 C106 90 86 100 60 100 C34 100 14 90 14 66 Z" /><path d="M26 66 a34 8 0 0 0 68 0" /><path d="M40 62 c4-4 8-4 12 0 M64 62 c4-4 8-4 12 0" /><path d="M46 44 c-3-6 3-8 0-14 M60 42 c-3-6 3-8 0-14 M74 44 c-3-6 3-8 0-14" /></>,
+  },
+  plate: {
+    wash: <><ellipse cx="60" cy="72" rx="44" ry="14" /><ellipse cx="60" cy="68" rx="24" ry="8" /></>,
+    ink: <><path d="M16 72 a44 14 0 0 0 88 0 a44 14 0 0 0 -88 0" /><path d="M36 68 a24 8 0 0 0 48 0" /><path d="M14 40 v22 M18 40 v22 M22 40 v22 M18 62 V96 M100 40 c-6 6-6 16 0 22 V96" /></>,
+  },
+  wine: {
+    wash: <><path d="M40 30 H80 C80 56 70 66 60 66 C50 66 40 56 40 30 Z" /><path d="M40 44 H80" /></>,
+    ink: <><path d="M40 30 H80 C80 56 70 66 60 66 C50 66 40 56 40 30 Z" /><path d="M60 66 V90 M46 90 H74" /><path d="M44 44 H76" /></>,
+  },
+}
+
+export function Food({ name, size = 110, wash = '#c9a27a', wash2, ink = '#3f3020' }: {
+  name: FoodName; size?: number; wash?: string; wash2?: string; ink?: string
+}) {
+  const art = FOOD[name]
+  return (
+    <svg className="sk sk-food" viewBox="-6 -6 132 132" width={size} height={size} aria-hidden>
+      {art.wash2 && <g className="sk-wash" fill={wash2 ?? wash} filter="url(#wash)" opacity=".5">{art.wash2}</g>}
+      <g className="sk-wash" fill={wash} filter="url(#wash)" opacity=".5" transform="translate(2 3)">{art.wash}</g>
+      <g className="sk-pencil" {...PEN} strokeWidth={1.1} color="#8a8078" opacity=".5" filter="url(#pencil)" transform="translate(-1.5 1)">{art.ink}</g>
+      <g className="sk-ink" {...PEN} color={ink} filter="url(#ink)">{art.ink}</g>
+    </svg>
+  )
+}
+
+/* ------------------------------------------------------------ the transport */
+
+/** Footprints, a bus, a bicycle, a car: the way between two places, drawn
+    small on the path itself. */
+export function TransportGlyph({ mode, size = 22, ink = '#5c4a33' }: { mode: 'walk' | 'cycle' | 'transit' | 'drive'; size?: number; ink?: string }) {
+  const g = {
+    walk: <><path d="M7 4 c-3 0 -4 3 -3 6 c1 2 3 2 4 0 c1-3 1-6-1-6 Z M6 12 c-2 0-2 2-1 3 c1 1 2 0 2-1 s0-2-1-2 Z" /><path d="M16 9 c3 0 4 3 3 6 c-1 2-3 2-4 0 c-1-3-1-6 1-6 Z M17 17 c2 0 2 2 1 3 c-1 1-2 0-2-1 s0-2 1-2 Z" /></>,
+    transit: <><path d="M5 4 h14 v13 H5 Z" /><path d="M5 12 h14 M8 14.5 h.1 M16 14.5 h.1" /><path d="M7 17 l-1.5 3 M17 17 l1.5 3" /><path d="M9 7 h6" /></>,
+    cycle: <><circle cx="6" cy="16" r="3.5" /><circle cx="18" cy="16" r="3.5" /><path d="M6 16 L10 8 h5 M10 8 L14 16 L18 16 M13 6 h3" /></>,
+    drive: <><path d="M4 14 L6 9 h12 l2 5 M3 14 h18 v4 H3 Z M6 18 v1.5 M18 18 v1.5" /></>,
+  }[mode]
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke={ink} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" filter="url(#ink)" aria-hidden>{g}</svg>
   )
 }

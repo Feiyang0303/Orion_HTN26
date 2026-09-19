@@ -128,36 +128,56 @@ export function firstSentences(text: string, n: number) {
 
 /* ------------------------------------------------------------- the palette */
 
-/* The ink a day is drawn in, taken from what is actually in it. A day of
-   harbours and bridges is blue-green; a day of cathedrals and castles is a
-   warm red-grey; a day of parks is green. This is the same rule as every other
-   mark in the book — point at a colour and ask which field chose it — and it
-   is why two days of the same trip do not look alike. */
-export type Palette = { accent: string; wash: string; rule: string; name: string }
-
-const PALETTES: Record<string, Palette> = {
-  water:   { accent: '#2d6f7b', wash: 'rgba(45,111,123,.10)', rule: '#9dbcc0', name: 'water' },
-  stone:   { accent: '#9a5a3c', wash: 'rgba(154,90,60,.10)',  rule: '#cfae95', name: 'old stone' },
-  green:   { accent: '#4a7c4e', wash: 'rgba(74,124,78,.10)',  rule: '#a9c3a6', name: 'green' },
-  market:  { accent: '#a8703a', wash: 'rgba(168,112,58,.10)', rule: '#d3b389', name: 'market' },
-  default: { accent: '#8a5a2b', wash: 'rgba(138,90,43,.09)',  rule: '#c2b18d', name: 'ink' },
+/* The colours a city is painted in, read off what the day is made of. A day
+   of harbours and bridges is blues and sea-greens; cathedrals, castles and
+   forums are warm reds and greys; canals and gardens are soft teals; parks
+   are green; markets are ochre. Same rule as every other mark in the book —
+   point at a colour and you can name the field that chose it — and it is why
+   Venice and Rome are not painted alike. */
+export type Palette = {
+  name: string
+  accent: string      // the ink the day is drawn in: pins, route, headings
+  wash: string        // the first watercolour tone
+  wash2: string       // the second, laid under it off-register
+  wash3: string       // a third, for variety across the sketches
+  rule: string        // pencil rules and leaders
+  paper: string       // the sheet
+  ink: string         // line work
 }
 
-const WATER = /harbour|harbor|port|quay|river|lake|canal|bay|beach|bridge|island|seine|pier|dock/i
-const STONE = /cathedral|church|basilica|castle|palace|fort|abbey|tower|monument|gate|temple|shrine|ruins?/i
-const GREEN = /park|garden|forest|wood|hill|meadow|botanic|arboretum/i
-const MARKET = /market|bazaar|hall|arcade|quarter|district|street|square/i
+const PALETTES: Record<string, Palette> = {
+  coastal:  { name: 'coastal',   accent: '#2f6f8f', wash: '#8fbad0', wash2: '#a9c9a3', wash3: '#e8c88a', rule: '#9ab5c2', paper: '#f4efe2', ink: '#3a3a3a' },
+  historic: { name: 'historic',  accent: '#9a4a3c', wash: '#d9a48a', wash2: '#b8b0a4', wash3: '#e3c48c', rule: '#c7aa9b', paper: '#f3eadb', ink: '#3b2f22' },
+  watertown:{ name: 'water town', accent: '#3f7f78', wash: '#9fcdc4', wash2: '#b7d3a6', wash3: '#e6cf9c', rule: '#a6c4bd', paper: '#f2f0e4', ink: '#2f3b36' },
+  green:    { name: 'green',     accent: '#4a7c4e', wash: '#a9c9a3', wash2: '#d6c48f', wash3: '#c9a27a', rule: '#a9c3a6', paper: '#f3efe0', ink: '#33402f' },
+  market:   { name: 'market',    accent: '#a8703a', wash: '#e6c48c', wash2: '#d9a48a', wash3: '#b7c9a6', rule: '#d3b389', paper: '#f4ecd9', ink: '#3b2f22' },
+  default:  { name: 'ink',       accent: '#8a5a2b', wash: '#d9b98a', wash2: '#c9c0ae', wash3: '#b7c9a6', rule: '#c2b18d', paper: '#f3ead6', ink: '#3b2f22' },
+}
 
-/** The palette for a set of places, by what most of them are. */
-export function paletteFor(names: string[]): Palette {
-  const score = { water: 0, stone: 0, green: 0, market: 0 }
+const COASTAL = /harbour|harbor|port\b|bay\b|beach|sea\b|ocean|pier|lighthouse|marina|coast|cliff|promenade/i
+const WATERTOWN = /canal|water town|bridge|ponte|lagoon|river|seine|kamo|thames|tiber|island|île|isola|quay|embankment/i
+const HISTORIC = /cathedral|church|basilica|castle|palace|palais|forum|colosseum|temple|shrine|abbey|tower|monument|gate|ruins?|pantheon|citadel|fort/i
+const GREEN = /park|garden|jardin|forest|wood|hill|meadow|botanic|arboretum/i
+const MARKET = /market|bazaar|hall|arcade|quarter|district|street|square|piazza|plaza/i
+
+/* Cities whose character is known before a single place is named: the sea
+   or the canals are the point of them, whatever the museums are called. */
+const COASTAL_CITY = /lisbon|lisboa|porto|barcelona|valencia|málaga|malaga|cádiz|cadiz|marseille|nice|genoa|genova|naples|napoli|palermo|dubrovnik|split|athens|piraeus|istanbul|tel aviv|beirut|alexandria|cape town|mumbai|goa|hong kong|busan|yokohama|kobe|sydney|melbourne|auckland|wellington|honolulu|san francisco|san diego|los angeles|santa monica|seattle|vancouver|victoria|halifax|boston|miami|rio de janeiro|havana|cartagena|copenhagen|oslo|bergen|helsinki|tallinn|riga|gdańsk|gdansk|reykjav|brighton|cornwall|dublin|galway|monaco|cinque terre|amalfi|santorini|mykonos|ibiza|palma|tenerife|madeira|cascais|biarritz|san sebastián|san sebastian/i
+const WATERTOWN_CITY = /venice|venezia|amsterdam|bruges|brugge|ghent|gent|utrecht|leiden|delft|giethoorn|suzhou|wuzhen|zhouzhuang|tongli|xitang|nanxun|hangzhou|shaoxing|st\.? petersburg|saint petersburg|bangkok|hoi an|annecy|colmar|strasbourg|stockholm|hamburg|copenhagen|birmingham/i
+
+/** The palette for a set of places, by what most of them are; the city's own
+    name counts for more than any one of them. */
+export function paletteFor(names: string[], city = ''): Palette {
+  const score = { coastal: 0, watertown: 0, historic: 0, green: 0, market: 0 }
+  if (COASTAL_CITY.test(city)) score.coastal += 4
+  if (WATERTOWN_CITY.test(city)) score.watertown += 4
   for (const n of names) {
-    if (WATER.test(n)) score.water++
-    if (STONE.test(n)) score.stone++
+    if (COASTAL.test(n)) score.coastal += 2
+    if (WATERTOWN.test(n)) score.watertown++
+    if (HISTORIC.test(n)) score.historic++
     if (GREEN.test(n)) score.green++
     if (MARKET.test(n)) score.market++
   }
-  const best = (Object.entries(score) as [keyof typeof score, number][])
-    .sort((a, b) => b[1] - a[1])[0]
+  const best = (Object.entries(score) as [keyof typeof score, number][]).sort((a, b) => b[1] - a[1])[0]
   return best && best[1] > 0 ? PALETTES[best[0]] : PALETTES.default
 }

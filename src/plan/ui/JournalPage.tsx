@@ -1,29 +1,34 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Sketch, sketchFor, type SketchName } from './Sketches'
-import { firstSentences, paletteFor } from './decor'
+import { Food, Sketch, TransportGlyph, foodFor, sketchFor } from './Sketches'
+import { paletteFor } from './decor'
 import { HHMM, MINS, TRANSPORT_LABEL, type Day, type LatLon, type Trip } from '../../types'
 
 /* One day, as a page of a hand-drawn travel journal.
  *
  * The page is a map first: the day's real route, projected onto the paper and
- * inked as a dotted line, with every stop pinned and sketched where it
- * actually stands. The cards on the left are the schedule, the things to
- * look for, the notes, and tonight's bed — torn paper, tape, a paper clip.
+ * laid as a cobbled path, with every stop pinned and sketched where it
+ * actually stands and the time you are there written under it. If the day
+ * has a river in it, a river runs through the page. The way between two
+ * places is a small drawn glyph on the path — footprints, a bus, a bicycle.
  *
- * It unfolds. The sheet opens on two creases, then the streets fade in, the
- * route draws itself from the hotel outward, the pins drop in order, each
- * sketch is inked in stroke by stroke, and the cards slide on last. Every
- * timing is a CSS variable set from the stop's index, so the whole sequence
- * is one stylesheet and no JavaScript clock.
+ * Around the map: the title in script, the day's schedule written down the
+ * left, the table (drawn from the cuisine tag), pencil notes in the corners,
+ * and a torn memo at the foot with the four things worth being told.
  *
- * Everything drawn is derived: the sketch from the name, the colour from the
- * kinds of place in the day, the streets from a seed made of the city's
- * name, the water from whether anything in the day is a river or a bridge.
+ * It unfolds. The sheet opens on two creases, then the paper's streets fade
+ * in, the path lays itself from the hotel outward, pins drop in order, each
+ * sketch is pencilled then inked, and the cards settle last. Every timing is
+ * a CSS variable set from the stop's index; there is no clock past the fold.
+ *
+ * Everything drawn is derived: the sketch from the name, the palette from the
+ * kinds of place in the day, the streets from a seed made of the city's name,
+ * the food from what OpenStreetMap says the kitchen serves. Nothing here is a
+ * photograph, and nothing is a fact the plan does not hold.
  */
 
 const W = 900, H = 1200
-/* Where the map may put things: the right two-thirds, clear of the cards. */
-const MAP = { x0: 0.36 * W, x1: 0.97 * W, y0: 0.12 * H, y1: 0.93 * H }
+/* Where the map may put things: right of the schedule, below the title, above the memo. */
+const MAP = { x0: 0.34 * W, x1: 0.97 * W, y0: 0.17 * H, y1: 0.80 * H }
 
 type Pt = { x: number; y: number }
 
@@ -33,7 +38,6 @@ function seeded(seed: string) {
   return () => { h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h >>> 0) % 10000) / 10000 }
 }
 
-/** A local, equal-area-enough projection of the day into the map area. */
 function projector(points: LatLon[]) {
   const lats = points.map(p => p.lat), lons = points.map(p => p.lon)
   const lat0 = (Math.min(...lats) + Math.max(...lats)) / 2
@@ -41,19 +45,18 @@ function projector(points: LatLon[]) {
   const xs = lons.map(l => l * kx), ys = lats
   const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys)
   const spanX = Math.max(maxX - minX, 0.004), spanY = Math.max(maxY - minY, 0.004)
-  const areaW = MAP.x1 - MAP.x0, areaH = MAP.y1 - MAP.y0
-  const s = Math.min(areaW / spanX, areaH / spanY) * 0.82
+  const s = Math.min((MAP.x1 - MAP.x0) / spanX, (MAP.y1 - MAP.y0) / spanY) * 0.78
   const cx = (MAP.x0 + MAP.x1) / 2, cy = (MAP.y0 + MAP.y1) / 2
   const mx = (minX + maxX) / 2, my = (minY + maxY) / 2
   return (p: LatLon): Pt => ({ x: cx + (p.lon * kx - mx) * s, y: cy - (p.lat - my) * s })
 }
 
-/* A hand's slight tremor on a path: every point nudged a little, seeded. */
 function wobble(d: Pt[], rnd: () => number, amt = 2.2): string {
   return d.map((p, i) => `${i ? 'L' : 'M'}${(p.x + (rnd() - .5) * amt).toFixed(1)} ${(p.y + (rnd() - .5) * amt).toFixed(1)}`).join(' ')
 }
+const mid = (pts: LatLon[]) => pts[Math.floor(pts.length / 2)] ?? pts[0]
 
-const WATER = /river|seine|thames|tiber|canal|bridge|pont|ponte|harbour|harbor|bay|lake|quay|beach|island|île|kamo/i
+const WATER = /river|seine|thames|tiber|canal|bridge|pont|ponte|harbour|harbor|bay|lake|quay|beach|island|île|isola|kamo|lagoon/i
 
 export default function JournalPage({ day, trip, open, onFly }: {
   day: Day; trip: Trip; open: boolean; onFly: () => void
@@ -66,8 +69,9 @@ export default function JournalPage({ day, trip, open, onFly }: {
     return () => { clearTimeout(a); clearTimeout(b) }
   }, [open, day.number])
 
-  const ink = paletteFor(day.stops.map(s => s.name))
+  const pal = paletteFor(trip.days.flatMap(d => d.stops.flatMap(s => [s.name, ...s.beats.slice(0, 1).map(b => b.text)])), trip.city)
   const bed = trip.stays[0] ?? null
+  const tones = [pal.wash, pal.wash2, pal.wash3]
 
   /* ------------------------------------------------------------ the map */
   const scene = useMemo(() => {
@@ -79,227 +83,274 @@ export default function JournalPage({ day, trip, open, onFly }: {
     if (!all.length) return null
     const P = projector(all)
     const legs = [...(day.approach ? [day.approach] : []), ...day.legs, ...(day.back ? [day.back] : [])]
-    const route = legs.map(l => wobble(l.polyline.map(P), r, 1.4))
-    const routeLen = legs.reduce((n, l) => n + l.polyline.length, 0)
+    const route = legs.map(l => wobble(l.polyline.map(P), r, 1.2))
+    /* A way-glyph per leg that has room for one: beside the path's middle,
+       a step off it so it does not sit on the stones or the pins. */
+    const glyphs = legs.flatMap(l => {
+      const a = P(l.polyline[0]), b = P(l.polyline[l.polyline.length - 1]), m = P(mid(l.polyline))
+      const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy)
+      if (len < 70) return []
+      const nx = -dy / len, ny = dx / len
+      return [{ x: m.x + nx * 18, y: m.y + ny * 18, mode: l.transport, min: Math.round(l.durationSec / 60) }]
+    })
     const stops = day.stops.map((s, i) => ({ ...P(s), s, i, sketch: sketchFor(s.name, i) }))
     const home = bed ? { ...P(bed), name: bed.name } : null
-
-    /* Where each sketch stands. A sketch is a box beside its pin; when the
-       pins are close (an old city centre is four sights in three streets) the
-       boxes are tried in eight directions until one lands clear of the others
-       and clear of the cards, and a thin leader ties it back to its pin. */
-    type Box = { x: number; y: number; w: number; h: number }
-    const placed: Box[] = [{ x: 0, y: 0, w: MAP.x0 - 10, h: H }]   // the cards column
-    const SW = 150, SH = 128
-    const offsets: [number, number][] = [[95, -80], [-95, -80], [0, -120], [110, 40], [-110, 40], [0, 90], [150, -20], [-150, -20], [60, -140], [-60, -140]]
-    const clear = (b: Box) => b.x >= MAP.x0 - 30 && b.x + b.w <= W - 8 && b.y >= 8 && b.y + b.h <= H - 8 &&
-      !placed.some(o => b.x < o.x + o.w && b.x + b.w > o.x && b.y < o.y + o.h && b.y + b.h > o.y)
-    const put = (x: number, y: number) => {
-      for (const [dx, dy] of offsets) {
-        const b = { x: x + dx - SW / 2, y: y + dy - SH / 2, w: SW, h: SH }
-        if (clear(b)) { placed.push(b); return { bx: b.x + SW / 2, by: b.y + SH / 2 } }
-      }
-      // Nowhere near: walk outward in rings until a clear spot turns up. The
-      // leader line carries the sketch back to its pin however far it went.
-      for (let ring = 180; ring <= 520; ring += 45) {
-        for (let k = 0; k < 16; k++) {
-          const a = (k / 16) * Math.PI * 2 - Math.PI / 2
-          const b = { x: x + Math.cos(a) * ring - SW / 2, y: y + Math.sin(a) * ring - SH / 2, w: SW, h: SH }
-          if (clear(b)) { placed.push(b); return { bx: b.x + SW / 2, by: b.y + SH / 2 } }
-        }
-      }
-      const b = { x: Math.max(MAP.x0, Math.min(W - SW - 8, x - SW / 2)), y: Math.max(8, y - 140), w: SW, h: SH }
-      placed.push(b); return { bx: b.x + SW / 2, by: b.y + SH / 2 }
-    }
-    const homeAt = home ? put(home.x, home.y) : null
-    const sketchAt = stops.map(st => put(st.x, st.y))
     const tables = day.tables.map(t => ({ ...P(t), t }))
 
-    // Streets: a loose, seeded grid the route can be seen to run along.
+    // Streets: a loose, seeded grid the path can be seen to run along.
     const streets: string[] = []
-    for (let i = 0; i < 26; i++) {
+    for (let i = 0; i < 22; i++) {
       const vertical = r() > .5
       const a = vertical ? { x: MAP.x0 - 60 + r() * (MAP.x1 - MAP.x0 + 120), y: MAP.y0 - 80 } : { x: MAP.x0 - 80, y: MAP.y0 - 60 + r() * (MAP.y1 - MAP.y0 + 120) }
       const b = vertical ? { x: a.x + (r() - .5) * 140, y: MAP.y1 + 80 } : { x: MAP.x1 + 80, y: a.y + (r() - .5) * 140 }
-      const mid = { x: (a.x + b.x) / 2 + (r() - .5) * 60, y: (a.y + b.y) / 2 + (r() - .5) * 60 }
-      streets.push(`M${a.x.toFixed(0)} ${a.y.toFixed(0)} Q${mid.x.toFixed(0)} ${mid.y.toFixed(0)} ${b.x.toFixed(0)} ${b.y.toFixed(0)}`)
+      const m = { x: (a.x + b.x) / 2 + (r() - .5) * 60, y: (a.y + b.y) / 2 + (r() - .5) * 60 }
+      streets.push(`M${a.x.toFixed(0)} ${a.y.toFixed(0)} Q${m.x.toFixed(0)} ${m.y.toFixed(0)} ${b.x.toFixed(0)} ${b.y.toFixed(0)}`)
     }
-    // Blocks: a few soft rectangles, like buildings washed in.
-    const blocks: { x: number; y: number; w: number; h: number; rot: number }[] = []
-    for (let i = 0; i < 18; i++) {
-      blocks.push({ x: MAP.x0 + r() * (MAP.x1 - MAP.x0), y: MAP.y0 + r() * (MAP.y1 - MAP.y0), w: 30 + r() * 70, h: 24 + r() * 50, rot: (r() - .5) * 30 })
+    const blocks: { x: number; y: number; w: number; h: number; rot: number; tone: number }[] = []
+    for (let i = 0; i < 16; i++) {
+      blocks.push({ x: MAP.x0 + r() * (MAP.x1 - MAP.x0), y: MAP.y0 + r() * (MAP.y1 - MAP.y0), w: 28 + r() * 64, h: 22 + r() * 46, rot: (r() - .5) * 30, tone: Math.floor(r() * 3) })
     }
-    const water = day.stops.some(s => WATER.test(s.name))
-    return { route, routeLen, stops, home, homeAt, sketchAt, tables, streets, blocks, water }
+    // Trees: a few small round crowns scattered where the streets are not.
+    const trees: Pt[] = []
+    for (let i = 0; i < 14; i++) trees.push({ x: MAP.x0 + r() * (MAP.x1 - MAP.x0), y: MAP.y0 + r() * (MAP.y1 - MAP.y0) })
+
+    /* A river, if the day has water in it: a wobbly band through the map that
+       passes near the watery stop, from one edge of the sheet to another. */
+    const wet = stops.find(st => WATER.test(st.s.name))
+    let river: string | null = null
+    if (wet) {
+      const pts: Pt[] = []
+      const x0 = MAP.x0 - 60, x1 = W + 40
+      for (let k = 0; k <= 10; k++) {
+        const t = k / 10
+        const x = x0 + (x1 - x0) * t
+        const y = wet.y + 34 + Math.sin(t * Math.PI * 1.6 + r()) * 70 + (r() - .5) * 20
+        pts.push({ x, y })
+      }
+      river = pts.map((p, i) => `${i ? 'L' : 'M'}${p.x.toFixed(0)} ${p.y.toFixed(0)}`).join(' ')
+    }
+
+    /* Where each sketch stands: beside its pin if it can, else the nearest
+       clear spot, and never over the schedule or the title. */
+    type Box = { x: number; y: number; w: number; h: number }
+    const placed: Box[] = [{ x: 0, y: 0, w: MAP.x0 - 6, h: H }, { x: 0, y: 0, w: W, h: MAP.y0 - 10 }, { x: 0, y: MAP.y1 + 40, w: W, h: H }]
+    const SW = 156, SH = 150
+    const offsets: [number, number][] = [[100, -84], [-100, -84], [0, -128], [112, 44], [-112, 44], [0, 96], [156, -20], [-156, -20], [64, -150], [-64, -150]]
+    const clear = (b: Box) => b.x >= MAP.x0 - 24 && b.x + b.w <= W - 6 && b.y >= 6 && b.y + b.h <= H - 6 &&
+      !placed.some(o => b.x < o.x + o.w && b.x + b.w > o.x && b.y < o.y + o.h && b.y + b.h > o.y)
+    const put = (x: number, y: number, w = SW, h = SH) => {
+      for (const [dx, dy] of offsets) {
+        const b = { x: x + dx - w / 2, y: y + dy - h / 2, w, h }
+        if (clear(b)) { placed.push(b); return { bx: b.x + w / 2, by: b.y + h / 2 } }
+      }
+      for (let ring = 190; ring <= 560; ring += 45) {
+        for (let k = 0; k < 16; k++) {
+          const a = (k / 16) * Math.PI * 2 - Math.PI / 2
+          const b = { x: x + Math.cos(a) * ring - w / 2, y: y + Math.sin(a) * ring - h / 2, w, h }
+          if (clear(b)) { placed.push(b); return { bx: b.x + w / 2, by: b.y + h / 2 } }
+        }
+      }
+      const b = { x: Math.max(MAP.x0, Math.min(W - w - 6, x - w / 2)), y: Math.max(MAP.y0, y - 150), w, h }
+      placed.push(b); return { bx: b.x + w / 2, by: b.y + h / 2 }
+    }
+    const homeAt = home ? put(home.x, home.y, 120, 110) : null
+    const sketchAt = stops.map(st => put(st.x, st.y))
+
+    return { route, glyphs, stops, home, homeAt, sketchAt, tables, streets, blocks, trees, river }
   }, [day, trip.city, bed])
 
   /* ----------------------------------------------------------- the cards */
   const leaving = (i: number) => HHMM(MINS(day.stops[i].arrival) + day.stops[i].visitMin)
-  const lookFor = day.stops.flatMap(s => s.beats[0] ? [{ s, text: firstSentence(s.beats[0].text) }] : []).slice(0, 6)
   const lunch = day.tables.find(t => t.meal === 'lunch')
   const dinner = day.tables.find(t => t.meal === 'dinner')
   const km = (day.legs.reduce((n, l) => n + l.distanceM, 0) + (day.approach?.distanceM ?? 0) + (day.back?.distanceM ?? 0)) / 1000
   const modes = [...new Set([...(day.approach ? [day.approach] : []), ...day.legs, ...(day.back ? [day.back] : [])].map(l => l.transport))]
-  const endsAt = day.stops.length ? HHMM(MINS(day.stops[day.stops.length - 1].arrival) + day.stops[day.stops.length - 1].visitMin + (day.back?.durationSec ?? 0) / 60) : trip.wish.endAt
-  const notes = [
-    `${km.toFixed(1)} km ${modes.map(m => TRANSPORT_LABEL[m].toLowerCase()).join(' & ')}${modes.length === 1 && modes[0] === 'walk' ? ' — comfortable shoes' : ''}`,
-    day.legs.some(l => l.estimated) ? 'some legs are straight-line estimates — allow a little more' : '',
-    lunch?.openingHours ? `${lunch.name}: hours tagged “${lunch.openingHours}”, unverified` : '',
-    day.stops[0] ? `check ${day.stops[0].name}'s own hours before setting out` : '',
-  ].filter(Boolean).slice(0, 4)
-  const first = day.stops[0]
-  const know = first ? firstSentence(first.blurb) : ''
+  const endsAt = day.stops.length ? HHMM(MINS(day.stops[day.stops.length - 1].arrival) + day.stops[day.stops.length - 1].visitMin) : trip.wish.endAt
+  const homeAt = day.back ? HHMM(MINS(endsAt) + day.back.durationSec / 60) : endsAt
+  const longest = [...day.legs].sort((a, b) => b.durationSec - a.durationSec)[0]
+  const longestAfter = longest ? day.stops.find(s => s.id === longest.fromStopId)?.name : null
+
+  /* Pencil in the corners: a few things the map itself cannot say. */
+  const pencil = [
+    longest && longest.durationSec > 15 * 60 ? `${Math.round(longest.durationSec / 60)} min after ${longestAfter} — the long bit` : '',
+    day.legs.some(l => l.estimated) ? 'dotted legs were not routed; allow more' : '',
+    lunch ? `lunch near stop ${day.stops.findIndex(s => s.id === lunch.nearStopId) + 1}` : '',
+    day.stops[0] ? `check ${day.stops[0].name.split(',')[0]}'s hours first` : '',
+  ].filter(Boolean).slice(0, 3)
+
+  /* The four things on the memo. Counted where they can be, plain where they
+     cannot: the book does not know the weather, and says so. */
+  const memo = [
+    ['ID', 'carry it — museums and some churches check, and the hotel will'],
+    ['Weather', 'the book cannot know it; look the night before and dress for it'],
+    ['Shoes', `${km.toFixed(1)} km ${modes.map(m => TRANSPORT_LABEL[m].toLowerCase()).join(' & ')} — comfortable ones`],
+    ['Getting about', modes.includes('transit') ? 'a day pass usually beats singles' : modes.includes('walk') ? 'all of it on foot; a card for the way home' : 'a card, and the hotel address written down'],
+  ]
 
   const style = {
-    '--ink-day': ink.accent, '--wash-day': ink.wash, '--rule-day': ink.rule,
+    '--ink-day': pal.accent, '--wash-day': pal.wash, '--wash2-day': pal.wash2, '--rule-day': pal.rule, '--paper': pal.paper, '--line': pal.ink,
   } as React.CSSProperties
+  const heroes = day.stops.slice(0, 3)
 
   return (
     <div className={`jp is-${phase}`} style={style}>
       <div className="jp-sheet">
-        {/* ---------------------------------------------------- the map */}
+        {/* ------------------------------------------------- the paper */}
         <svg className="jp-map" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid slice" aria-hidden>
-          <rect width={W} height={H} fill="#f3ead6" />
+          <g filter="url(#deckle)">
+            <rect x="8" y="8" width={W - 16} height={H - 16} fill={pal.paper} />
+          </g>
           <rect width={W} height={H} filter="url(#paper)" opacity=".9" />
+          <defs>
+            <clipPath id="jp-town"><rect x={MAP.x0 - 30} y={MAP.y0 - 24} width={W - MAP.x0 + 30} height={MAP.y1 - MAP.y0 + 54} rx="30" /></clipPath>
+          </defs>
           {scene && (
             <>
-              {scene.water && (
-                <path className="jp-water" filter="url(#wash)"
-                  d={`M${W * .55} ${H} C${W * .7} ${H * .8} ${W * .78} ${H * .74} ${W} ${H * .62} V${H} Z`} />
+              {scene.river && (
+                <g className="jp-river">
+                  <path d={scene.river} filter="url(#wash)" className="jp-river-wash" />
+                  <path d={scene.river} className="jp-river-line" filter="url(#ink)" />
+                </g>
               )}
+              <g clipPath="url(#jp-town)">
               <g className="jp-blocks" filter="url(#wash)">
-                {scene.blocks.map((b, i) => <rect key={i} x={b.x} y={b.y} width={b.w} height={b.h} transform={`rotate(${b.rot} ${b.x} ${b.y})`} />)}
+                {scene.blocks.map((b, i) => <rect key={i} x={b.x} y={b.y} width={b.w} height={b.h} fill={tones[b.tone]} transform={`rotate(${b.rot} ${b.x} ${b.y})`} />)}
               </g>
-              <g className="jp-streets" filter="url(#ink)">
+              <g className="jp-streets" filter="url(#pencil)">
                 {scene.streets.map((d, i) => <path key={i} d={d} style={{ ['--i' as string]: i }} />)}
               </g>
-              <g className="jp-route" filter="url(#ink)">
-                {scene.route.map((d, i) => (
-                  <path key={i} d={d} className="jp-route-leg" pathLength={100} style={{ ['--i' as string]: i, ['--n' as string]: scene.route.length }} />
-                ))}
+              <g className="jp-trees" filter="url(#wash)">
+                {scene.trees.map((t, i) => <circle key={i} cx={t.x} cy={t.y} r={9 + (i % 3) * 3} fill={pal.wash2} />)}
+              </g>
+              </g>
+              {/* the cobbled path: a soft band, then the stones */}
+              <g className="jp-path" filter="url(#ink)">
+                {scene.route.map((d, i) => <path key={`b${i}`} d={d} className="jp-path-band" style={{ ['--i' as string]: i }} />)}
+                {scene.route.map((d, i) => <path key={`s${i}`} d={d} className="jp-path-stones" style={{ ['--i' as string]: i }} />)}
               </g>
               <g className="jp-leaders">
                 {scene.stops.map((st, i) => {
                   const a = scene.sketchAt[i]
-                  return <line key={st.s.id} x1={st.x} y1={st.y} x2={a.bx} y2={a.by + 48} style={{ ['--i' as string]: i }} />
+                  return <line key={st.s.id} x1={st.x} y1={st.y} x2={a.bx} y2={a.by + 56} style={{ ['--i' as string]: i }} />
                 })}
                 {scene.home && scene.homeAt && <line x1={scene.home.x} y1={scene.home.y} x2={scene.homeAt.bx} y2={scene.homeAt.by + 40} style={{ ['--i' as string]: -1 }} />}
               </g>
               {scene.home && (
-                <g className="jp-pin jp-pin-home" transform={`translate(${scene.home.x} ${scene.home.y})`}>
-                  <circle r="13" /><text y="5" textAnchor="middle">⌂</text>
-                </g>
+                <g transform={`translate(${scene.home.x} ${scene.home.y})`}><g className="jp-pin jp-pin-home">
+                  <circle r="12" /><text y="5" textAnchor="middle">⌂</text>
+                </g></g>
               )}
               {scene.tables.map(({ x, y, t }, i) => (
-                <g key={t.id} className="jp-pin jp-pin-meal" transform={`translate(${x} ${y})`} style={{ ['--i' as string]: day.stops.length + i }}>
+                <g key={t.id} transform={`translate(${x} ${y})`}><g className="jp-pin jp-pin-meal" style={{ ['--i' as string]: day.stops.length + i }}>
                   <circle r="9" /><text y="4" textAnchor="middle">{t.meal === 'lunch' ? 'L' : 'D'}</text>
-                </g>
+                </g></g>
               ))}
               {scene.stops.map(({ x, y, s, i }) => (
-                <g key={s.id} className="jp-pin" transform={`translate(${x} ${y})`} style={{ ['--i' as string]: i }}>
+                <g key={s.id} transform={`translate(${x} ${y})`}><g className="jp-pin" style={{ ['--i' as string]: i }}>
                   <circle r="14" /><text y="5" textAnchor="middle">{i + 1}</text>
-                </g>
+                </g></g>
               ))}
             </>
           )}
         </svg>
 
-        {/* The sketches stand beside their pins, in HTML so the fonts and the
-            draw-in animation are simple; positions are the same projection. */}
+        {/* ------------------------------------------ the way between */}
+        {scene && scene.glyphs.map((g, i) => (
+          <span key={i} className="jp-way" style={{ left: `${(g.x / W) * 100}%`, top: `${(g.y / H) * 100}%`, ['--i' as string]: i }}>
+            <TransportGlyph mode={g.mode} size={20} ink={pal.ink} /><i>{g.min}′</i>
+          </span>
+        ))}
+
+        {/* -------------------------------------------- the sketches */}
         {scene && scene.stops.map(({ s, i, sketch }) => {
           const at = scene.sketchAt[i]
           return (
             <figure key={s.id} className="jp-sk"
               style={{ left: `${(at.bx / W) * 100}%`, top: `${(at.by / H) * 100}%`, ['--i' as string]: i }}>
-              <Sketch name={sketch as SketchName} size={92} wash={ink.accent} ink="#3b2f22" />
-              <figcaption><b>{i + 1}</b> {s.name}</figcaption>
+              <Sketch name={sketch} size={104} wash={tones[i % 3]} wash2={tones[(i + 1) % 3]} ink={pal.ink} />
+              <figcaption><b>{i + 1}</b> {s.name.split(',')[0]}<em>{s.arrival}–{leaving(i)}</em></figcaption>
             </figure>
           )
         })}
         {scene?.home && scene.homeAt && (
           <figure className="jp-sk is-home" style={{ left: `${(scene.homeAt.bx / W) * 100}%`, top: `${(scene.homeAt.by / H) * 100}%`, ['--i' as string]: -1 }}>
-            <Sketch name="hotel" size={64} wash="#8a7a60" ink="#3b2f22" />
-            <figcaption>{scene.home.name}</figcaption>
+            <Sketch name="hotel" size={70} wash={pal.wash2} ink={pal.ink} />
+            <figcaption>{scene.home.name}<em>{trip.wish.startAt} · back {homeAt}</em></figcaption>
           </figure>
         )}
 
-        {/* ---------------------------------------------------- the cards */}
-        <div className="jp-cards">
-          <header className="jp-banner" style={{ ['--i' as string]: 0 }}>
-            <p className="jp-city">{trip.city}</p>
-            <p className="jp-sub">{day.title === 'The day' ? `a day on foot` : day.title}</p>
-            <p className="jp-date">Day {day.number} of {trip.days.length} · {trip.wish.startAt}–{endsAt}</p>
-            <span className="jp-clip" aria-hidden />
-          </header>
-
-          {know && (
-            <section className="jp-card jp-know" style={{ ['--i' as string]: 1 }}>
-              <span className="jp-tape" aria-hidden />
-              <h3>Worth knowing</h3>
-              <p>{know}</p>
-            </section>
-          )}
-
-          <section className="jp-card jp-plan" style={{ ['--i' as string]: 2 }}>
-            <h3>The day</h3>
-            <ol>
-              {bed && day.approach && (
-                <li className="jp-edge"><em>{trip.wish.startAt}</em><span>leave <b>{bed.name}</b> · {Math.round(day.approach.durationSec / 60)} min {TRANSPORT_LABEL[day.approach.transport].toLowerCase()}</span></li>
-              )}
-              {day.stops.map((s, i) => (
-                <li key={s.id}>
-                  <em>{s.arrival}<i>{leaving(i)}</i></em>
-                  <span>
-                    <b>{i + 1}. {s.name}</b>
-                    <small>{Math.round(s.visitMin)} min{day.legs[i] ? ` · then ${Math.round(day.legs[i].durationSec / 60)} min ${TRANSPORT_LABEL[day.legs[i].transport].toLowerCase()}` : ''}</small>
-                    {lunch && lunch.nearStopId === s.id && <small className="jp-meal">lunch · {lunch.name}{lunch.cuisine ? ` · ${lunch.cuisine.replace(/;/g, ', ')}` : ''}</small>}
-                  </span>
-                </li>
-              ))}
-              {bed && day.back && (
-                <li className="jp-edge"><em>{HHMM(MINS(endsAt) - (day.back.durationSec) / 60)}</em><span>back to <b>{bed.name}</b> · {Math.round(day.back.durationSec / 60)} min</span></li>
-              )}
-              {dinner && <li className="jp-edge"><em>{HHMM(Math.max(MINS(endsAt), 18 * 60 + 30))}</em><span>dinner · <b>{dinner.name}</b>{dinner.cuisine ? ` · ${dinner.cuisine.replace(/;/g, ', ')}` : ''}</span></li>}
-            </ol>
-          </section>
-
-          {lookFor.length > 0 && (
-            <section className="jp-card jp-look" style={{ ['--i' as string]: 3 }}>
-              <span className="jp-tape is-r" aria-hidden />
-              <h3>Look for</h3>
-              <ul>{lookFor.map(({ s, text }) => <li key={s.id}><i /><span>{text}</span></li>)}</ul>
-            </section>
-          )}
-
-          <section className="jp-card jp-notes" style={{ ['--i' as string]: 4 }}>
-            <h3>Notes</h3>
-            <ul>{notes.map((n, i) => <li key={i}>{n}</li>)}</ul>
-          </section>
-
-          {bed && (
-            <section className="jp-card jp-bed" style={{ ['--i' as string]: 5 }}>
-              <h3>Tonight</h3>
-              <p><b>{bed.name}</b>{bed.stars != null ? ` · ${'★'.repeat(Math.min(5, bed.stars))}` : ''}</p>
-              {bed.address && <p>{bed.address}</p>}
-            </section>
-          )}
-
-          <div className="jp-actions" style={{ ['--i' as string]: 6 }}>
-            <button type="button" className="jp-fly" onClick={onFly}>Fly day {day.number} →</button>
+        {/* --------------------------------------------------- the title */}
+        <header className="jp-title" style={{ ['--i' as string]: 0 }}>
+          <div className="jp-title-marks" aria-hidden>
+            {heroes.map((s, i) => <Sketch key={s.id} name={sketchFor(s.name, i)} size={44} wash={tones[i % 3]} ink={pal.ink} />)}
           </div>
-        </div>
-
-        {/* the creases and the stamp */}
-        <div className="jp-creases" aria-hidden />
+          <h1 className="jp-city">{trip.city}</h1>
+          <p className="jp-brush">{trip.city} {trip.days.length === 1 ? 'one-day trip' : `${trip.days.length}-day trip`}{trip.days.length > 1 ? ` · day ${day.number}` : ''}{day.title && day.title !== 'The day' ? ` · ${day.title.toLowerCase()}` : ''}</p>
+          <span className="jp-title-wash" aria-hidden />
+        </header>
         <div className="jp-stamp" aria-hidden><span>{trip.city.slice(0, 14)}</span><b>{km.toFixed(1)} km</b></div>
+
+        {/* ------------------------------------------------ the schedule */}
+        <section className="jp-plan" style={{ ['--i' as string]: 1 }}>
+          <h3>The day</h3>
+          <ol>
+            {bed && day.approach && (
+              <li className="jp-edge"><em>{trip.wish.startAt}</em><span>leave <b>{bed.name}</b><small>{Math.round(day.approach.durationSec / 60)} min {TRANSPORT_LABEL[day.approach.transport].toLowerCase()}</small></span></li>
+            )}
+            {day.stops.map((s, i) => (
+              <li key={s.id}>
+                <em>{s.arrival}<i>{leaving(i)}</i></em>
+                <span>
+                  <b>{i + 1}. {s.name.split(',')[0]}</b>
+                  <small>{Math.round(s.visitMin)} min{day.legs[i] ? ` · then ${Math.round(day.legs[i].durationSec / 60)} min ${TRANSPORT_LABEL[day.legs[i].transport].toLowerCase()}` : ''}</small>
+                  {lunch && lunch.nearStopId === s.id && <small className="jp-meal">lunch · {lunch.name}</small>}
+                </span>
+              </li>
+            ))}
+            {bed && day.back && <li className="jp-edge"><em>{endsAt}</em><span>back to <b>{bed.name}</b><small>{Math.round(day.back.durationSec / 60)} min · home {homeAt}</small></span></li>}
+            {dinner && <li className="jp-edge"><em>{HHMM(Math.max(MINS(homeAt), 18 * 60 + 30))}</em><span>dinner · <b>{dinner.name}</b></span></li>}
+          </ol>
+        </section>
+
+        {/* --------------------------------------------------- the table */}
+        {(lunch || dinner) && (
+          <section className="jp-table" style={{ ['--i' as string]: 2 }}>
+            {[lunch, dinner].filter(Boolean).map(t => t && (
+              <div key={t.id} className="jp-dish">
+                <Food name={foodFor(t.cuisine, t.kind)} size={96} wash={tones[t.meal === 'lunch' ? 2 : 0]} wash2={tones[1]} ink={pal.ink} />
+                <div>
+                  <b>{t.meal}</b>
+                  <strong>{t.name}</strong>
+                  <span>{t.cuisine ? t.cuisine.replace(/;/g, ', ') : t.kind.replace('_', ' ')}{t.walkMin != null ? ` · ${t.walkMin} min from ${t.meal === 'dinner' && bed ? 'the hotel' : 'the stop'}` : ''}</span>
+                  {t.why && <q>{t.why}</q>}
+                </div>
+              </div>
+            ))}
+          </section>
+        )}
+
+
+        {/* --------------------------------------------- pencil, corners */}
+        <ul className="jp-pencil" aria-label="Notes">
+          {pencil.map((n, i) => <li key={i} style={{ ['--i' as string]: 4 + i }}>{n}</li>)}
+        </ul>
+
+        {/* ------------------------------------------------- the memo */}
+        <footer className="jp-memo" style={{ ['--i' as string]: 6 }}>
+          <span className="jp-tape" aria-hidden />
+          <ul>
+            {memo.map(([k, v]) => <li key={k}><b>{k}</b><span>{v}</span></li>)}
+          </ul>
+          <p className="jp-closing">— have a good day in {trip.city}.</p>
+          <button type="button" className="jp-fly" onClick={onFly}>fly day {day.number} →</button>
+        </footer>
+
+        <div className="jp-creases" aria-hidden />
       </div>
 
-      {/* the outside of the folded sheet */}
       <div className="jp-panel is-l" aria-hidden><div className="jp-face" /></div>
       <div className="jp-panel is-c" aria-hidden><div className="jp-face"><b>{trip.city}</b><span>Day {day.number}</span></div></div>
       <div className="jp-panel is-r" aria-hidden><div className="jp-face" /></div>
     </div>
   )
 }
-
-const firstSentence = (s: string) => firstSentences((s ?? '').replace(/\s*\([^)]*\)/g, ''), 1)
