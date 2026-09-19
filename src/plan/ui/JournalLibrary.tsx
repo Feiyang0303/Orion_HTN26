@@ -108,9 +108,16 @@ export default function JournalLibrary({ onClose, onPlan, onOpenTrip, onFly }: {
             <button type="button" className="o-btn primary small" onClick={onPlan}>Plan a new trip</button>
           </div>
 
-          {error && <p className="jl-error" role="alert">{error}</p>}
+          {error && trips.length > 0 && <p className="jl-error" role="alert">{error}</p>}
           {loading ? (
             <div className="jl-loading" role="status"><span className="o-spinner" /> Finding your chapters…</div>
+          ) : error && trips.length === 0 ? (
+            <motion.div className="jl-empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} role="alert">
+              <span className="jl-empty-mark">✦</span>
+              <h3>The journal stayed closed.</h3>
+              <p>{error}</p>
+              <button type="button" className="o-btn primary" onClick={() => void refresh()}>Try opening it again</button>
+            </motion.div>
           ) : trips.length === 0 ? (
             <motion.div className="jl-empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
               <span className="jl-empty-mark">✦</span>
