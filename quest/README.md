@@ -6,8 +6,8 @@ plays the trip you last sent to VR from the web (`GET /api/vr/current`).
 
 Unity 6.3 LTS (`6000.3.24f1`) · Cesium for Unity 1.25 · URP · OpenXR with Meta Quest Support.
 
-> **Status: written, not yet compiled.** Nothing here has been through the Unity editor yet. See
-> "What has been verified" at the bottom; it is updated as that changes.
+> **Status: compiles outside the editor; not yet opened in it.** Unity will not start without a
+> licence (sign in to Unity Hub). See "What has been verified" at the bottom.
 
 ## How it is put together
 
@@ -82,8 +82,8 @@ last sent.
 | Google key works without a Referer (so from a native app) | **Checked** with curl, 2026-09-19 |
 | Map Tiles terms allow Cesium for Unity | **Read** on Google's policy page |
 | API shape (`/api/vr/current`, fixture plan) | **Checked** against the live endpoint and the fixture |
-| C# compiles | not yet |
-| Logic tests pass | not yet |
+| Runtime C# compiles | **Yes, outside the editor**: built with `dotnet` against Unity 6000.3.24f1's own DLLs and the Cesium 1.25.1, TextMeshPro, Input System and Mathematics sources (a deliberate mistake is caught, so the check is real). `Editor/Build.cs` is **not** covered by this |
+| Logic tests pass | **8 of 12** under `dotnet` (timeline, ride limits, mid-leg blink, follower caps, yaw, height smoothing, paths, director). The other 4 read the fixture with `JsonUtility`, which only exists inside the editor |
 | Editor play mode: city loads, flight plays | not yet |
 | APK builds | not yet |
 | Anything in the headset | only you can |
