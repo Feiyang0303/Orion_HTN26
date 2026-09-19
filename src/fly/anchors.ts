@@ -3,7 +3,7 @@ import type { Anchor } from './ground'
 import { resample } from './geo'
 
 /* Everything in a Plan that needs a place on the real ground, as real lon/lat.
- * The flight and the VR table both put the same things on the same tiles, so
+ * The flight and the headset both put the same things on the same tiles, so
  * they share this list and its keys. */
 
 export const SAMPLE_STEP_M = 30

@@ -5,14 +5,12 @@ import * as THREE from 'three'
 import type { FlyProps, Plan } from '../types'
 import GoogleTiles, { probeTiles, type TilesHandle } from './GoogleTiles'
 import { GroundPlacer } from './ground'
-import { anchorsFor, keyLeg, keyStop, keyTarget, SAMPLE_STEP_M } from './anchors'
-import { Path } from './routePath'
-import { smoothHeights } from './legStyle'
+import { anchorsFor, keyStop, keyTarget } from './anchors'
 import RouteLine from './RouteLine'
-import { frameFor } from './director'
-import { Governor, type Shot } from './quality'
+import { Governor, type Shot as Detail } from './quality'
 import { activeBeat, buildTimeline, type Segment } from './timeline'
-import { resample, smootherstep } from './geo'
+import { smootherstep } from './geo'
+import { Preloader, Shots, routeOn, type Shot } from './shots'
 import { startFlight, tag, log, lastFault } from '../telemetry'
 import Fault from '../ui/Fault'
 import FlightHud, { type Control, type Hud } from './FlightHud'
@@ -23,15 +21,10 @@ import './fly.css'
  * while the book is read); `begin` flips the camera from a slow planning hold
  * into the dive and the tour.
  *
- * Camera language, all eased (the camera chases a target pose through
- * exponential smoothing, so nothing snaps):
- *   chase  ~55 m up, ~110 m behind, looking ~60 m ahead
- *   pan    higher and farther back than the chase (low facade shots look
- *          bad in photogrammetry), checked for line of sight to the target
- *          before it is committed
+ * The shots themselves are in shots.ts. Here they are eased: the camera chases
+ * each one through exponential smoothing, so nothing snaps.
  */
 
-const CHASE_UP = 55, CHASE_BACK = 110, CHASE_LOOK = 60
 const PRELOAD_AHEAD_SEC = 30       // tiles for shots this far ahead are fetched at full detail in advance
 const PRELOAD_ON = new URLSearchParams(location.search).get('preload') !== '0'
 const noHit = () => null
@@ -56,35 +49,19 @@ function Rig({ plan, begin, onStopReached, onFinish, onHud, control, tiles, load
   useEffect(() => { ground.requeue() }, [ground, loadTick])
 
   // World-space route, rebuilt as the ground refines under it.
-  const { legPaths, route, legStart } = useMemo(() => {
-    const at = (key: string) => { const c = ground.get(key); return c ? new THREE.Vector3(c.x, c.y, c.z) : null }
-    const legPaths = plan.legs.map((leg, i) => {
-      const n = resample(leg.polyline, SAMPLE_STEP_M).length
-      const pts: THREE.Vector3[] = []
-      for (let j = 0; j < n; j++) { const p = at(keyLeg(i, j)); if (p) pts.push(p) }
-      return new Path(smoothHeights(pts))
-    })
-    const legStart: number[] = []
-    let acc = 0
-    legPaths.forEach((p, i) => { legStart[i] = acc; acc += p.length })
-    return { legPaths, route: new Path(legPaths.flatMap(p => p.pts)), legStart }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [plan, ground, version])
-  const routeRef = useRef({ route, legPaths, legStart })
-  routeRef.current = { route, legPaths, legStart }
+  const shots = useMemo(() => new Shots(ground, tiles), [ground, tiles])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const { legPaths } = useMemo(() => shots.route = routeOn(plan, ground), [plan, ground, shots, version])
 
   // Playback state lives in refs: it changes every frame, React does not need to know.
   const s = useRef({
     t: 0, started: false, reached: -1, finished: false,
     sweep: 0, beatKey: '', audio: null as HTMLAudioElement | null, wasPaused: false,
     inited: false, planAngle: 0, planEye: new THREE.Vector3(), planLook: new THREE.Vector3(),
-    look: new THREE.Vector3(), sizes: new Map<string, { h: number | null; at: number }>(), vantage: new Map<string, { scale: number; lift: number; at: number }>(),
-    hud: '', lastHeading: new THREE.Vector3(0, 0, -1), highlightKey: '',
+    look: new THREE.Vector3(), hud: '', highlightKey: '',
   })
   const hl = useRef<THREE.Group>(null)
-  const tmp = useMemo(() => ({ a: new THREE.Vector3(), b: new THREE.Vector3(), eye: new THREE.Vector3(), lk: new THREE.Vector3(), dir: new THREE.Vector3() }), [])
-
-  const cell = (key: string, fallback = 'origin') => { const c = ground.get(key) ?? ground.get(fallback); return c ? tmp.a.set(c.x, c.y, c.z) : tmp.a.set(0, 0, 0) }
+  const tmp = useMemo(() => ({ b: new THREE.Vector3(), eye: new THREE.Vector3(), lk: new THREE.Vector3() }), [])
 
   function planPose(dt: number, eye: THREE.Vector3, look: THREE.Vector3) {
     const c = new THREE.Vector3(); let n = 0
@@ -99,99 +76,35 @@ function Rig({ plan, begin, onStopReached, onFinish, onHud, control, tiles, load
     look.copy(c)
   }
 
-  function headingIn(stop: number) {
-    const { route: r, legPaths: lp, legStart: ls } = routeRef.current
-    if (!lp.length || !r.length) return s.current.lastHeading.clone()
-    const leg = Math.max(0, stop - 1)
-    const at = stop > 0 ? ls[leg] + lp[leg].length : 0
-    return r.heading(at, 25, 25, s.current.lastHeading)
-  }
+  const chasePose = (seg: Extract<Segment, { kind: 'travel' }>, u: number, eye: THREE.Vector3, look: THREE.Vector3, commit = true) =>
+    shots.chase(seg.leg, smootherstep(u) * (shots.route.legPaths[seg.leg]?.length ?? 0), eye, look, commit)      // eased: slows into the stop
 
-  /** A vantage on `targetKey` that can see it: start at the pan distance and
-      climb / back off until the line of sight is clear. Re-checked every 1.5 s
-      because the surface refines under us as tiles stream in. */
-  function dwellPose(stop: number, beatIndex: number | null, beatTarget: string | undefined, tIn: number, now: number, eye: THREE.Vector3, look: THREE.Vector3, check = true) {
-    const key = beatTarget ? keyTarget(stop, beatTarget) : keyStop(stop)
-    const tg = cell(key, keyStop(stop)).clone()
-    const wide = beatIndex === null
-    // The Director: frame what is there. Re-measured now and then, because the
-    // surface sharpens as finer tiles arrive under the camera.
-    let size = s.current.sizes.get(key)
-    if (!size || size.h === null || now - size.at > 4) { size = { h: ground.measure(tiles.current, tg.x, tg.y, tg.z), at: now }; s.current.sizes.set(key, size) }
-    const fr = frameFor(size.h, wide)
-    const baseUp = fr.up, baseDist = fr.dist
-    look.set(tg.x, tg.y + fr.lookUp, tg.z)
-    const offset = [0, 0.7, -0.7, 1.4][(beatIndex ?? 0) % 4]
-    const hd = headingIn(stop)
-    const ang = Math.atan2(-hd.z, -hd.x) + offset + tIn * 0.04    // behind the way we came, slowly drifting
-    const place = (scale: number, lift: number) =>
-      eye.set(tg.x + Math.cos(ang) * baseDist * scale, tg.y + baseUp + lift, tg.z + Math.sin(ang) * baseDist * scale)
-
-    const vk = `${stop}:${beatIndex ?? 'wide'}`
-    let v = s.current.vantage.get(vk)
-    if (check && (!v || now - v.at > 1.5)) {
-      v = { scale: 1, lift: 0, at: now }
-      for (const [sc, lf] of [[1, 0], [1, 40], [1.25, 90], [1.5, 170]] as const) {
-        place(sc, lf); v.scale = sc; v.lift = lf
-        if (ground.lineOfSight(tiles.current, eye, look)) break
-      }
-      s.current.vantage.set(vk, v)
-    }
-    place(v?.scale ?? 1, v?.lift ?? 0)
-  }
-
-  function chasePose(seg: Extract<Segment, { kind: 'travel' }>, u: number, eye: THREE.Vector3, look: THREE.Vector3, commit = true) {
-    const { route: r, legPaths: lp, legStart: ls } = routeRef.current
-    const path = lp[seg.leg]
-    if (!path || !r.length) return false
-    const sDist = ls[seg.leg] + smootherstep(u) * path.length     // eased: slows into the stop
-    const p = r.at(sDist, tmp.b)
-    const hd = r.heading(sDist, 20, CHASE_LOOK, s.current.lastHeading)
-    if (commit) s.current.lastHeading.copy(hd)
-    eye.set(p.x - hd.x * CHASE_BACK, p.y + CHASE_UP, p.z - hd.z * CHASE_BACK)
-    r.at(sDist + CHASE_LOOK, look); look.y += 4
-    return true
-  }
-
-  /* ---- preloading ------------------------------------------------------
-     Tiles are chosen for the cameras the renderer knows about. Registering
-     invisible cameras at the shots coming up in the next PRELOAD_AHEAD_SEC (or
-     the opening ones, while the book is still being read) makes it fetch those
-     views at full detail before the flight gets there, and drop them as the
-     flight moves past, so memory stays bounded. */
+  // Tiles for the shots coming up in the next PRELOAD_AHEAD_SEC are fetched at full detail in advance.
   const size = useThree(st => st.size)
   const mainCam = camera as THREE.PerspectiveCamera
-  const pre = useRef({ cams: new Map<number, THREE.PerspectiveCamera>(), shots: [] as { t: number; eye: THREE.Vector3; look: THREE.Vector3 }[], built: -1, swept: -1 })
+  const pre = useRef({ loader: new Preloader(), shots: [] as Shot[], built: -1 })
   const metrics = useRef({ frames: 0, pendingFrames: 0, longFrames: 0, activeSec: 0, worstMs: 0, events: [] as { t: number; label: string; pending: number; settleMs?: number }[], awaiting: null as null | { rec: { settleMs?: number }; at: number }, last: '' })
 
   function buildShots() {
-    const shots: typeof pre.current.shots = []
-    const push = (t: number, eye: THREE.Vector3, look: THREE.Vector3) => shots.push({ t, eye: eye.clone(), look: look.clone() })
+    const out: Shot[] = []
+    const push = (t: number, eye: THREE.Vector3, look: THREE.Vector3) => out.push({ t, eye: eye.clone(), look: look.clone() })
     const e = new THREE.Vector3(), l = new THREE.Vector3()
     for (const seg of tl.segments) {
       if (seg.kind === 'dwell') {
-        dwellPose(seg.stop, null, undefined, 0, 0, e, l, false); push(seg.t0, e, l)
-        for (const b of seg.beats) { dwellPose(seg.stop, b.index, b.beat.targetId, b.t0 - seg.t0, 0, e, l, false); push(b.t0, e, l) }
+        shots.dwell(seg.stop, null, undefined, 0, 0, e, l, false); push(seg.t0, e, l)
+        for (const b of seg.beats) { shots.dwell(seg.stop, b.index, b.beat.targetId, b.t0 - seg.t0, 0, e, l, false); push(b.t0, e, l) }
       } else if (seg.kind === 'travel') {
         for (const f of [0.15, 0.35, 0.55, 0.75, 0.95]) if (chasePose(seg, f, e, l, false)) push(seg.t0 + f * (seg.t1 - seg.t0), e, l)
       }
     }
-    return shots
+    return out
   }
 
   function sweepPreload(now: number) {
     const t = tiles.current, p = pre.current
     if (!t || !PRELOAD_ON) return
     if (p.built !== version) { p.shots = buildShots(); p.built = version }
-    const want = new Set<number>()
-    p.shots.forEach((sh, i) => { if (sh.t >= now - 1 && sh.t <= now + PRELOAD_AHEAD_SEC) want.add(i) })
-    for (const [i, cam] of p.cams) if (!want.has(i)) { t.deleteCamera(cam); p.cams.delete(i) }
-    for (const i of want) {
-      let cam = p.cams.get(i)
-      if (!cam) { cam = new THREE.PerspectiveCamera(mainCam.fov, mainCam.aspect, mainCam.near, mainCam.far); p.cams.set(i, cam); t.setCamera(cam) }
-      cam.position.copy(p.shots[i].eye); cam.lookAt(p.shots[i].look); cam.updateMatrixWorld(true)
-      t.setResolution(cam, size.width, size.height)
-    }
+    p.loader.sweep(t, p.shots, now, PRELOAD_AHEAD_SEC, () => new THREE.PerspectiveCamera(mainCam.fov, mainCam.aspect, mainCam.near, mainCam.far), size.width, size.height)
   }
 
   /* The flight is one transaction. What it carries is what the viewer felt:
@@ -283,7 +196,7 @@ function Rig({ plan, begin, onStopReached, onFinish, onHud, control, tiles, load
 
     // ---- camera ----------------------------------------------------------
     if (tiles.current) {
-      const shot: Shot = !st.started ? 'map' : seg.kind
+      const shot: Detail = !st.started ? 'map' : seg.kind
       tiles.current.errorTarget = governor.current.step(rawDt, shot)
     }
     const eye = tmp.eye, look = tmp.lk
@@ -291,13 +204,13 @@ function Rig({ plan, begin, onStopReached, onFinish, onHud, control, tiles, load
     if (!st.started) {
       planPose(dt, eye, look); st.planEye.copy(eye); st.planLook.copy(look)
     } else if (seg.kind === 'dive') {
-      dwellPose(0, null, undefined, 0, st.t, eye, look)
+      shots.dwell(0, null, undefined, 0, st.t, eye, look)
       const e = smootherstep(u)
       eye.lerpVectors(st.planEye, eye, e); look.lerpVectors(st.planLook, look, e); smooth = 6
     } else if (seg.kind === 'dwell') {
-      dwellPose(seg.stop, beat?.index ?? null, beat?.beat.targetId, st.t - seg.t0, st.t, eye, look)
+      shots.dwell(seg.stop, beat?.index ?? null, beat?.beat.targetId, st.t - seg.t0, st.t, eye, look)
     } else if (!chasePose(seg, u, eye, look)) {
-      dwellPose(seg.leg, null, undefined, 0, st.t, eye, look)
+      shots.dwell(seg.leg, null, undefined, 0, st.t, eye, look)
     }
     if (!st.inited) {
       // The flight starts from wherever the map left the camera, and glides from there.
@@ -338,8 +251,7 @@ function Rig({ plan, begin, onStopReached, onFinish, onHud, control, tiles, load
   useEffect(() => () => {
     s.current.audio?.pause()
     endFlight('left')
-    const t = tiles.current
-    pre.current.cams.forEach(c => t?.deleteCamera(c)); pre.current.cams.clear()
+    pre.current.loader.clear(tiles.current)
   }, [])
 
   const curLeg = Math.max(0, Math.min(plan.legs.length - 1, hudLeg(s.current.hud)))

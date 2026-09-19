@@ -7,7 +7,7 @@ import type { Transport } from '../types'
  * whatever is on top: a tree that overhangs the street, an awning, a bridge deck.
  * One such hit among points 30 m apart is a spike in the line. Real streets do not
  * jump twenty metres in thirty, so the heights are cleaned before anything uses
- * them: the same points feed the map lines, the flight camera and the VR table. */
+ * them: the same points feed the map lines, the flight camera and the headset's flight. */
 
 const MAX_SLOPE = .3          // metres of height per metre along the route: steeper than any street
 

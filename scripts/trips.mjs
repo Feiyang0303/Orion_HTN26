@@ -23,7 +23,10 @@ const summary = d => ({
 
 function memoryBackend() {
   const trips = new Map(), clips = new Map()
+  let current = ''
   return {
+    async setCurrent(id) { current = id },
+    async getCurrent() { return current },
     persistent: false,
     async get(id) { return trips.get(id) ?? null },
     async put(doc) {
@@ -69,6 +72,8 @@ function mongoBackend(uri) {
       const c = await (await db()).collection('clips').findOne({ _id: `${id}/${name}` })
       return c ? Buffer.from(c.data.buffer) : null
     },
+    async setCurrent(id) { await (await db()).collection('meta').updateOne({ _id: 'vr-current' }, { $set: { id } }, { upsert: true }) },
+    async getCurrent() { return (await (await db()).collection('meta').findOne({ _id: 'vr-current' }))?.id ?? '' },
   }
 }
 
@@ -78,9 +83,6 @@ export function tripRoutes({ json, readJson, readBuf, HttpError }) {
   const uri = process.env.MONGODB_URI
   const store = uri ? mongoBackend(uri) : memoryBackend()
   if (!uri) console.log('trips: MONGODB_URI is not set, so saved trips are kept in memory and lost when this restarts')
-
-  // The one trip a headset opens at /vr. Held in memory: it is a pointer set moments before putting the headset on.
-  let current = ''
 
   const q = req => new URL(req.url, 'http://x').searchParams
   const idOf = req => { const id = q(req).get('id') ?? ''; if (!ID.test(id)) throw new HttpError(400, 'bad trip id'); return id }
@@ -120,16 +122,18 @@ export function tripRoutes({ json, readJson, readBuf, HttpError }) {
         if (d) await store.remove(id)
         json(res, 200, { ok: true })
       },
-      /** Which trip /vr shows. Setting it replaces the last one: there is one headset session at a time. */
+      /** Which trip /vr shows. Setting it replaces the last one: there is one headset session at a time. It is kept
+          with the trips and not in this process, because when hosted the headset's request may reach another one. */
       'POST /api/vr/current': async (req, res) => {
         const id = idOf(req)
         if (!(await store.get(id))) throw new HttpError(404, 'no such trip')
-        current = id
+        await store.setCurrent(id)
         json(res, 200, { id })
       },
       'GET /api/vr/current': async (_req, res) => {
-        if (!current) throw new HttpError(404, 'nothing has been sent to VR yet')
-        json(res, 200, { id: current })
+        const id = await store.getCurrent()
+        if (!id) throw new HttpError(404, 'nothing has been sent to VR yet')
+        json(res, 200, { id })
       },
       'PUT /api/trips/clip': async (req, res) => {
         const name = q(req).get('name') ?? ''

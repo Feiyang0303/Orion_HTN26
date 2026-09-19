@@ -33,7 +33,11 @@ export type Timeline = {
   at: (t: number) => { seg: Segment; u: number }
 }
 
-export function buildTimeline(plan: Plan): Timeline {
+/** How long the flat flight takes over a leg: quick, because a screen can take it. */
+const flatTravelSec = (distanceM: number) => Math.min(MAX_TRAVEL_SEC, Math.max(MIN_TRAVEL_SEC, distanceM / FLY_MPS))
+
+/** `travelSec` is how long a leg of a given length takes; a headset, which has to be gentler, brings its own. */
+export function buildTimeline(plan: Plan, travelSec = flatTravelSec): Timeline {
   const segments: Segment[] = []
   const dwellStart: number[] = []
   let t = 0
@@ -52,7 +56,7 @@ export function buildTimeline(plan: Plan): Timeline {
       return { kind: 'dwell', stop: i, t0, t1: Math.max(c + TAIL_SEC, t0 + LEAD_SEC + TAIL_SEC + 2), beats }
     })
     const leg = plan.legs[i]
-    if (leg) push(t0 => ({ kind: 'travel', leg: i, t0, t1: t0 + Math.min(MAX_TRAVEL_SEC, Math.max(MIN_TRAVEL_SEC, leg.distanceM / FLY_MPS)) }))
+    if (leg) push(t0 => ({ kind: 'travel', leg: i, t0, t1: t0 + travelSec(leg.distanceM) }))
   })
 
   const total = t
