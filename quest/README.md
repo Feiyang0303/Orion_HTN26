@@ -6,8 +6,8 @@ plays the trip you last sent to VR from the web (`GET /api/vr/current`).
 
 Unity 6.3 LTS (`6000.3.24f1`) · Cesium for Unity 1.25 · URP · OpenXR with Meta Quest Support.
 
-> **Status: compiles outside the editor; not yet opened in it.** Unity will not start without a
-> licence (sign in to Unity Hub). See "What has been verified" at the bottom.
+> **Status: builds and boots; the city itself has not been seen yet.** See "What has been verified" at
+> the bottom.
 
 ## How it is put together
 
@@ -94,9 +94,11 @@ last sent.
 |---|---|
 | Google key works without a Referer (so from a native app) | **Checked** with curl, 2026-09-19 |
 | Map Tiles terms allow Cesium for Unity | **Read** on Google's policy page |
-| API shape (`/api/vr/current`, fixture plan) | **Checked** against the live endpoint and the fixture |
-| Runtime C# compiles | **Yes, outside the editor**: built with `dotnet` against Unity 6000.3.24f1's own DLLs and the Cesium 1.25.1, TextMeshPro, Input System and Mathematics sources (a deliberate mistake is caught, so the check is real). `Editor/Build.cs` is covered the same way **except** its URP method (checked by reading URP 17.3's source) and one OpenXR editor call (`FeatureHelpers.RefreshFeatures`, signature read from source) |
-| Logic tests pass | **8 of 12** under `dotnet` (timeline, ride limits, mid-leg blink, follower caps, yaw, height smoothing, paths, director). The other 4 read the fixture with `JsonUtility`, which only exists inside the editor |
-| Editor play mode: city loads, flight plays | not yet |
-| APK builds | not yet |
-| Anything in the headset | only you can |
+| API shape (`/api/vr/current`, trips, fixture) | **Checked** against the live endpoint (a Toronto trip: no clips, two silent stops, a 3.7 km leg) and the fixture |
+| Project opens and compiles in Unity 6000.3.24f1 | **Yes**, from the command line (`./build.sh setup`) |
+| Logic tests | **15 of 15 pass** in the editor (`./build.sh test`) |
+| APK builds | **Yes**: 47 MB, arm64, IL2CPP, Vulkan, OpenXR loader + Meta Quest feature + Touch profile + foveation, multiview, `com.oculus.intent.category.VR`, INTERNET, Cesium's native library inside, all four Orion shaders compiled |
+| Editor play mode: app boots, trip parses, rig waits over the first stop, captions and route draw | **Yes** (`./build.sh smoke`, screenshots in `Logs/`) |
+| Editor play mode: a refusal from Google is shown and nothing retries | **Yes**: one request, "Google would not serve the city … (HTTP 429)", 72 fps |
+| Editor play mode: **the city loads, the flight plays** | **NOT YET.** The first smoke run found the per-frame reload bug (see above) by spending the key's daily quota; nothing can be loaded with this key until it resets (midnight Pacific) |
+| Anything in the headset | only you can (`TESTING.md`) |
