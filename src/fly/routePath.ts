@@ -14,15 +14,21 @@ export class Path {
     this.length = this.cum[this.cum.length - 1] ?? 0
   }
 
-  at(s: number, out = new Vector3()): Vector3 {
+  /** Where `s` metres falls, counted in points: 2.5 is halfway between the third and the fourth. */
+  indexAt(s: number): number {
     const n = this.pts.length
-    if (!n) return out.set(0, 0, 0)
-    if (n === 1 || s <= 0) return out.copy(this.pts[0])
-    if (s >= this.length) return out.copy(this.pts[n - 1])
+    if (n < 2 || s <= 0) return 0
+    if (s >= this.length) return n - 1
     let lo = 0, hi = n - 1                         // binary search for the segment containing s
     while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (this.cum[mid] <= s) lo = mid; else hi = mid }
     const seg = this.cum[hi] - this.cum[lo]
-    return out.lerpVectors(this.pts[lo], this.pts[hi], seg > 0 ? (s - this.cum[lo]) / seg : 0)
+    return lo + (seg > 0 ? (s - this.cum[lo]) / seg : 0)
+  }
+
+  at(s: number, out = new Vector3()): Vector3 {
+    if (!this.pts.length) return out.set(0, 0, 0)
+    const f = this.indexAt(s), i = Math.floor(f)
+    return i + 1 < this.pts.length ? out.lerpVectors(this.pts[i], this.pts[i + 1], f - i) : out.copy(this.pts[i])
   }
 
   /** Horizontal unit direction of travel around s, or `fallback` if the path is degenerate there. */
