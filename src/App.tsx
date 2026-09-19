@@ -11,6 +11,7 @@ import type { Skeleton } from './plan/crew'
 import type { LatLon, Plan } from './types'
 import { HHMM, MINS } from './types'
 import './plan/ui/journal.css'
+import PlanTest from './fly/dev/PlanTest'
 
 /* The shell. One canvas (tiles, owned by src/fly) sits behind one overlay
  * (the desk and then the book, owned by src/plan) from the first frame, so
@@ -49,6 +50,10 @@ export default function App() {
     audioUrls.current.forEach(URL.revokeObjectURL)
   }, [])
 
+  const planTest = new URLSearchParams(location.search).get('plan-test')
+  if (import.meta.env.DEV && planTest !== null) {
+    return <ErrorBoundary><PlanTest id={planTest || 'paris-short-v1'} /></ErrorBoundary>
+  }
   if (import.meta.env.DEV && new URLSearchParams(location.search).has('fly-dev')) {
     return <ErrorBoundary><FlyDev /></ErrorBoundary>
   }
