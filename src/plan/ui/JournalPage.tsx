@@ -291,16 +291,29 @@ export default function JournalPage({ day, trip, open, onFly, weather, notes }: 
       if (clash(b, b) === 0) return
       const want = anchors[i]
       let best = { x: b.x, y: b.y, score: Infinity }
-      for (let x = MAP.x0 - 16; x <= MAP.x1 + 16 - b.w; x += 18) {
-        for (let y = MAP.y0 - 16; y <= MAP.y1 + 12 - b.h; y += 18) {
+      for (let x = MAP.x0 - 16; x <= MAP.x1 + 16 - b.w; x += 14) {
+        for (let y = MAP.y0 - 16; y <= MAP.y1 + 12 - b.h; y += 14) {
           const area = clash({ x, y, w: b.w, h: b.h }, b)
-          // a hundred square units of paper is worth about a unit of walking
-          const score = area + Math.hypot(x - want.x, y - want.y) * 26
+          /* Overlap is weighted far above distance on purpose. Score them
+             evenly and the search keeps a small overlap near the pin rather
+             than taking clean paper a little further off — which is the whole
+             thing this pass exists to stop. Being near its pin is a
+             preference; not being on top of something is the point. */
+          const score = area * 4 + Math.hypot(x - want.x, y - want.y) * 10
           if (score < best.score) best = { x, y, score }
         }
       }
       b.x = best.x; b.y = best.y
     })
+
+    /* A way-glyph that a drawing ended up standing on is not drawn. The
+       drawings are placed around the glyphs, so this is rare and only happens
+       where the band left no other option — and when it does, the badge is
+       the thing to lose: its minutes are written in the schedule as well, and
+       the drawing is not. */
+    const kept = glyphs.filter(g => !movable.some(b =>
+      g.x > b.x - 35 && g.x < b.x + b.w + 35 && g.y > b.y - 20 && g.y < b.y + b.h + 20))
+    glyphs.length = 0; glyphs.push(...kept)
 
     const homeAt = homeBox ? { bx: homeBox.x + homeBox.w / 2, by: homeBox.y + homeBox.h / 2 } : null
     const sketchAt = stopBoxes.map(b => ({ bx: b.x + b.w / 2, by: b.y + b.h / 2 }))
