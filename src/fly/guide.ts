@@ -1,4 +1,4 @@
-import type { Day, Stop } from '../types'
+import type { Plan, Stop, Table } from '../types'
 import { askJson } from '../plan/json'
 import { postBytes } from '../plan/net'
 import { report } from '../telemetry'
@@ -23,6 +23,10 @@ import { report } from '../telemetry'
  */
 
 export type Turn = { who: 'you' | 'guide'; text: string }
+
+/** What the flight is actually handed. A Day where the trip has one, a bare
+    Plan where it does not — the guide only needs the parts they share. */
+export type Flown = Plan & { number?: number; title?: string; tables?: Table[] }
 
 const SYSTEM = `You are a travel guide flying someone over a real city, in the air beside
 them. They have paused the tour to ask you something. Reply with JSON.
@@ -55,18 +59,18 @@ person they are talking to, not a kiosk.
 FORMAT — a JSON object:
 {"say": "[warmly] That's the one ... it's older than it looks."}`
 
-const ctx = (day: Day, city: string, stopIndex: number, caption: string) => {
+const ctx = (day: Flown, city: string, stopIndex: number, caption: string) => {
   const here: Stop | undefined = day.stops[stopIndex]
   const seen = day.stops.slice(0, Math.max(0, stopIndex)).map(s => s.name.split(',')[0])
   const next = day.stops.slice(stopIndex + 1).map(s => `${s.name.split(',')[0]} at ${s.arrival}`)
   return [
-    `City: ${city}. Day ${day.number}${day.title ? ` — ${day.title}` : ''}.`,
+    `City: ${city}.${day.number ? ` Day ${day.number}` : ''}${day.title ? ` — ${day.title}` : ''}`,
     here ? `They are hovering over ${here.name}, stop ${stopIndex + 1} of ${day.stops.length}, arriving ${here.arrival} for ${Math.round(here.visitMin)} minutes.` : 'They are between stops.',
     here?.fits ? `Why it is in the day: ${here.fits}` : '',
     caption ? `You were just saying: "${caption}"` : '',
     seen.length ? `Already flown: ${seen.join(', ')}.` : 'This is the first stop.',
     next.length ? `Still to come: ${next.join('; ')}.` : 'This is the last stop of the day.',
-    day.tables.length ? `Eating today: ${day.tables.map(t => `${t.meal} at ${t.name}`).join(', ')}.` : '',
+    day.tables?.length ? `Eating today: ${day.tables.map(t => `${t.meal} at ${t.name}`).join(', ')}.` : '',
   ].filter(Boolean).join('\n')
 }
 
@@ -78,7 +82,7 @@ export const untag = (s: string) => s.replace(/\[[^\]]{1,24}\]/g, ' ').replace(/
 export async function ask(
   question: string,
   history: Turn[],
-  day: Day,
+  day: Flown,
   city: string,
   stopIndex: number,
   caption: string,

@@ -14,6 +14,7 @@ import { Preloader, Shots, routeOn, type Shot } from './shots'
 import { startFlight, tag, log, lastFault } from '../telemetry'
 import Fault from '../ui/Fault'
 import FlightHud, { type Control, type Hud } from './FlightHud'
+import GuideTalk from './GuideTalk'
 import MapRig, { type MapView } from './MapRig'
 import './fly.css'
 
@@ -288,6 +289,21 @@ export default function Flythrough(props: FlyProps & { map?: MapView }) {
   const [hud, setHud] = useState<Hud | null>(null)
   const tiles = useRef<TilesHandle | null>(null)
   const control = useRef<Control>({ paused: false, skip: false, restart: false })
+  /* Talking to the guide holds the flight, and letting the panel go lets it on
+     again — but only if it was this that paused it, so closing the panel does
+     not restart a flight the person had paused for their own reasons. */
+  const [asking, setAsking] = useState(false)
+  const heldByUs = useRef(false)
+  const openAsk = useCallback(() => {
+    heldByUs.current = !control.current.paused
+    control.current.paused = true
+    setAsking(true)
+  }, [])
+  const closeAsk = useCallback(() => {
+    if (heldByUs.current) control.current.paused = false
+    heldByUs.current = false
+    setAsking(false)
+  }, [])
   // A new city is a new tileset, which takes seconds to arrive. Rather than a bare
   // black gap the world dissolves out and, once real tiles are on screen, back in.
   const [revealed, setRevealed] = useState(false)
@@ -310,7 +326,7 @@ export default function Flythrough(props: FlyProps & { map?: MapView }) {
   }, [])
   useEffect(check, [check])
 
-  useEffect(() => { if (!begin) { control.current.paused = false; setHud(null) } }, [begin])
+  useEffect(() => { if (!begin) { control.current.paused = false; setHud(null); setAsking(false); heldByUs.current = false } }, [begin])
 
   if (typeof probe === 'object') {
     const f = lastFault()
@@ -321,7 +337,7 @@ export default function Flythrough(props: FlyProps & { map?: MapView }) {
     )
   }
   return (
-    <div className={`fly ${revealed ? 'is-revealed' : ''}`} data-ground="night">
+    <div className={`fly ${revealed ? 'is-revealed' : ''}${asking ? ' is-asking' : ''}`} data-ground="night">
       {origin && probe === 'ok' && (
         <Canvas dpr={plan ? [1, 2] : [1, 1.5]} camera={{ fov: 50, near: 1, far: 20000, position: [0, 900, 700] }} gl={{ antialias: true, toneMapping: THREE.NeutralToneMapping, preserveDrawingBuffer: true }}>
           <color attach="background" args={['#0a0806']} />
@@ -334,7 +350,11 @@ export default function Flythrough(props: FlyProps & { map?: MapView }) {
         </Canvas>
       )}
       {probe === 'checking' && <div className="fly-status">Connecting to the map…</div>}
-      {begin && hud && <FlightHud hud={hud} control={control} onExit={onExit} />}
+      {begin && hud && <FlightHud hud={hud} control={control} onExit={onExit} onAsk={plan ? openAsk : undefined} />}
+      {begin && asking && plan && (
+        <GuideTalk day={plan} city={plan.wish.city} stopIndex={Math.max(0, hud?.stopIndex ?? 0)}
+          caption={hud?.caption ?? ''} onClose={closeAsk} />
+      )}
     </div>
   )
 }

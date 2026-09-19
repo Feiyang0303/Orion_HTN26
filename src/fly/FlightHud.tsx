@@ -11,7 +11,11 @@ export type Hud = {
 }
 export type Control = { paused: boolean; skip: boolean; restart: boolean }
 
-export default function FlightHud({ hud, control, onExit }: { hud: Hud; control: MutableRefObject<Control>; onExit?: () => void }) {
+export default function FlightHud({ hud, control, onExit, onAsk }: {
+  hud: Hud; control: MutableRefObject<Control>; onExit?: () => void
+  /** Hold the flight and talk to the guide. */
+  onAsk?: () => void
+}) {
   const done = hud.phase === 'done'
   const label = hud.phase === 'dive' ? 'Beginning the tour' : done ? 'Tour complete'
     : hud.phase === 'travel' ? `Walking to stop ${hud.stopIndex + 1} of ${hud.stopCount}` : `Stop ${hud.stopIndex + 1} of ${hud.stopCount}`
@@ -30,6 +34,9 @@ export default function FlightHud({ hud, control, onExit }: { hud: Hud; control:
       <div className="hud-controls">
         {!done && <button onClick={() => { control.current.paused = !control.current.paused }}>{hud.paused ? 'Resume' : 'Pause'}</button>}
         {!done && <button onClick={() => { control.current.skip = true }} disabled={hud.stopIndex >= hud.stopCount - 1 && hud.phase === 'dwell'}>Next stop</button>}
+        {/* Asking holds the flight itself — a guide you have to pause first,
+            then find a button for, is not one you would interrupt. */}
+        {!done && onAsk && <button onClick={onAsk}>Ask the guide</button>}
         {done && <button onClick={() => { control.current.restart = true }}>Fly it again</button>}
         {onExit && <button className="quiet" onClick={onExit}>{done ? 'Back to the book' : 'End tour'}</button>}
       </div>
