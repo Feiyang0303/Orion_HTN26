@@ -7,5 +7,7 @@ export const store = createXRStore({
   hand: { teleportPointer: false },
   emulate: false,
   foveation: 0,
-  frameRate: 'high',
+  // Sharpness over smoothness: 90 Hz instead of 120 leaves the GPU room to draw more pixels than the default buffer has.
+  frameRate: 'mid',
+  frameBufferScaling: max => Math.min(max, 1.25),
 })

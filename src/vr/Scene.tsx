@@ -39,6 +39,7 @@ const UNIT = 900
 const GUIDE_UNIT = 250
 const HEAD = 1.6                                     // where a head is taken to be above the floor of the person's space
 const PRELOAD_AHEAD_SEC = 12
+const EYE_PX = 3200                                  // 930 px per unit of tan, across 2·tan(60°)
 const FONT = 'https://cdn.jsdelivr.net/fontsource/fonts/dm-sans@latest/latin-500-normal.woff'
 const DISPLAY = 'https://cdn.jsdelivr.net/fontsource/fonts/im-fell-english@latest/latin-400-normal.woff'
 const AMBER = '#f0b45e'
@@ -62,11 +63,12 @@ export default function Scene({ days, store: xr, onReady }: { days: Day[]; store
   useEffect(() => { ground.setAnchors(anchorsFor(day)) }, [ground, day])
   useEffect(() => { ground.requeue() }, [ground, loadTick])
 
-  // A headset has a fraction of a laptop's memory and no room for the flat flight's tile budget.
+  // A headset has a fraction of a laptop's memory, so less than the flat flight's tile budget: but enough
+  // that the loader is not refused the fine tiles around a stop, which is what made the city look melted.
   useEffect(() => {
     const t = tiles.current
     if (!t) return
-    t.lruCache.minSize = 3000; t.lruCache.maxSize = 6000; t.lruCache.minBytesSize = .3e9; t.lruCache.maxBytesSize = .5e9
+    t.lruCache.minSize = 4000; t.lruCache.maxSize = 8000; t.lruCache.minBytesSize = .6e9; t.lruCache.maxBytesSize = .85e9
   }, [loadTick])
 
   // What the tile loader is told to make sharp. It chooses tiles for the cameras it knows, and draws
@@ -74,12 +76,16 @@ export default function Scene({ days, store: xr, onReady }: { days: Day[]; store
   // its own: `eye` stands where the person's head is, looking at what the shot is of, and because
   // they can turn right round, two coarse cameras cover the rest of the circle behind it. None is
   // drawn from; they only decide which tiles exist.
+  // The loader refines a tile until its error is under `errorTarget` pixels on the camera it is looking through,
+  // so `eye` has to have the headset's pixels, not a small screen's: a Quest shows about 930 pixels per unit of
+  // tan(angle), and a camera this wide needs EYE_PX across to match that. Anything less and every building is
+  // drawn several times coarser than the lenses can show.
   const eye = useMemo(() => new THREE.PerspectiveCamera(120, 1, .3, 20000), [])       // wide: they can turn their head
   const behind = useMemo(() => [1, -1].map(() => new THREE.PerspectiveCamera(120, 1, .3, 20000)), [])
   useEffect(() => {
     const t = tiles.current
     if (!t) return
-    t.setCamera(eye); t.setResolution(eye, 1200, 1200)
+    t.setCamera(eye); t.setResolution(eye, EYE_PX, EYE_PX)
     behind.forEach(c => { t.setCamera(c); t.setResolution(c, 300, 300) })
     return () => { [eye, ...behind].forEach(c => t.deleteCamera(c)) }
   }, [eye, behind, loadTick])
@@ -159,7 +165,7 @@ export default function Scene({ days, store: xr, onReady }: { days: Day[]; store
     let { seg, u } = tl.at(p.t)
     if (!smooth && seg.kind === 'travel') { p.t = seg.t1; ({ seg, u } = tl.at(p.t)) }     // "Ride: blinks": a leg is not ridden at all
     const beat = activeBeat(seg, p.t)
-    if (tiles.current) tiles.current.errorTarget = seg.kind === 'travel' ? 20 : 12
+    if (tiles.current) tiles.current.errorTarget = seg.kind === 'travel' ? 12 : 6      // in the headset's own pixels; the flat flight asks for 8 and 4
 
     /* the blink */
     const f = fade.current
@@ -209,7 +215,7 @@ export default function Scene({ days, store: xr, onReady }: { days: Day[]; store
       if (tiles.current && P.sweep > .5) {
         P.sweep = 0
         if (P.built !== version) { P.shots = comingShots(tl, shots, g.trails, g.rides); P.built = version }
-        P.loader.sweep(tiles.current, P.shots, p.t, PRELOAD_AHEAD_SEC, () => new THREE.PerspectiveCamera(100, 1, .3, 20000), 600, 600)
+        P.loader.sweep(tiles.current, P.shots, p.t, PRELOAD_AHEAD_SEC, () => new THREE.PerspectiveCamera(100, 1, .3, 20000), 1400, 1400)
       }
 
       /* on a screen, the flight is seen from where the head would be; dragging looks around */
