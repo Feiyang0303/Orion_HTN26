@@ -154,10 +154,10 @@ export type Shot = { t: number; eye: THREE.Vector3; look: THREE.Vector3 }
 export class Preloader {
   private cams = new Map<number, THREE.PerspectiveCamera>()
 
-  /** Keep a camera on every shot from just behind `now` to `ahead` seconds after it. */
-  sweep(t: TilesHandle, shots: Shot[], now: number, ahead: number, make: () => THREE.PerspectiveCamera, width: number, height: number) {
+  /** Keep a camera on every shot from just behind `now` to `ahead` seconds after it, or only on the first `most` of them. */
+  sweep(t: TilesHandle, shots: Shot[], now: number, ahead: number, make: () => THREE.PerspectiveCamera, width: number, height: number, most = Infinity) {
     const want = new Set<number>()
-    shots.forEach((sh, i) => { if (sh.t >= now - 1 && sh.t <= now + ahead) want.add(i) })
+    shots.forEach((sh, i) => { if (sh.t >= now - 1 && sh.t <= now + ahead && want.size < most) want.add(i) })
     for (const [i, cam] of this.cams) if (!want.has(i)) { t.deleteCamera(cam); this.cams.delete(i) }
     for (const i of want) {
       let cam = this.cams.get(i)

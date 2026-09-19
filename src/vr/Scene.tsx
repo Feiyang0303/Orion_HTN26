@@ -38,8 +38,10 @@ import Veil, { type VeilState } from './Veil'
 const UNIT = 900
 const GUIDE_UNIT = 250
 const HEAD = 1.6                                     // where a head is taken to be above the floor of the person's space
-const PRELOAD_AHEAD_SEC = 12
-const EYE_PX = 3200                                  // 930 px per unit of tan, across 2·tan(60°)
+const PRELOAD_AHEAD_SEC = 12, PRELOAD_MOST = 2
+const FOVEA_FOV = 70, FOVEA_PX = 1300                // 930 px per unit of tan (a Quest's lenses), across 2·tan(35°)
+const SETTLED_AT = 60, SETTLE_MAX_SEC = 8             // a stop is in focus when the loader is waiting on fewer tiles than this; and it is waited for no longer than this
+const STATS = new URLSearchParams(location.search).has('stats')      // /vr?stats: what the tile loader is doing, on the panel
 const FONT = 'https://cdn.jsdelivr.net/fontsource/fonts/dm-sans@latest/latin-500-normal.woff'
 const DISPLAY = 'https://cdn.jsdelivr.net/fontsource/fonts/im-fell-english@latest/latin-400-normal.woff'
 const AMBER = '#f0b45e'
@@ -64,7 +66,7 @@ export default function Scene({ days, store: xr, onReady }: { days: Day[]; store
   useEffect(() => { ground.requeue() }, [ground, loadTick])
 
   // A headset has a fraction of a laptop's memory, so less than the flat flight's tile budget: but enough
-  // that the loader is not refused the fine tiles around a stop, which is what made the city look melted.
+  // that the loader is not refused the fine tiles around a stop.
   useEffect(() => {
     const t = tiles.current
     if (!t) return
@@ -73,22 +75,23 @@ export default function Scene({ days, store: xr, onReady }: { days: Day[]; store
 
   // What the tile loader is told to make sharp. It chooses tiles for the cameras it knows, and draws
   // nothing that none of them can see. A headset's eyes are not reliably among them, so it is given
-  // its own: `eye` stands where the person's head is, looking at what the shot is of, and because
-  // they can turn right round, two coarse cameras cover the rest of the circle behind it. None is
-  // drawn from; they only decide which tiles exist.
-  // The loader refines a tile until its error is under `errorTarget` pixels on the camera it is looking through,
-  // so `eye` has to have the headset's pixels, not a small screen's: a Quest shows about 930 pixels per unit of
-  // tan(angle), and a camera this wide needs EYE_PX across to match that. Anything less and every building is
-  // drawn several times coarser than the lenses can show.
-  const eye = useMemo(() => new THREE.PerspectiveCamera(120, 1, .3, 20000), [])       // wide: they can turn their head
+  // its own, at the person's head. It refines a tile until its error is under `errorTarget` pixels on
+  // the camera it is looking through, and every tile it wants from any camera waits in one queue, which
+  // a headset drains slowly: ask for the whole view at the lenses' sharpness and nothing ever arrives
+  // sharp. So the sharpness is spent where they are looking: `fovea` has the headset's own pixels and
+  // covers what the shot is of; `eye` is the rest of the view ahead, four times coarser; and two
+  // coarser still cover the circle behind, so there is a city there if they turn round.
+  const fovea = useMemo(() => new THREE.PerspectiveCamera(FOVEA_FOV, 1, .3, 20000), [])
+  const eye = useMemo(() => new THREE.PerspectiveCamera(120, 1, .3, 20000), [])
   const behind = useMemo(() => [1, -1].map(() => new THREE.PerspectiveCamera(120, 1, .3, 20000)), [])
   useEffect(() => {
     const t = tiles.current
     if (!t) return
-    t.setCamera(eye); t.setResolution(eye, EYE_PX, EYE_PX)
+    t.setCamera(fovea); t.setResolution(fovea, FOVEA_PX, FOVEA_PX)
+    t.setCamera(eye); t.setResolution(eye, 800, 800)
     behind.forEach(c => { t.setCamera(c); t.setResolution(c, 300, 300) })
-    return () => { [eye, ...behind].forEach(c => t.deleteCamera(c)) }
-  }, [eye, behind, loadTick])
+    return () => { [fovea, eye, ...behind].forEach(c => t.deleteCamera(c)) }
+  }, [fovea, eye, behind, loadTick])
 
   /* ---- where things are on the real ground ---- */
   const shots = useMemo(() => new Shots(ground, tiles), [ground])
@@ -106,7 +109,8 @@ export default function Scene({ days, store: xr, onReady }: { days: Day[]; store
   useEffect(() => { onReady(geo.ready) }, [geo.ready, onReady])
 
   /* ---- the clock ---- */
-  const play = useRef({ t: 0, playing: true, audio: null as HTMLAudioElement | null, beatKey: '', cur: '' })
+  const play = useRef({ t: 0, playing: true, audio: null as HTMLAudioElement | null, beatKey: '', cur: '', settling: 0 as number | false })   // settling: seconds spent waiting at this stop, or false once it has stopped waiting
+  const [stats, setStats] = useState('')
   const [hud, setHud] = useState({ stop: 0, line: '', title: '', playing: true, target: '', seg: 'dive' as string })
 
   const jump = useCallback((stop: number) => {
@@ -160,12 +164,18 @@ export default function Scene({ days, store: xr, onReady }: { days: Day[]; store
     // it is being ridden the clock runs slow by just enough for the ride to fit.
     const on = tl.at(p.t).seg
     const R = on.kind === 'travel' && g.rides[on.leg]?.T ? g.rides[on.leg] : null
-    if (p.playing && g.ready && tiles.current && tiles.current.stats.visible > 8) p.t = Math.min(tl.total, p.t + dt * (R ? (on.t1 - on.t0) / R.T : 1))   // the guide waits for the city
+    // The guide waits for the city: for there to be one at all, and then, on arriving at a stop, for the place to come
+    // into focus before it starts talking about it (a headset takes its time over that), though never for long.
+    const ts = tiles.current?.stats
+    const arriving = on.kind === 'dwell' && p.t - on.t0 < 1
+    if (!arriving) p.settling = 0
+    else if (p.settling !== false && ts) p.settling = (p.settling < .5 || ts.queued + ts.downloading + ts.parsing > SETTLED_AT) && p.settling < SETTLE_MAX_SEC ? p.settling + dt : false
+    if (p.playing && g.ready && ts && ts.visible > 8 && !(arriving && p.settling !== false)) p.t = Math.min(tl.total, p.t + dt * (R ? (on.t1 - on.t0) / R.T : 1))
     if (p.t >= tl.total && p.playing) { p.playing = false; p.audio?.pause() }
     let { seg, u } = tl.at(p.t)
     if (!smooth && seg.kind === 'travel') { p.t = seg.t1; ({ seg, u } = tl.at(p.t)) }     // "Ride: blinks": a leg is not ridden at all
     const beat = activeBeat(seg, p.t)
-    if (tiles.current) tiles.current.errorTarget = seg.kind === 'travel' ? 12 : 6      // in the headset's own pixels; the flat flight asks for 8 and 4
+    if (tiles.current) tiles.current.errorTarget = seg.kind === 'travel' ? 16 : 8      // in the fovea's (the headset's own) pixels
 
     /* the blink */
     const f = fade.current
@@ -206,7 +216,7 @@ export default function Scene({ days, store: xr, onReady }: { days: Day[]; store
 
       /* the eyes the tile loader looks through, at the person's head */
       o.localToWorld(F.head.set(0, HEAD, 0))
-      eye.position.copy(F.head); eye.lookAt(F.look); eye.updateMatrixWorld(true)
+      for (const c of [fovea, eye]) { c.position.copy(F.head); c.lookAt(F.look); c.updateMatrixWorld(true) }
       behind.forEach((c, i) => { c.position.copy(F.head); c.rotation.set(0, F.follower.yaw + (i ? -1 : 1) * Math.PI * 2 / 3, 0); c.updateMatrixWorld(true) })
 
       /* the shots coming up, fetched before the person gets to them */
@@ -214,8 +224,9 @@ export default function Scene({ days, store: xr, onReady }: { days: Day[]; store
       P.sweep += dt
       if (tiles.current && P.sweep > .5) {
         P.sweep = 0
+        if (STATS) { const st = tiles.current.stats; setStats(`waiting ${st.queued + st.downloading + st.parsing}  ·  shown ${st.visible}  ·  held ${Math.round(tiles.current.lruCache.cachedBytes / 1e6)} MB  ·  ${Math.round(1 / Math.max(rawDt, .001))} fps`) }
         if (P.built !== version) { P.shots = comingShots(tl, shots, g.trails, g.rides); P.built = version }
-        P.loader.sweep(tiles.current, P.shots, p.t, PRELOAD_AHEAD_SEC, () => new THREE.PerspectiveCamera(100, 1, .3, 20000), 1400, 1400)
+        P.loader.sweep(tiles.current, P.shots, p.t, PRELOAD_AHEAD_SEC, () => new THREE.PerspectiveCamera(FOVEA_FOV, 1, .3, 20000), 700, 700, PRELOAD_MOST)
       }
 
       /* on a screen, the flight is seen from where the head would be; dragging looks around */
@@ -289,7 +300,7 @@ export default function Scene({ days, store: xr, onReady }: { days: Day[]; store
       <XROrigin ref={origin}>
         <Deck />
         <Console
-          xr={xr} hud={hud} many={many} dayNo={day.number} dayName={many ? day.title : ''} smooth={smooth} colour={c}
+          xr={xr} hud={hud} stats={stats} many={many} dayNo={day.number} dayName={many ? day.title : ''} smooth={smooth} colour={c}
           onPrev={() => jump(hud.stop - 1)} onNext={() => jump(hud.stop + 1)} onPlay={togglePlay}
           onSmooth={() => setSmooth(s => !s)}
           onDay={() => { fade.current.goal = 1; fade.current.then = () => setDayAt(d => (d + 1) % days.length) }} />
@@ -470,8 +481,8 @@ function Captions({ hud, colour, count }: { hud: Hud; colour: string; count: num
 }
 
 /** Buttons you point at and squeeze. They sit at your lap, tilted up to meet you. */
-function Console({ xr, hud, many, dayNo, dayName, smooth, colour, onPrev, onNext, onPlay, onSmooth, onDay }: {
-  xr: typeof store; hud: Hud; many: boolean; dayNo: number; dayName: string; smooth: boolean; colour: string
+function Console({ xr, hud, stats, many, dayNo, dayName, smooth, colour, onPrev, onNext, onPlay, onSmooth, onDay }: {
+  xr: typeof store; hud: Hud; stats: string; many: boolean; dayNo: number; dayName: string; smooth: boolean; colour: string
   onPrev: () => void; onNext: () => void; onPlay: () => void; onSmooth: () => void; onDay: () => void
 }) {
   type Row = [label: string, onClick: () => void, width: number][]
@@ -491,6 +502,7 @@ function Console({ xr, hud, many, dayNo, dayName, smooth, colour, onPrev, onNext
       {layout(row1, .05)}
       {layout(row2, -.02)}
       <Text font={FONT} fontSize={.014} color="#9a8763" anchorX="center" anchorY="middle" position={[0, -.075, 0]}>A or X pauses the guide  ·  hold B or Y to leave</Text>
+      {stats && <Text font={FONT} fontSize={.014} color={AMBER} anchorX="center" anchorY="middle" position={[0, -.1, 0]}>{stats}</Text>}
     </group>
   )
 }
