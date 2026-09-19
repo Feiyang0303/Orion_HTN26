@@ -1,0 +1,660 @@
+{
+ "id": "paris-short-v1",
+ "city": "Paris",
+ "origin": {
+  "lat": 48.8588897,
+  "lon": 2.320041
+ },
+ "mode": "short",
+ "stops": [
+  {
+   "id": "les-invalides",
+   "name": "Les Invalides",
+   "lat": 48.855,
+   "lon": 2.3125,
+   "blurb": "Monumental domed complex with Napoleon’s tomb and grand military architecture.",
+   "photo": {
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/12/H%C3%B4tel_des_Invalides_from_the_Eiffel_Tower%2C_23_July_2009.jpg/960px-H%C3%B4tel_des_Invalides_from_the_Eiffel_Tower%2C_23_July_2009.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "credit": "CaBLe27, CC BY 2.0",
+    "pageUrl": "https://commons.wikimedia.org/wiki/File:H%C3%B4tel_des_Invalides_from_the_Eiffel_Tower,_23_July_2009.jpg"
+   },
+   "sources": [
+    {
+     "kind": "wikipedia",
+     "label": "Wikipedia: Les Invalides",
+     "url": "https://en.wikipedia.org/wiki/Les_Invalides"
+    }
+   ],
+   "targets": [
+    {
+     "id": "w50671829",
+     "name": "Napoleon's tomb",
+     "lat": 48.85505,
+     "lon": 2.31254,
+     "summary": "Napoleon's tomb (French: tombeau de Napoléon) is the monument erected at Les Invalides in Paris to keep the remains of Napoleon following their repatriation to France from Saint Helena in 1840, or retour des cendres, at the initiative of King Louis Philippe I and his minister Adolphe Thiers. While the tomb's planning started in 1840, it was only completed two decades later and inaugurated by Emperor Napoleon III on 2 April 1861, after its promoter Louis Philippe I, architect Louis Visconti, and main sculptors James Pradier and Pierre-Charles Simart had all died in the meantime.",
+     "source": {
+      "kind": "wikipedia",
+      "label": "Wikipedia: Napoleon's tomb",
+      "url": "https://en.wikipedia.org/wiki/Napoleon%27s_tomb"
+     }
+    },
+    {
+     "id": "w1010196",
+     "name": "Musée Rodin",
+     "lat": 48.855278,
+     "lon": 2.315833,
+     "summary": "The Musée Rodin (English: Rodin Museum) of Paris, France, is an art museum that was opened in 1919, primarily dedicated to the works of the French sculptor Auguste Rodin. It has two sites: the Hôtel Biron and surrounding grounds in central Paris, as well as just outside Paris at Rodin's old home, the Villa des Brillants at Meudon, Hauts-de-Seine. The collection includes 6,600 sculptures, 8,000 drawings, 8,000 old photographs and 7,000 objets d'art. The museum receives 700,000 visitors annually.",
+     "source": {
+      "kind": "wikipedia",
+      "label": "Wikipedia: Musée Rodin",
+      "url": "https://en.wikipedia.org/wiki/Mus%C3%A9e_Rodin"
+     }
+    },
+    {
+     "id": "w4443386",
+     "name": "Army Museum (Paris)",
+     "lat": 48.856944444444444,
+     "lon": 2.312777777777778,
+     "summary": "The Musée de l'Armée (French: [myze də laʁme]; \"Army Museum\") is a national military museum of France located at Les Invalides in the 7th arrondissement of Paris. It is served by Paris Métro stations Invalides, Varenne and La Tour-Maubourg\nThe Musée de l'Armée was created in 1905 with the merger of the Musée d'Artillerie and the Musée Historique de l'Armée. The museum's seven main spaces and departments contain collections that span the period from antiquity through the 20th century.",
+     "source": {
+      "kind": "wikipedia",
+      "label": "Wikipedia: Army Museum (Paris)",
+      "url": "https://en.wikipedia.org/wiki/Army_Museum_(Paris)"
+     }
+    },
+    {
+     "id": "w6448915",
+     "name": "Hôtel Biron",
+     "lat": 48.85527777777778,
+     "lon": 2.315833333333333,
+     "summary": "The Hôtel Biron (French pronunciation: [otɛl biʁɔ̃]), known initially as the Hôtel Peyrenc-de-Moras and later as the Hôtel du Maine, is an hôtel particulier located at 77 rue de Varenne, in the 7th arrondissement of Paris, that was built from 1727 to 1732, to the designs of the architect Jean Aubert. Since 1919, it has housed the Musée Rodin, dedicated to the work of Auguste Rodin.",
+     "source": {
+      "kind": "wikipedia",
+      "label": "Wikipedia: Hôtel Biron",
+      "url": "https://en.wikipedia.org/wiki/H%C3%B4tel_Biron"
+     }
+    },
+    {
+     "id": "w18311591",
+     "name": "Musée des Plans-Reliefs",
+     "lat": 48.85638888888889,
+     "lon": 2.313333333333333,
+     "summary": "The Musée des Plans-Reliefs (French pronunciation: [myze de plɑ̃ ʁəljɛf]) is a museum of military models located within the Hôtel des Invalides in the 7th arrondissement of Paris, France. \nThe construction of models dates to 1668, when François-Michel le Tellier, Marquis de Louvois and minister of war to Louis XIV, began a collection of three-dimensional models of fortified cities for military purposes, known as 'plans-relief'. The models gave particular attention to the city fortifications and topographic features such as hills and harbors. In 1700, Louis XIV installed the collection in the Louvre.",
+     "source": {
+      "kind": "wikipedia",
+      "label": "Wikipedia: Musée des Plans-Reliefs",
+      "url": "https://en.wikipedia.org/wiki/Mus%C3%A9e_des_Plans-Reliefs"
+     }
+    },
+    {
+     "id": "w27231435",
+     "name": "Diocese of the French Armed Forces",
+     "lat": 48.8559,
+     "lon": 2.3126,
+     "summary": "The Diocese of the French Armed Forces (French: Diocèse aux Armées Françaises) is a Latin Church military ordinariate of the Catholic Church. Immediately subject to the Holy See, it provides pastoral care to Catholics serving in the French Armed Forces and their families.",
+     "source": {
+      "kind": "wikipedia",
+      "label": "Wikipedia: Diocese of the French Armed Forces",
+      "url": "https://en.wikipedia.org/wiki/Diocese_of_the_French_Armed_Forces"
+     }
+    }
+   ],
+   "beats": [
+    {
+     "text": "Les Invalides is a complex containing museums, monuments, a hospital, and an old soldiers’ retirement home.",
+     "audioUrl": null,
+     "durationSec": 6.15
+    },
+    {
+     "text": "Look toward the Army Museum, a national military museum located within Les Invalides.",
+     "targetId": "w4443386",
+     "audioUrl": null,
+     "durationSec": 5
+    }
+   ],
+   "visitMin": 15
+  },
+  {
+   "id": "faubourg-saint-germain",
+   "name": "Faubourg Saint-Germain",
+   "lat": 48.858,
+   "lon": 2.32,
+   "blurb": "Historic aristocratic district lined with elegant hôtels particuliers and distinguished streets.",
+   "photo": {
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/8/8e/Fg_St_Germain_1790.JPG/960px-Fg_St_Germain_1790.JPG?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "credit": "Huard M, CC BY-SA 3.0",
+    "pageUrl": "https://commons.wikimedia.org/wiki/File:Fg_St_Germain_1790.JPG"
+   },
+   "sources": [
+    {
+     "kind": "wikipedia",
+     "label": "Wikipedia: Faubourg Saint-Germain",
+     "url": "https://en.wikipedia.org/wiki/Faubourg_Saint-Germain"
+    }
+   ],
+   "targets": [
+    {
+     "id": "w13646212",
+     "name": "Yves Saint Laurent (fashion house)",
+     "lat": 48.8569469,
+     "lon": 2.3216936,
+     "summary": "Yves Saint Laurent SAS (, also UK: , US: ; French: [iv sɛ̃ lɔʁɑ̃] ), also known as Saint Laurent and YSL, is a French luxury fashion house founded in 1961 by Yves Saint Laurent and his partner, Pierre Bergé. The company specialises in couture, ready-to-wear, leather accessories, and footwear. Its cosmetics line, YSL Beauty, is owned by L'Oréal. Cédric Charbit has been CEO of Yves Saint Laurent since 2024, and Anthony Vaccarello creative director since 2016.",
+     "source": {
+      "kind": "wikipedia",
+      "label": "Wikipedia: Yves Saint Laurent (fashion house)",
+      "url": "https://en.wikipedia.org/wiki/Yves_Saint_Laurent_(fashion_house)"
+     }
+    },
+    {
+     "id": "w8593135",
+     "name": "Sainte-Clotilde, Paris",
+     "lat": 48.858333,
+     "lon": 2.319167,
+     "summary": "The Basilica of Saint Clotilde (Basilique Ste-Clotilde) is a basilica church located on the Rue Las Cases, in the 7th arrondissement of Paris. It was constructed between 1846 and 1856, and is the first example of a church in Paris in the neo-Gothic style.\nThe church takes its name from Saint Clotilde, the wife of King Clovis I, the first King of the Franks. She is said to have persuaded him to convert to Christianity as a condition of their marriage in 496.",
+     "source": {
+      "kind": "wikipedia",
+      "label": "Wikipedia: Sainte-Clotilde, Paris",
+      "url": "https://en.wikipedia.org/wiki/Sainte-Clotilde,_Paris"
+     }
+    },
+    {
+     "id": "w43709751",
+     "name": "Pentemont Abbey",
+     "lat": 48.856972222222225,
+     "lon": 2.321833333333333,
+     "summary": "Pentemont Abbey (French: Abbaye de Penthemont, Pentemont, Panthemont or Pantemont) is a set of 18th and 19th-century buildings at the corner of Rue de Grenelle and Rue de Bellechasse in the 7th arrondissement of Paris.  The complex had originally been a Cistercian nunnery. The abbey was founded near Beauvais in 1217 and moved to its current site in Paris in 1672 at the behest of King Louis XIV. A reconstruction of the abbey was initiated in 1745 by the Abbess Marie-Catherine Béthisy de Mézières and work was completed in 1783. In the late 18th century, the abbey was one of the most prestigious educational institutions in Paris for daughters of the elite, including Thomas Jefferson's daughters Martha and Mary.",
+     "source": {
+      "kind": "wikipedia",
+      "label": "Wikipedia: Pentemont Abbey",
+      "url": "https://en.wikipedia.org/wiki/Pentemont_Abbey"
+     }
+    },
+    {
+     "id": "w24715156",
+     "name": "Hôtel de Brienne",
+     "lat": 48.8597,
+     "lon": 2.3194,
+     "summary": "The Hôtel de Brienne (French pronunciation: [otɛl d(ə) bʁijɛn]) is an 18th-century hôtel particulier (a type of townhouse) at 14 Rue Saint-Dominique in the 7th arrondissement of Paris, France. It serves as the official residence of the Minister of the Armed Forces.\nIt was built in 1724 to the designs of the architect François Debias-Aubry for François Duret, a real estate entrepreneur, who was also president of the Grand Conseil. In 1726 Duret sold it to Françoise de Mailly (widow of Louis Phélypeaux, Marquis de La Vrillière), who allowed her son, Louis Phélypeaux, comte de Saint-Florentin to stay on the upper floor (premier étage).",
+     "source": {
+      "kind": "wikipedia",
+      "label": "Wikipedia: Hôtel de Brienne",
+      "url": "https://en.wikipedia.org/wiki/H%C3%B4tel_de_Brienne"
+     }
+    },
+    {
+     "id": "w14504382",
+     "name": "Haut-Commissariat à la Stratégie et au Plan",
+     "lat": 48.858333333333334,
+     "lon": 2.3186111111111107,
+     "summary": "The Haut-Commissariat à la Stratégie et au Plan (HCSP, lit. 'High Commission for Strategy and Planning') is an advisory body reporting to the government of France, which took its present name and form in May 2025. It was originally founded in the context of the Monnet Plan, intended to address resource scarcity in France in the immediate aftermath of World War II. \nWith relatively minor changes to its role, it has been successively known as the Commissariat Général du Plan (CGP, lit. 'General Planning Commission', 1946-2006), Centre d'Analyse Stratégique (CAS, lit. 'Center for Strategic Analysis', 2006-2013), Commissariat Général à la Stratégie et à la Prospective (CGSP, lit. 'General Commission for Strategy and Foresight', 2013-2014), and France Stratégie (lit. 'France Strategy', 2014-2025); it has also absorbed the Haut-Commissariat au Plan (HCP, lit. 'High Commission for Planning', 2020-2025), a separate body whose name referred to the original Commissariat Général. All these organizations have been known colloquially as \"le Plan\" (lit. 'the Plan').",
+     "source": {
+      "kind": "wikipedia",
+      "label": "Wikipedia: Haut-Commissariat à la Stratégie et au Plan",
+      "url": "https://en.wikipedia.org/wiki/Haut-Commissariat_%C3%A0_la_Strat%C3%A9gie_et_au_Plan"
+     }
+    },
+    {
+     "id": "w52631028",
+     "name": "Hôtel de Noirmoutier",
+     "lat": 48.8578,
+     "lon": 2.3167,
+     "summary": "The Hôtel de Noirmoutier (French pronunciation: [otɛl də nwaʁmutje]) is an hôtel particulier in the 7th arrondissement of Paris, France. It was built in 1723. It has been listed by the French Ministry of Culture since 12 February 1996.\nThe mansion served as a model for Spencer Hays's residence in Nashville, Tennessee.",
+     "source": {
+      "kind": "wikipedia",
+      "label": "Wikipedia: Hôtel de Noirmoutier",
+      "url": "https://en.wikipedia.org/wiki/H%C3%B4tel_de_Noirmoutier"
+     }
+    }
+   ],
+   "beats": [
+    {
+     "text": "The Faubourg Saint-Germain is a historic district on Paris’s Rive Gauche, now part of the 7th arrondissement.",
+     "audioUrl": null,
+     "durationSec": 6.54
+    },
+    {
+     "text": "Look toward the Hôtel de Brienne, an 18th-century hôtel particulier and official residence of the Minister of the Armed Forces.",
+     "targetId": "w24715156",
+     "audioUrl": null,
+     "durationSec": 7.69
+    }
+   ],
+   "visitMin": 20
+  },
+  {
+   "id": "luxor-obelisks",
+   "name": "Luxor Obelisks",
+   "lat": 48.86555555555556,
+   "lon": 2.3211111111111107,
+   "blurb": "Ancient Egyptian obelisk dramatically anchors Paris’s Place de la Concorde.",
+   "photo": {
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/a/ac/Paris%2C_Obelisk_in_the_Place_de_la_Concorde%2C_July_22%2C_2008.jpg/960px-Paris%2C_Obelisk_in_the_Place_de_la_Concorde%2C_July_22%2C_2008.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "credit": "Craig Booth from Leiden, Netherlands, CC BY 2.0",
+    "pageUrl": "https://commons.wikimedia.org/wiki/File:Paris,_Obelisk_in_the_Place_de_la_Concorde,_July_22,_2008.jpg"
+   },
+   "sources": [
+    {
+     "kind": "wikipedia",
+     "label": "Wikipedia: Luxor Obelisks",
+     "url": "https://en.wikipedia.org/wiki/Luxor_Obelisks"
+    }
+   ],
+   "targets": [
+    {
+     "id": "w80899",
+     "name": "Place de la Concorde",
+     "lat": 48.8656331,
+     "lon": 2.3212357,
+     "summary": "The Place de la Concorde (French: [plas d(ə) la kɔ̃kɔʁd] ; \"Harmony Square\"), originally the Place Louis XV (Louis XV Square), and later the Place Louis XVI (Louis XVI Square), is a public square in Paris. Measuring 7.6 ha (19 acres) in area, it is the largest square in the city. It is located in the 8th arrondissement, at the eastern end of the Champs-Élysées.\nThe square was the site of many notable public executions, including Louis XVI, Marie Antoinette and Maximilien Robespierre in the course of the French Revolution, during which it was temporarily renamed the Place de la Révolution ('Revolution Square').",
+     "source": {
+      "kind": "wikipedia",
+      "label": "Wikipedia: Place de la Concorde",
+      "url": "https://en.wikipedia.org/wiki/Place_de_la_Concorde"
+     }
+    },
+    {
+     "id": "w5571631",
+     "name": "Musée de l'Orangerie",
+     "lat": 48.86384535,
+     "lon": 2.32253834,
+     "summary": "The Musée de l'Orangerie (English: Orangery Museum) is an art gallery of Impressionist and Post-Impressionist paintings located in the west corner of the Tuileries Garden next to the Place de la Concorde in Paris. The museum is most famous as the permanent home of eight large Water Lilies murals by Claude Monet, and also contains works by Paul Cézanne, Henri Matisse, Amedeo Modigliani, Pablo Picasso, Pierre-Auguste Renoir, Henri Rousseau, Alfred Sisley, Chaïm Soutine, Maurice Utrillo, and others.",
+     "source": {
+      "kind": "wikipedia",
+      "label": "Wikipedia: Musée de l'Orangerie",
+      "url": "https://en.wikipedia.org/wiki/Mus%C3%A9e_de_l%27Orangerie"
+     }
+    },
+    {
+     "id": "w3761151",
+     "name": "Maxim's",
+     "lat": 48.867305555555554,
+     "lon": 2.322222222222222,
+     "summary": "Maxim's (French pronunciation: [maksim‿s]) is a restaurant in Paris, France, located at No. 3 Rue Royale in the 8th arrondissement. It is known for its Art Nouveau interior decor. In the mid 20th century, Maxim's was regarded as the most famous restaurant in the world.",
+     "source": {
+      "kind": "wikipedia",
+      "label": "Wikipedia: Maxim's",
+      "url": "https://en.wikipedia.org/wiki/Maxim%27s"
+     }
+    },
+    {
+     "id": "w20610071",
+     "name": "Hôtel de la Marine",
+     "lat": 48.86677777777778,
+     "lon": 2.323083333333333,
+     "summary": "The Hôtel de la Marine (French pronunciation: [otɛl d(ə) la maʁin]), also known (formerly) as the Hôtel du Garde-Meuble ([otɛl dy ɡaʁdəmœbl]), is a historic building on the Place de la Concorde in Paris, just east of Rue Royale. It was designed by the architect Ange-Jacques Gabriel and built between 1757 and 1774 on the newly created square first called Place Louis XV. The identical building across the street, constructed at the same time, now houses the Hôtel de Crillon and the Automobile Club of France.\nThe Hôtel de la Marine was originally the home of the royal Garde-Meuble, the office managing the furnishing of all royal properties. Following the French Revolution it became the Ministry of the Navy, which occupied it until 2015 (as part of the Ministry of Defence).",
+     "source": {
+      "kind": "wikipedia",
+      "label": "Wikipedia: Hôtel de la Marine",
+      "url": "https://en.wikipedia.org/wiki/H%C3%B4tel_de_la_Marine"
+     }
+    },
+    {
+     "id": "w25163476",
+     "name": "Fontaines de la Concorde",
+     "lat": 48.8656331,
+     "lon": 2.3212357,
+     "summary": "The Fontaines de la Concorde are two monumental fountains located in the Place de la Concorde in the center of Paris. They were designed by Jacques Ignace Hittorff, and completed in 1840 during the reign of King Louis-Philippe. The south fountain commemorates the maritime commerce and industry  of France, and the north fountain commemorates navigation and commerce on the rivers of France.",
+     "source": {
+      "kind": "wikipedia",
+      "label": "Wikipedia: Fontaines de la Concorde",
+      "url": "https://en.wikipedia.org/wiki/Fontaines_de_la_Concorde"
+     }
+    },
+    {
+     "id": "w4627835",
+     "name": "Embassy of the United States, Paris",
+     "lat": 48.867886,
+     "lon": 2.320733,
+     "summary": "The Embassy of the United States in Paris is the diplomatic mission of the United States in the French Republic. The embassy is the oldest diplomatic mission of the United States. Benjamin Franklin and some of the other Founding Fathers were the earliest U.S. ambassadors to France. The chancery building is located at 2 Avenue Gabriel, on the northwest corner of the Place de la Concorde, in the 8th arrondissement of Paris.",
+     "source": {
+      "kind": "wikipedia",
+      "label": "Wikipedia: Embassy of the United States, Paris",
+      "url": "https://en.wikipedia.org/wiki/Embassy_of_the_United_States,_Paris"
+     }
+    }
+   ],
+   "beats": [
+    {
+     "text": "The Luxor Obelisks are a pair of ancient Egyptian obelisks, over 3,000 years old, carved during Ramesses II’s reign.",
+     "targetId": "w80899",
+     "audioUrl": null,
+     "durationSec": 7.31
+    },
+    {
+     "text": "Look toward the Place de la Concorde, where the western obelisk was moved after Egypt gifted it to France in the 1830s.",
+     "targetId": "w80899",
+     "audioUrl": null,
+     "durationSec": 8.46
+    }
+   ],
+   "visitMin": 15
+  }
+ ],
+ "legs": [
+  {
+   "fromStopId": "les-invalides",
+   "toStopId": "faubourg-saint-germain",
+   "polyline": [
+    {
+     "lat": 48.85476,
+     "lon": 2.3125
+    },
+    {
+     "lat": 48.85417,
+     "lon": 2.31244
+    },
+    {
+     "lat": 48.85414,
+     "lon": 2.31299
+    },
+    {
+     "lat": 48.85402,
+     "lon": 2.31298
+    },
+    {
+     "lat": 48.85405,
+     "lon": 2.31243
+    },
+    {
+     "lat": 48.85395,
+     "lon": 2.31242
+    },
+    {
+     "lat": 48.85388,
+     "lon": 2.31347
+    },
+    {
+     "lat": 48.85385,
+     "lon": 2.31431
+    },
+    {
+     "lat": 48.85378,
+     "lon": 2.31459
+    },
+    {
+     "lat": 48.8539,
+     "lon": 2.31464
+    },
+    {
+     "lat": 48.85396,
+     "lon": 2.31458
+    },
+    {
+     "lat": 48.85432,
+     "lon": 2.3146
+    },
+    {
+     "lat": 48.85484,
+     "lon": 2.31465
+    },
+    {
+     "lat": 48.85487,
+     "lon": 2.31459
+    },
+    {
+     "lat": 48.85773,
+     "lon": 2.31495
+    },
+    {
+     "lat": 48.85787,
+     "lon": 2.31493
+    },
+    {
+     "lat": 48.85791,
+     "lon": 2.31498
+    },
+    {
+     "lat": 48.85796,
+     "lon": 2.31467
+    },
+    {
+     "lat": 48.85812,
+     "lon": 2.31474
+    },
+    {
+     "lat": 48.85805,
+     "lon": 2.31518
+    },
+    {
+     "lat": 48.85806,
+     "lon": 2.31518
+    },
+    {
+     "lat": 48.85803,
+     "lon": 2.31531
+    },
+    {
+     "lat": 48.85802,
+     "lon": 2.31531
+    },
+    {
+     "lat": 48.85781,
+     "lon": 2.31662
+    },
+    {
+     "lat": 48.85762,
+     "lon": 2.31748
+    },
+    {
+     "lat": 48.85764,
+     "lon": 2.31749
+    },
+    {
+     "lat": 48.85762,
+     "lon": 2.31759
+    },
+    {
+     "lat": 48.85759,
+     "lon": 2.31759
+    },
+    {
+     "lat": 48.85746,
+     "lon": 2.31807
+    },
+    {
+     "lat": 48.85748,
+     "lon": 2.31808
+    },
+    {
+     "lat": 48.85744,
+     "lon": 2.31822
+    },
+    {
+     "lat": 48.85742,
+     "lon": 2.31821
+    },
+    {
+     "lat": 48.85724,
+     "lon": 2.31887
+    },
+    {
+     "lat": 48.85813,
+     "lon": 2.31953
+    }
+   ],
+   "distanceM": 1245,
+   "durationSec": 1010
+  },
+  {
+   "fromStopId": "faubourg-saint-germain",
+   "toStopId": "luxor-obelisks",
+   "polyline": [
+    {
+     "lat": 48.85815,
+     "lon": 2.31955
+    },
+    {
+     "lat": 48.85857,
+     "lon": 2.31987
+    },
+    {
+     "lat": 48.85861,
+     "lon": 2.31974
+    },
+    {
+     "lat": 48.85867,
+     "lon": 2.31978
+    },
+    {
+     "lat": 48.85885,
+     "lon": 2.31924
+    },
+    {
+     "lat": 48.8589,
+     "lon": 2.31929
+    },
+    {
+     "lat": 48.85894,
+     "lon": 2.31915
+    },
+    {
+     "lat": 48.85893,
+     "lon": 2.31914
+    },
+    {
+     "lat": 48.85928,
+     "lon": 2.31808
+    },
+    {
+     "lat": 48.85975,
+     "lon": 2.31821
+    },
+    {
+     "lat": 48.85974,
+     "lon": 2.31825
+    },
+    {
+     "lat": 48.85982,
+     "lon": 2.31826
+    },
+    {
+     "lat": 48.85983,
+     "lon": 2.31822
+    },
+    {
+     "lat": 48.86028,
+     "lon": 2.31833
+    },
+    {
+     "lat": 48.86029,
+     "lon": 2.31854
+    },
+    {
+     "lat": 48.86035,
+     "lon": 2.31864
+    },
+    {
+     "lat": 48.86069,
+     "lon": 2.31889
+    },
+    {
+     "lat": 48.86069,
+     "lon": 2.31888
+    },
+    {
+     "lat": 48.86078,
+     "lon": 2.31894
+    },
+    {
+     "lat": 48.86078,
+     "lon": 2.31889
+    },
+    {
+     "lat": 48.86081,
+     "lon": 2.31891
+    },
+    {
+     "lat": 48.86082,
+     "lon": 2.31874
+    },
+    {
+     "lat": 48.86158,
+     "lon": 2.31924
+    },
+    {
+     "lat": 48.86166,
+     "lon": 2.31935
+    },
+    {
+     "lat": 48.86214,
+     "lon": 2.31958
+    },
+    {
+     "lat": 48.86235,
+     "lon": 2.31923
+    },
+    {
+     "lat": 48.86252,
+     "lon": 2.31867
+    },
+    {
+     "lat": 48.86275,
+     "lon": 2.31886
+    },
+    {
+     "lat": 48.86269,
+     "lon": 2.31927
+    },
+    {
+     "lat": 48.86275,
+     "lon": 2.31934
+    },
+    {
+     "lat": 48.86393,
+     "lon": 2.3202
+    },
+    {
+     "lat": 48.86404,
+     "lon": 2.3204
+    },
+    {
+     "lat": 48.86429,
+     "lon": 2.32059
+    },
+    {
+     "lat": 48.8646,
+     "lon": 2.32061
+    },
+    {
+     "lat": 48.86462,
+     "lon": 2.3209
+    },
+    {
+     "lat": 48.86465,
+     "lon": 2.32101
+    },
+    {
+     "lat": 48.86474,
+     "lon": 2.32116
+    },
+    {
+     "lat": 48.86506,
+     "lon": 2.32143
+    },
+    {
+     "lat": 48.86509,
+     "lon": 2.32133
+    },
+    {
+     "lat": 48.86548,
+     "lon": 2.32161
+    },
+    {
+     "lat": 48.86559,
+     "lon": 2.32113
+    }
+   ],
+   "distanceM": 1077,
+   "durationSec": 916
+  }
+ ],
+ "generatedAt": "2026-09-19T05:50:06.462Z",
+ "provenance": {
+  "router": "code",
+  "timekeeper": "code",
+  "scout": "llm",
+  "critic": "llm + code checks",
+  "narrator": "llm",
+  "tts": "elevenlabs:mp3_44100_128"
+ }
+}

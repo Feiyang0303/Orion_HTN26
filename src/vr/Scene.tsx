@@ -172,7 +172,9 @@ export default function Scene({ days, store: xr, onReady }: { days: Day[]; store
 
     /* the guide's clock */
     // The timeline gives a leg the time a straight street would take. A real one has bends to slow for, so while
-    // it is being ridden the clock runs slow by just enough for the ride to fit.
+    // it is being ridden the clock runs slow by just enough for the ride to fit. It never runs fast: a leg that is
+    // given longer than its ride (so the guide can finish what it says on the way) is simply ridden more slowly,
+    // and what it says is never cut short.
     const on = tl.at(p.t).seg
     const R = on.kind === 'travel' && g.rides[on.leg]?.T ? g.rides[on.leg] : null
     // The guide waits for the city: for there to be one at all, and then, on arriving at a stop, for the place to come
@@ -181,7 +183,7 @@ export default function Scene({ days, store: xr, onReady }: { days: Day[]; store
     const arriving = on.kind === 'dwell' && p.t - on.t0 < 1
     if (!arriving) p.settling = 0
     else if (p.settling !== false && ts) p.settling = (p.settling < .5 || ts.queued + ts.downloading + ts.parsing > SETTLED_AT) && p.settling < SETTLE_MAX_SEC ? p.settling + dt : false
-    if (p.playing && g.ready && ts && ts.visible > 8 && !(arriving && p.settling !== false)) p.t = Math.min(tl.total, p.t + dt * (R ? (on.t1 - on.t0) / R.T : 1))
+    if (p.playing && g.ready && ts && ts.visible > 8 && !(arriving && p.settling !== false)) p.t = Math.min(tl.total, p.t + dt * (R ? Math.min(1, (on.t1 - on.t0) / R.T) : 1))
     if (p.t >= tl.total && p.playing) { p.playing = false; p.audio?.pause() }
     let { seg, u } = tl.at(p.t)
     if (!smooth && seg.kind === 'travel') { p.t = seg.t1; ({ seg, u } = tl.at(p.t)) }     // "Ride: blinks": a leg is not ridden at all

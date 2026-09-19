@@ -1,0 +1,13 @@
+# What a deploy leaves behind. When this file exists Vercel stops reading .gitignore, so its entries are repeated here.
+node_modules/
+dist/
+*.tsbuildinfo
+.DS_Store
+.env
+.env.local
+scripts/.out/
+.cache/
+.vercel
+
+# The native headset client: gigabytes of Unity's own files, and a generated config that holds the tiles key.
+quest/
