@@ -41,7 +41,14 @@ export default function JournalLibrary({ onClose, onPlan, onOpenTrip, onFly }: {
     try {
       const result = await listTrips()
       setTrips(result.trips); setPersistent(result.persistent)
-    } catch { setError('The journal could not be opened. Try again in a moment.') }
+    } catch (e) {
+      const detail = e instanceof Error ? e.message : String(e)
+      setError(/answered 404/.test(detail)
+        ? 'The trip service is out of date. Restart Orion’s development server, then try again.'
+        : /fetch|network/i.test(detail)
+          ? 'The trip service is not running. Start Orion’s development server, then try again.'
+          : 'The journal could not be opened. Try again in a moment.')
+    }
     finally { setLoading(false) }
   }, [])
 

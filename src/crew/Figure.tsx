@@ -27,8 +27,14 @@ function glow() {
   return glowTexture
 }
 
-export default function Figure({ member, angle, radius, status, index }: {
+export default function Figure({ member, angle, radius, depth = 1, status, index }: {
   member: Member; angle: number; radius: number; status: Status; index: number
+  /** How far back the ring reaches, as a fraction of its width. Under 1 the
+      crew stand on an ellipse rather than a circle: the back row comes forward
+      and down the screen, which is what keeps it clear of the globe without
+      making anybody smaller. The figures themselves are never squashed — only
+      where they stand is. */
+  depth?: number
 }) {
   const root = useRef<THREE.Group>(null)
   const torso = useRef<THREE.Group>(null)
@@ -78,7 +84,7 @@ export default function Figure({ member, angle, radius, status, index }: {
     sm.opacity = .16 + .5 * w + .45 * s.hop
   })
 
-  const x = Math.sin(angle) * radius, z = Math.cos(angle) * radius
+  const x = Math.sin(angle) * radius, z = Math.cos(angle) * radius * depth
   const skin = member.skin
 
   return (

@@ -22,6 +22,12 @@ import CityFX from './Magic'
 export type GlobeMode = 'kickoff' | 'crew'
 
 const RING = 4.3
+/* The ring is an ellipse, not a circle. A circle puts two of the crew directly
+   behind the globe, where the planet cuts their heads off — and the only ways
+   out of that are a smaller globe or a lower one, both of which cost more than
+   this does. Pulling the back of the ring in brings those two forward and down
+   the screen instead, and it stops the front pair falling off the bottom edge. */
+const DEPTH = .75
 const angleOf = (i: number) => (i / CREW.length) * Math.PI * 2 + Math.PI / CREW.length
 const CAMERA_DISTANCE = Math.hypot(6.2, 16.5)
 
@@ -53,8 +59,8 @@ export default function GlobeScene({ mode, city, events, places, className }: {
         globe={<Globe city={city} cityWorld={cityWorld} energy={energy}><CityFX status={statusRef} places={places} /></Globe>}
         // Only on stage when it is needed: the name tags are DOM, and DOM does not obey a hidden 3D group.
         crew={mode === 'crew' ? <>
-          <Floor />
-          {CREW.map((m, i) => <Figure key={m.id} member={m} index={i} angle={angleOf(i)} radius={RING} status={status[m.id]} />)}
+          <Floor depth={DEPTH} />
+          {CREW.map((m, i) => <Figure key={m.id} member={m} index={i} angle={angleOf(i)} radius={RING} depth={DEPTH} status={status[m.id]} />)}
         </> : null} />
       <Streams status={statusRef} cityWorld={cityWorld} crewScale={crewScale} />
       {/* Motes in the air around the stage. The box stays shallow in z on purpose:
@@ -88,7 +94,9 @@ function Layout({ mode, globe, crew, statusRef, energy, crewScale }: {
       ? (portrait
         ? { x: 0, y: 6.7, k: THREE.MathUtils.clamp(hw * .38, 1.0, 1.5), c: 0 }                       // narrow screens: above the card
         : { x: Math.min(hw * .5, 4.6), y: 2.9, k: THREE.MathUtils.clamp(hw * .3, 1.3, 2.5), c: 0 })   // wide screens: beside it
-      : { x: 0, y: 3.85, k: THREE.MathUtils.clamp(hw * .2, 1.15, 1.75), c: 1 }
+      // Sized and placed so its lowest edge sits above the heads of the two at
+      // the back of the ring, and its top stays clear of the phase chips.
+      : { x: 0, y: 4.35, k: THREE.MathUtils.clamp(hw * .19, 1.1, 1.5), c: 1 }
     const e = 1 - Math.exp(-dt * 2.2)
     st.x += (goal.x - st.x) * e; st.y += (goal.y - st.y) * e; st.k += (goal.k - st.k) * e; st.c += (goal.c - st.c) * (1 - Math.exp(-dt * 1.4))
 
@@ -114,9 +122,9 @@ function Layout({ mode, globe, crew, statusRef, energy, crewScale }: {
   )
 }
 
-function Floor() {
+function Floor({ depth = 1 }: { depth?: number }) {
   return (
-    <group>
+    <group scale={[1, 1, depth]}>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -.02, 0]}>
         <circleGeometry args={[6.7, 72]} />
         <meshStandardMaterial color="#0d0f15" roughness={.85} metalness={.25} transparent opacity={.6} />
@@ -160,7 +168,7 @@ function Streams({ status, cityWorld, crewScale }: { status: MutableRefObject<Re
       const p = live.current[i]
       if (!p) { pos.setXYZ(i, 0, -999, 0); continue }
       const a = angleOf(p.a)
-      v.hand.set(Math.sin(a) * (RING - .55) * k, 1.55 * k, Math.cos(a) * (RING - .55) * k)
+      v.hand.set(Math.sin(a) * (RING - .55) * k, 1.55 * k, Math.cos(a) * (RING - .55) * DEPTH * k)
       const to = cityWorld.current
       v.mid.copy(v.hand).lerp(to, .5); v.mid.y += 1.7
       const t = p.t, u = 1 - t
