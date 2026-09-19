@@ -10,7 +10,8 @@ import { frameFor } from './director'
 import { Governor, type Shot } from './quality'
 import { activeBeat, buildTimeline, type Segment } from './timeline'
 import { resample, smootherstep } from './geo'
-import { startFlight, tag, log } from '../telemetry'
+import { startFlight, tag, log, lastFault } from '../telemetry'
+import Fault from '../ui/Fault'
 import FlightHud, { type Control, type Hud } from './FlightHud'
 import MapRig, { type MapView } from './MapRig'
 import './fly.css'
@@ -415,16 +416,17 @@ export default function Flythrough(props: FlyProps & { map?: MapView }) {
   useEffect(() => { if (!begin) { control.current.paused = false; setHud(null) } }, [begin])
 
   if (typeof probe === 'object') {
+    const f = lastFault()
     return (
       <div className="fly fly-error" role="alert">
-        <p>{probe.why}</p><button onClick={check}>Retry</button>
+        <Fault message={probe.why} eventId={f?.where === 'tiles.probe' ? f.eventId : undefined} where="tiles.probe" onRetry={check} retryLabel="Retry" />
       </div>
     )
   }
   return (
     <div className={`fly ${revealed ? 'is-revealed' : ''}`} data-ground="night">
       {origin && probe === 'ok' && (
-        <Canvas dpr={plan ? [1, 2] : [1, 1.5]} camera={{ fov: 50, near: 1, far: 20000, position: [0, 900, 700] }} gl={{ antialias: true, toneMapping: THREE.NeutralToneMapping }}>
+        <Canvas dpr={plan ? [1, 2] : [1, 1.5]} camera={{ fov: 50, near: 1, far: 20000, position: [0, 900, 700] }} gl={{ antialias: true, toneMapping: THREE.NeutralToneMapping, preserveDrawingBuffer: true }}>
           <color attach="background" args={['#0a0806']} />
           <ambientLight intensity={1.6} />
           <directionalLight position={[300, 800, 400]} intensity={1.2} color="#ffe6b8" />

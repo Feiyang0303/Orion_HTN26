@@ -82,7 +82,7 @@ async function llm(req, res) {
     if (!upstream.ok) throw new HttpError(502, data?.error?.message ?? `openai ${upstream.status}`)
     const choice = data.choices?.[0]
     if (choice?.finish_reason === 'length') throw new HttpError(502, 'model ran out of output tokens even with three times the budget')
-    return { text: choice?.message?.content ?? '', usage, model: data.model ?? model }
+    return { text: choice?.message?.content ?? '', usage, model: data.model ?? model, retried }
   })
   json(res, 200, out)
 }
@@ -162,6 +162,9 @@ async function routesWalk(req, res) {
 const routes = {
   'GET /api/health': (_req, res) => json(res, 200, {
     ok: true,
+    // Point a Sentry Uptime monitor at this URL. It is cheap, has no secrets, and
+    // fails only when the process is down — which is what uptime is for.
+    sentry: !!env('SENTRY_DSN'),
     keys: { openai: !!env('OPENAI_API_KEY'), elevenlabs: !!env('ELEVENLABS_API_KEY') && !!env('ELEVENLABS_VOICE_ID'), routes: !!routesKey() },
   }),
   'GET /api/wiki': handleWiki,

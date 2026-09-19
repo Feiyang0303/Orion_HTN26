@@ -9,5 +9,10 @@ try { process.env.VITE_RELEASE ??= execSync('git rev-parse --short HEAD', { stdi
 // forwarded to scripts/proxy.mjs, which holds them.
 export default defineConfig({
   plugins: [react()],
-  server: { proxy: { '/api': `http://127.0.0.1:${process.env.PROXY_PORT ?? 8787}` } },
+  // Chromium's JS Self-Profiling API (Sentry browser profiling) requires this.
+  server: {
+    headers: { 'Document-Policy': 'js-profiling' },
+    proxy: { '/api': `http://127.0.0.1:${process.env.PROXY_PORT ?? 8787}` },
+  },
+  preview: { headers: { 'Document-Policy': 'js-profiling' } },
 })

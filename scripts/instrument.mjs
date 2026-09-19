@@ -14,6 +14,7 @@ if (process.env.SENTRY_DSN) {
     sendDefaultPii: false,
     tracesSampleRate: Number(process.env.SENTRY_TRACES ?? 1),
     enableLogs: true,
+    includeLocalVariables: true,
     // Wrapped, not passed directly: Sentry calls these with a second argument (a hint) that would land in scrubDeep's `seen`.
     beforeSend: e => scrubDeep(e), beforeBreadcrumb: b => scrubDeep(b), beforeSendTransaction: e => scrubDeep(e),
     beforeSendSpan: sp => scrubDeep(sp), beforeSendLog: l => scrubDeep(l),

@@ -11,7 +11,8 @@ import type { MapView } from './fly/MapRig'
 import Kickoff, { type KickoffResult } from './plan/ui/Kickoff'
 import Studio from './plan/ui/Studio'
 import type { Day, LatLon } from './types'
-import { breadcrumb, tag } from './telemetry'
+import { breadcrumb, tag, withProfiler } from './telemetry'
+import Note from './ui/Note'
 
 /* The shell. One canvas (the real city, in 3D, owned by src/fly) is the ground
  * of every screen from the first frame, and each screen is a layer of glass laid
@@ -37,7 +38,7 @@ const layer = {
   exit: { opacity: 0, transition: { duration: .35 } },
 }
 
-export default function App() {
+function App() {
   const [phase, setPhase] = useState<Phase>('kickoff')
   // The trail an error will carry: which screen the person was on.
   useEffect(() => { tag('phase', phase); breadcrumb('nav', `phase → ${phase}`) }, [phase])
@@ -129,7 +130,10 @@ export default function App() {
             </motion.div>
           )}
         </AnimatePresence>
+        <Note />
       </main>
     </ErrorBoundary>
   )
 }
+
+export default withProfiler(App)

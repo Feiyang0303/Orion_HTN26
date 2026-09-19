@@ -320,7 +320,7 @@ function normaliseEdit(raw: unknown): Edit[] {
 
 /** Apply edits to the drafts (not the built trip), then rebuild only the days
     that changed. Returns the new trip and which days were rebuilt. */
-export async function applyEdits(
+async function applyEditsImpl(
   s: Session, trip: Trip, edits: Edit[], opts: PipelineOptions,
 ): Promise<{ trip: Trip; rebuilt: number[]; notes: string[] }> {
   // The drafts are recovered from the trip: every stop is in `known`.
@@ -436,3 +436,4 @@ export const stagePlaces = traced('plan.places', stagePlacesImpl, s => ({ city: 
 export const morePlaces = traced('plan.more_places', morePlacesImpl, s => ({ city: s.origin.name }))
 export const stagePlan = traced('plan.build', stagePlanImpl, (s, drafts) => ({ city: s.origin.name, days: drafts.length, stops: drafts.reduce((n, d) => n + d.stops.length, 0), transport: s.wish.transport }))
 export const revise = traced('plan.revise', reviseImpl, (_t, message) => ({ chars: message.length }))
+export const applyEdits = traced('plan.edit', applyEditsImpl, (_s, _t, edits) => ({ ops: edits.map(e => e.op).join(',') }))

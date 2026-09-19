@@ -41,11 +41,13 @@ export default function GlobeScene({ mode, city, events, places, className }: {
   const crewScale = useRef(0)
 
   return (
-    <Canvas className={className} dpr={[1, 1.6]} camera={{ position: [0, 6.2, 16.5], fov: 32 }} gl={{ alpha: true, antialias: true }} style={{ pointerEvents: 'none' }}>
+    <Canvas className={className} dpr={[1, 1.6]} camera={{ position: [0, 6.2, 16.5], fov: 32 }} gl={{ alpha: true, antialias: true, preserveDrawingBuffer: true }} style={{ pointerEvents: 'none' }}>
       <hemisphereLight args={['#a9bcff', '#2a1f16', .8]} />
       <directionalLight position={[5, 9, 6]} intensity={1.6} color="#ffe9c9" />
       <directionalLight position={[-6, 4, -7]} intensity={.7} color="#7fa6ff" />
-      <Stars radius={70} depth={45} count={1500} factor={3.4} fade speed={.35} />
+      {/* two layers, so the sky has depth: a far dusting and a nearer, brighter few */}
+      <Stars radius={96} depth={60} count={5200} factor={2.6} fade speed={.18} />
+      <Stars radius={48} depth={26} count={900} factor={5.2} fade speed={.5} />
 
       <Layout mode={mode} statusRef={statusRef} energy={energy} crewScale={crewScale}
         globe={<Globe city={city} cityWorld={cityWorld} energy={energy}><CityFX status={statusRef} places={places} /></Globe>}
@@ -55,7 +57,8 @@ export default function GlobeScene({ mode, city, events, places, className }: {
           {CREW.map((m, i) => <Figure key={m.id} member={m} index={i} angle={angleOf(i)} radius={RING} status={status[m.id]} />)}
         </> : null} />
       <Streams status={statusRef} cityWorld={cityWorld} crewScale={crewScale} />
-      <Sparkles count={50} scale={[14, 6, 14]} size={2.2} speed={.2} opacity={.35} color="#f0b45e" position={[0, 3, 0]} />
+      <Sparkles count={130} scale={[17, 8, 17]} size={2.1} speed={.18} opacity={.3} color="#f0b45e" position={[0, 3, 0]} />
+      <Sparkles count={70} scale={[11, 5, 11]} size={3.4} speed={.1} opacity={.16} color="#8fb4ff" position={[0, 3.2, 0]} />
     </Canvas>
   )
 }

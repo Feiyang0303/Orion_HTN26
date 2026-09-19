@@ -1,4 +1,5 @@
 import * as Sentry from '@sentry/react'
+import type { ComponentType } from 'react'
 
 /* One place that knows about Sentry. Everything else calls `report`,
  * `breadcrumb` or `tag`, so the rest of the code never imports the SDK and
@@ -48,11 +49,28 @@ export function initTelemetry() {
     replaysSessionSampleRate: Number(env.VITE_SENTRY_REPLAY ?? 1),
     replaysOnErrorSampleRate: 1,
     enableLogs: true,
+    // A profile hangs off each plan.* / flight span, so "this stage was slow"
+    // is a flame chart, not a guess. Chromium only; needs Document-Policy.
+    profileSessionSampleRate: Number(env.VITE_SENTRY_PROFILES ?? 1),
+    profileLifecycle: 'trace',
     integrations: [
       Sentry.browserTracingIntegration(),
+      Sentry.browserProfilingIntegration(),
       // The book is public text we wrote, so it stays readable in a replay; what
-      // people type into the desk does not. The WebGL canvas is not recorded.
+      // people type into the desk does not. Canvases (the city, the globe) are
+      // recorded so a broken flight is a picture, not a black rectangle.
       Sentry.replayIntegration({ maskAllInputs: true, maskAllText: false, blockAllMedia: false }),
+      Sentry.replayCanvasIntegration(),
+      Sentry.feedbackIntegration({
+        colorScheme: 'dark',
+        autoInject: false,
+        showBranding: true,
+        buttonLabel: 'Something off?',
+        submitButtonLabel: 'Send',
+        formTitle: 'What went wrong',
+        messagePlaceholder: 'What were you trying to do, and what happened instead?',
+        enableScreenshot: true,
+      }),
     ],
     // Only our own /api gets trace headers. Anything else (Wikipedia, Nominatim,
     // Google) would need a CORS preflight for them, and would fail.
@@ -78,25 +96,59 @@ export type ReportOptions = {
   tags?: Record<string, string>
 }
 
+export type Fault = { where: string; message: string; eventId?: string; at: number }
+let last: Fault | null = null
+const watchers = new Set<(f: Fault | null) => void>()
+const remember = (f: Fault) => { last = f; watchers.forEach(w => w(f)) }
+export const lastFault = () => last
+export const subscribeFaults = (w: (f: Fault | null) => void) => { watchers.add(w); w(last); return () => { watchers.delete(w) } }
+
 /** Report a failure. `where` is a stable dotted name ("router.matrix"), used as
-    the grouping key, so the same fault is one issue and not one per message. */
-export function report(error: unknown, where: string, opts: ReportOptions = {}) {
+    the grouping key, so the same fault is one issue and not one per message.
+    Returns the Sentry event id (when a DSN is set) so the UI can show it. */
+export function report(error: unknown, where: string, opts: ReportOptions = {}): string | undefined {
   if (isAbort(error)) return
   const err = error instanceof Error ? error : new Error(typeof error === 'string' ? error : JSON.stringify(error))
   if (env.DEV) console.warn(`[orion:${where}]`, err)
-  if (!DSN) return
   const key = `${where}|${err.message}`
   const now = Date.now()
-  if (now - (seen.get(key) ?? 0) < THROTTLE_MS) return
+  const level = opts.level ?? 'error'
+  const show = level === 'error' || level === 'fatal'
+  if (now - (seen.get(key) ?? 0) < THROTTLE_MS) {
+    if (show) remember({ where, message: err.message, eventId: last?.eventId, at: now })
+    return last?.eventId
+  }
   seen.set(key, now)
-  Sentry.withScope(scope => {
-    scope.setTag('where', where)
-    scope.setLevel(opts.level ?? 'error')
-    scope.setFingerprint([where])
-    for (const [k, v] of Object.entries(opts.tags ?? {})) scope.setTag(k, v)
-    if (opts.extra) scope.setContext('detail', scrubDeep(opts.extra))
-    Sentry.captureException(err)
+  let eventId: string | undefined
+  if (DSN) {
+    Sentry.withScope(scope => {
+      scope.setTag('where', where)
+      scope.setLevel(level)
+      scope.setFingerprint([where])
+      for (const [k, v] of Object.entries(opts.tags ?? {})) scope.setTag(k, v)
+      if (opts.extra) scope.setContext('detail', scrubDeep(opts.extra))
+      eventId = Sentry.captureException(err)
+    })
+  }
+  if (show) remember({ where, message: err.message, eventId, at: now })
+  return eventId
+}
+
+/** Opens the Sentry feedback form, attached to a reported event when we have one.
+    The form captures a screenshot and (via Replay) the last ~30 s of the session. */
+export async function openFeedback(eventId?: string) {
+  if (!DSN) return
+  const fb = Sentry.getFeedback?.()
+  if (!fb) return
+  const id = eventId ?? last?.eventId
+  const form = await fb.createForm({
+    messagePlaceholder: id
+      ? `Event ${id}. What were you trying to do, and what happened instead?`
+      : 'What were you trying to do, and what happened instead?',
+    tags: id ? { associated_event: id } : undefined,
   })
+  form.appendToDom()
+  form.open()
 }
 
 /** A trail the next error will carry: phase changes, crew steps, choices made. */
@@ -212,5 +264,8 @@ export function startFlight(attrs: Attrs) {
   }
 }
 
+export const withProfiler = <P extends object>(Component: ComponentType<P>) =>
+  (DSN ? Sentry.withProfiler(Component) : Component)
+
 // Dev only: lets the console (or a test) trigger a report to check the pipeline end to end.
-if (env.DEV) (globalThis as unknown as { __orionReport: unknown }).__orionReport = { report, breadcrumb, log }
+if (env.DEV) (globalThis as unknown as { __orionReport: unknown }).__orionReport = { report, breadcrumb, log, openFeedback }

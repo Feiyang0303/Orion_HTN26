@@ -4,6 +4,7 @@ import { fold, MEMBER, type LedgerEntry } from '../../crew/roster'
 import type { CrewEvent } from '../events'
 import type { DayDraft } from '../session'
 import { dayColour } from '../../ui/palette'
+import Fault from '../../ui/Fault'
 
 /* While the crew works: the crew, in the middle, doing it. Around them, the plan
  * as it takes shape (the places as they are found, grouped by day) and a strip
@@ -18,11 +19,12 @@ const PHASES = [
   { id: 'Auditor', label: 'Checking every line', agent: 'Auditor' },
 ] as const
 
-export default function CrewStage({ city, events, drafts, error, onRetry, onBack }: {
+export default function CrewStage({ city, events, drafts, error, eventId, onRetry, onBack }: {
   city: string
   events: CrewEvent[]
   drafts: DayDraft[]
   error: string
+  eventId?: string
   onRetry: () => void
   onBack: () => void
 }) {
@@ -61,10 +63,7 @@ export default function CrewStage({ city, events, drafts, error, onRetry, onBack
             {!ledger.length && <li className="cw-empty"><span>Waiting for the crew…</span></li>}
           </ul>
           {error && (
-            <div className="cw-error" role="alert">
-              <p>{error}</p>
-              <div><button className="o-btn primary small" onClick={onRetry}>Try again</button></div>
-            </div>
+            <Fault message={error} eventId={eventId} where="studio.plan" onRetry={onRetry} />
           )}
         </aside>
 

@@ -421,3 +421,25 @@ input[type='time'].o-input { color-scheme: dark; padding: .7em .9em; }
 .t-stay-photos img { width: 100%; height: 64px; object-fit: cover; border-radius: 4px; display: block; }
 
 .t-book-btn { margin-top: 10px; }
+
+/* ---------------------------------------------------- sentry-facing faults */
+.fault { padding: 12px 14px; border-radius: 14px; background: rgba(40, 14, 16, .9); border: 1px solid rgba(255, 143, 143, .4); color: #ffd0d0; font-size: 13px; }
+.fault p { margin: 0 0 10px; }
+.fault-ref { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 11px; color: var(--ink-3); }
+.fault-ref span { letter-spacing: .08em; text-transform: uppercase; }
+.fault-ref code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; color: var(--ink-2); user-select: all; }
+.fault-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.orion-note {
+  position: fixed; left: 18px; bottom: 18px; z-index: 40;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 8px;
+  pointer-events: none;
+}
+.orion-note > * { pointer-events: auto; }
+.orion-note-card { padding: 12px; max-width: min(420px, calc(100vw - 36px)); display: flex; flex-direction: column; gap: 8px; }
+.orion-note-bar { display: flex; gap: 8px; align-items: center; }
+.orion-note-chip {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; letter-spacing: .04em;
+  padding: .45em .8em; border-radius: 999px; border: 1px solid rgba(255, 143, 143, .45);
+  background: rgba(40, 14, 16, .85); color: #ffd0d0; cursor: pointer;
+}

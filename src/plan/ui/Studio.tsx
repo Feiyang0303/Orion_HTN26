@@ -11,6 +11,7 @@ import {
   applyEdits, openSession, revise, stagePlaces, stagePlan, stageStay,
   type DayDraft, type Session,
 } from '../session'
+import { report } from '../../telemetry'
 import type { Mode } from '../narrator'
 import type { Place } from '../geocode'
 import type { Day, LatLon, Stay, Trip, Wish } from '../../types'
@@ -46,6 +47,7 @@ export default function Studio({ wish, mode, origin, onFly, onHome, onMap, onCre
   const [partial, setPartial] = useState<Day[]>([])
   const [trip, setTrip] = useState<Trip | null>(null)
   const [error, setError] = useState('')
+  const [eventId, setEventId] = useState<string | undefined>()
   const [attempt, setAttempt] = useState(0)
   const [dayIx, setDayIx] = useState<number | 'all'>('all')
   const [focus, setFocus] = useState<LatLon | null>(null)
@@ -65,7 +67,7 @@ export default function Studio({ wish, mode, origin, onFly, onHome, onMap, onCre
 
   useEffect(() => {
     const ctl = new AbortController()
-    setEvents([]); setDrafts([]); setStay(null); setPartial([]); setTrip(null); setError('')
+    setEvents([]); setDrafts([]); setStay(null); setPartial([]); setTrip(null); setError(''); setEventId(undefined)
     void (async () => {
       try {
         const s = await openSession(wish, mode, origin, onEvent, ctl.signal)
@@ -80,7 +82,11 @@ export default function Studio({ wish, mode, origin, onFly, onHome, onMap, onCre
         const made = await stagePlan(s, found, { saveAudio, onEvent, signal: ctl.signal })
         if (!ctl.signal.aborted) setTrip(made)
       } catch (e) {
-        if (!ctl.signal.aborted) setError(e instanceof Error ? e.message : String(e))
+        if (!ctl.signal.aborted) {
+          const id = report(e, 'studio.plan', { extra: { city: origin.name, days: wish.days } })
+          setEventId(id)
+          setError(e instanceof Error ? e.message : String(e))
+        }
       }
     })()
     return () => ctl.abort()
@@ -126,7 +132,10 @@ export default function Studio({ wish, mode, origin, onFly, onHome, onMap, onCre
         setTrip(next)
         if (notes.length) setChat(c => [...c, { who: 'editor', text: `${notes.join('; ')}.${rebuilt.length ? ` Day${rebuilt.length === 1 ? '' : 's'} ${rebuilt.join(', ')} redone.` : ''}` }])
       }
-    } catch (e) { setChat(c => [...c, { who: 'editor', text: `That did not work: ${e instanceof Error ? e.message : String(e)}` }]) }
+    } catch (e) {
+      const id = report(e, 'studio.revise', { extra: { city: origin.name } })
+      setChat(c => [...c, { who: 'editor', text: `That did not work: ${e instanceof Error ? e.message : String(e)}${id ? ` (${id})` : ''}` }])
+    }
     finally { setAsking(false) }
   }, [draftMsg, trip, asking, saveAudio, onEvent])
 
@@ -137,7 +146,7 @@ export default function Studio({ wish, mode, origin, onFly, onHome, onMap, onCre
   const [book, setBook] = useState(false)
 
   if (stage === 'crew') {
-    return <CrewStage city={origin.name} events={events} drafts={drafts} error={error} onRetry={() => setAttempt(a => a + 1)} onBack={onHome} />
+    return <CrewStage city={origin.name} events={events} drafts={drafts} error={error} eventId={eventId} onRetry={() => setAttempt(a => a + 1)} onBack={onHome} />
   }
 
   return (
