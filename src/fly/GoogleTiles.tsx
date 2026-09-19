@@ -3,7 +3,9 @@ import { useCallback, useMemo, type ReactNode } from 'react'
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js'
 import { TilesRenderer, TilesPlugin, TilesAttributionOverlay } from '3d-tiles-renderer/r3f'
 import { GoogleCloudAuthPlugin, GLTFExtensionsPlugin, ReorientationPlugin, TileCompressionPlugin, TilesFadePlugin } from '3d-tiles-renderer/plugins'
-import type { Camera, Intersection, Object3D, Raycaster, Vector3 } from 'three'
+import type { Camera, Intersection, Mesh, MeshStandardMaterial, Object3D, Raycaster, Vector3 } from 'three'
+import type * as THREE from 'three'
+import { useThree } from '@react-three/fiber'
 import { DEG } from './geo'
 
 /* Google Photorealistic 3D Tiles. Reoriented so the search point is the
@@ -43,7 +45,7 @@ export type TilesHandle = {
   deleteCamera: (c: Camera) => boolean
   setResolution: (c: Camera, w: number, h: number) => boolean
   stats: { queued: number; downloading: number; parsing: number; loaded: number; visible: number }
-  lruCache: { cachedBytes: number }
+  lruCache: { cachedBytes: number; minSize: number; maxSize: number; minBytesSize: number; maxBytesSize: number }
   /** Screen-space error in pixels a tile may have before it is refined: higher means fewer, coarser tiles. */
   errorTarget: number
 }
@@ -53,6 +55,7 @@ export default function GoogleTiles({ lat, lon, onLoadEnd, tilesRef, children }:
   tilesRef: (t: TilesHandle | null) => void; children?: ReactNode
 }) {
   const apiToken = tilesKey()
+  const { gl } = useThree()
   // Plugin args are compared by value one level deep, so they must keep their
   // identity: a fresh literal each render tears the plugin down, and for the
   // auth plugin that means a new session and a 400 on the next tile.
@@ -61,12 +64,22 @@ export default function GoogleTiles({ lat, lon, onLoadEnd, tilesRef, children }:
   const gltfArgs = useMemo(() => [{ dracoLoader }], [dracoLoader])
   const orientArgs = useMemo(() => [{ lat: lat * DEG, lon: lon * DEG, height: 0, up: '+y' as const, recenter: true }], [lat, lon])
   const setRef = useCallback((t: unknown) => {
-    const handle = t as (TilesHandle & { addEventListener: (type: string, fn: (e: { error?: unknown; url?: string }) => void) => void }) | null
+    const handle = t as (TilesHandle & { addEventListener: (type: string, fn: (e: never) => void) => void }) | null
     // Tile failures are reported (throttled per message in telemetry). The URL is
     // scrubbed there, because Google's carries the API key and a session token.
-    handle?.addEventListener('load-error', e => report(e.error ?? new Error('tile failed to load'), 'tiles.load', { level: 'warning', extra: { url: e.url } }))
+    handle?.addEventListener('load-error', ((e: { error?: unknown; url?: string }) => report(e.error ?? new Error('tile failed to load'), 'tiles.load', { level: 'warning', extra: { url: e.url } })) as never)
+    // Anisotropic filtering, on every tile texture as it arrives. Streets and facades
+    // are seen at a slant from the chase camera, and without it they smear to mush
+    // a short way from the lens; this is the cheapest sharpness there is.
+    const aniso = Math.min(8, gl.capabilities.getMaxAnisotropy())
+    handle?.addEventListener('load-model', ((e: { scene: THREE.Object3D }) => {
+      e.scene.traverse(o => {
+        const m = (o as Mesh).material as MeshStandardMaterial | undefined
+        if (m?.map) m.map.anisotropy = aniso
+      })
+    }) as never)
     tilesRef(handle)
-  }, [tilesRef])
+  }, [tilesRef, gl])
   if (!apiToken) return null
   return (
     // Keyed on the city: the tileset is re-centred on the place once, as it loads, so

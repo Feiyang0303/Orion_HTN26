@@ -7,6 +7,7 @@ import GoogleTiles, { probeTiles, type TilesHandle } from './GoogleTiles'
 import { GroundPlacer, type Anchor } from './ground'
 import { Path } from './routePath'
 import { frameFor } from './director'
+import { Governor, type Shot } from './quality'
 import { activeBeat, buildTimeline, type Segment } from './timeline'
 import { resample, smootherstep } from './geo'
 import { startFlight, tag, log } from '../telemetry'
@@ -55,8 +56,13 @@ function Rig({ plan, begin, onStopReached, onFinish, onHud, control, tiles, load
   const settled = useRef(0)
   const tl = useMemo(() => buildTimeline(plan), [plan])
 
-  // Full detail for the flight; the map views trade some away (see MapRig).
-  useEffect(() => { if (tiles.current) tiles.current.errorTarget = 16 }, [tiles, loadTick])
+  // A flight holds much more than the default tile budget: the cache is what lets the
+  // sharp tiles at a stop stay resident while the camera moves on and comes back.
+  useEffect(() => {
+    const c = tiles.current?.lruCache
+    if (c) { c.minSize = 12000; c.maxSize = 20000; c.minBytesSize = .7e9; c.maxBytesSize = 1.0e9 }
+  }, [tiles, loadTick])
+  const governor = useRef(new Governor())
   useEffect(() => { ground.setAnchors(anchorsFor(plan)) }, [ground, plan])
   useEffect(() => { ground.requeue() }, [ground, loadTick])
 
@@ -224,6 +230,7 @@ function Rig({ plan, begin, onStopReached, onFinish, onHud, control, tiles, load
       'flight.tile_settle_ms_avg': settled.length ? Math.round(settled.reduce((a, b) => a + b, 0) / settled.length) : 0,
       'flight.tile_settle_ms_max': settled.length ? Math.max(...settled) : 0,
       'flight.tile_cache_mb': t ? Math.round(t.lruCache.cachedBytes / 1e6) : 0,
+      'flight.detail': +governor.current.detail.toFixed(2),
     }
     flight.current.end(result)
     log.info(`flight ${outcome}`, result)
@@ -236,7 +243,7 @@ function Rig({ plan, begin, onStopReached, onFinish, onHud, control, tiles, load
     const pending = st.queued + st.downloading + st.parsing
     const rec = { t: +time.toFixed(1), label, pending } as { t: number; label: string; pending: number; settleMs?: number }
     m.events.push(rec); m.awaiting = { rec, at: performance.now() }
-    if (import.meta.env.DEV) (window as unknown as { __fly: unknown }).__fly = { preload: PRELOAD_ON, ...m, cacheMB: Math.round(t.lruCache.cachedBytes / 1e6) }
+    if (import.meta.env.DEV) (window as unknown as { __fly: unknown }).__fly = { preload: PRELOAD_ON, ...m, cacheMB: Math.round(t.lruCache.cachedBytes / 1e6), errorTarget: t.errorTarget, detail: governor.current.detail, dpr: window.devicePixelRatio }
   }
 
   useFrame((_, rawDt) => {
@@ -286,6 +293,10 @@ function Rig({ plan, begin, onStopReached, onFinish, onHud, control, tiles, load
     st.wasPaused = ctl.paused
 
     // ---- camera ----------------------------------------------------------
+    if (tiles.current) {
+      const shot: Shot = !st.started ? 'map' : seg.kind
+      tiles.current.errorTarget = governor.current.step(rawDt, shot)
+    }
     const eye = tmp.eye, look = tmp.lk
     let smooth = 2
     if (!st.started) {
@@ -413,7 +424,7 @@ export default function Flythrough(props: FlyProps & { map?: MapView }) {
   return (
     <div className={`fly ${revealed ? 'is-revealed' : ''}`} data-ground="night">
       {origin && probe === 'ok' && (
-        <Canvas dpr={[1, 1.5]} camera={{ fov: 50, near: 1, far: 20000, position: [0, 900, 700] }} gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping }}>
+        <Canvas dpr={plan ? [1, 2] : [1, 1.5]} camera={{ fov: 50, near: 1, far: 20000, position: [0, 900, 700] }} gl={{ antialias: true, toneMapping: THREE.NeutralToneMapping }}>
           <color attach="background" args={['#0a0806']} />
           <ambientLight intensity={1.6} />
           <directionalLight position={[300, 800, 400]} intensity={1.2} color="#ffe6b8" />
