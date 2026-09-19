@@ -53,9 +53,9 @@ export const mockPlan: Plan = {
   wish: {
     city: 'Paris', wants: [], from: '', startAt: '10:00', endAt: '18:00',
     interests: ['History'], pace: 'steady', transport: 'walk',
-    party: 'solo', budget: 'modest', meals: [],
+    party: 'solo', budget: 'modest', meals: [], days: 1, lodging: 'any', diet: '',
   },
-  from: null, approach: null, epigraph: '[mock] three places on the river.',
+  from: null, approach: null, epigraph: '[mock] three places on the river.', preface: '',
   generatedAt: new Date(0).toISOString(),
   provenance: { router: 'code', timekeeper: 'code', scout: 'mock', critic: 'mock', narrator: 'mock', tts: 'none' },
 }

@@ -51,6 +51,16 @@ export const BUDGET_LABEL: Record<Budget, string> = {
 }
 export type Meal = 'lunch' | 'dinner'
 
+/** Where to sleep, and where to eat. Neither is in Wikipedia, so both come
+    from OpenStreetMap: real places with real coordinates, and never a name a
+    model remembered. OSM has no ratings or prices, so this carries none —
+    an invented star rating would be the one dishonest thing in the book. */
+export type Lodging = 'hotel' | 'hostel' | 'guesthouse' | 'apartment' | 'any'
+export const LODGING_LABEL: Record<Lodging, string> = {
+  hotel: 'A hotel', hostel: 'A hostel', guesthouse: 'A guesthouse',
+  apartment: 'An apartment', any: 'Anywhere with a bed',
+}
+
 /** The desk, as data. Everything on it changes the plan; nothing on it is
     decoration. `wants` are places named by the person and are never dropped. */
 export type Wish = {
@@ -67,6 +77,14 @@ export type Wish = {
   /** Gaps the Timekeeper keeps clear. A day that schedules you into a
       cathedral at one o'clock with no lunch is not a plan, it is a timetable. */
   meals: Meal[]
+  /** How many days the trip runs. One is the old behaviour exactly. */
+  days: number
+  /** What sort of bed, and anything the kitchen needs to know. Both steer a
+      choice made from OSM's own list, never a recommendation from memory. */
+  lodging: Lodging
+  /** Free text: "vegetarian", "no pork", "we like noodles". Passed to the
+      table-setter verbatim. */
+  diet: string
 }
 
 /** A name resolved to a point on the earth. */
@@ -123,6 +141,13 @@ export type Stop = LatLon & {
   /** True when the person named this place themselves. Those are never
       dropped, reordered away, or overruled by the Critic. */
   asked: boolean
+  /** What the person actually typed or pinned, when the day ended up standing
+      somewhere else. A pin on a random corner is honoured by finding the
+      nearest thing worth flying to — and then saying so, rather than quietly
+      moving the person's own choice. */
+  askedAs?: string
+  /** How far the stop sits from that pin, in metres. */
+  movedM?: number
   /** Minutes of nothing, kept clear after this stop: a meal the Timekeeper was
       told to leave room for. Zero for most stops. */
   breakMin?: number
@@ -156,11 +181,68 @@ export type Plan = {
   from: Waypoint | null
   /** The hop from `from` to the first stop. Belongs to no stop. */
   approach: Leg | null
-  /** One line under the title, written from the day itself. */
+  /** One line under the title, counted from the day itself. */
   epigraph: string
+  /** A short paragraph on how this particular day is shaped and why, written
+      from the plan's own fields — the only place a model is allowed to talk
+      about the day as a whole. Empty if it could not be written. */
+  preface: string
   generatedAt: string        // ISO
   /** Honest labelling for the UI: which parts were code, which were models. */
   provenance: { router: 'code'; timekeeper: 'code'; scout: string; critic: string; narrator: string; tts: string }  // e.g. "elevenlabs:eleven_flash_v2_5"
+}
+
+/* ---- the trip ------------------------------------------------------------ */
+
+/** A place to sleep, from OpenStreetMap. */
+export type Stay = LatLon & {
+  id: string
+  name: string
+  kind: string              // hotel, hostel, guest_house, apartment — OSM's own word
+  stars: number | null      // only when OSM has been told; never guessed
+  address: string
+  why: string               // the concierge's one line, from the tags it was shown
+  source: Source
+}
+
+/** A place to eat, from OpenStreetMap, tied to one meal of one day. */
+export type Table = LatLon & {
+  id: string
+  name: string
+  kind: string              // restaurant, cafe, bar, fast_food
+  cuisine: string           // OSM's cuisine tag, as written
+  openingHours: string      // OSM's opening_hours tag, unparsed and unpromised
+  meal: Meal | 'breakfast'
+  /** The stop it is near, so the book can say why it is on this page. */
+  nearStopId: string
+  walkMin: number | null
+  why: string
+  source: Source
+}
+
+/** One day of the trip. It is a Plan — so the flythrough can fly it with no
+    changes at all — plus the things that belong to a day rather than to a
+    flight: what it is called, and where you eat. */
+export type Day = Plan & {
+  /** 1-based. */
+  number: number
+  /** The day's own name: "The old town, slowly". */
+  title: string
+  tables: Table[]
+}
+
+export type Trip = {
+  id: string
+  city: string
+  origin: LatLon
+  wish: Wish
+  days: Day[]
+  /** Where to sleep, in the order the concierge preferred them. */
+  stays: Stay[]
+  /** The editor's note on the whole trip. */
+  preface: string
+  generatedAt: string
+  provenance: { places: string; lodging: string; food: string; router: string; narrator: string; tts: string }
 }
 
 /* ---- events -------------------------------------------------------------- */

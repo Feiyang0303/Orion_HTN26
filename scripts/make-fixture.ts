@@ -6,7 +6,8 @@
  *                          [--transport walk|cycle|transit|drive]
  *                          [--hours 09:30-18:00] [--interests "History,Views"]
  *                          [--party solo|couple|family|easy] [--budget free|modest|any]
- *                          [--meals lunch,dinner]
+ *                          [--meals lunch,dinner] [--days 3] [--lodging hotel]
+ *                          [--diet "vegetarian"]
  *
  * Writes public/plans/<id>/plan.json and public/plans/<id>/audio/*.mp3.
  */
@@ -38,6 +39,9 @@ const wish: Wish = {
   party: one('party', 'solo') as Wish['party'],
   budget: one('budget', 'modest') as Wish['budget'],
   meals: one('meals', '').split(',').map(s => s.trim()).filter(Boolean) as Wish['meals'],
+  days: Number(one('days', '1')) || 1,
+  lodging: one('lodging', 'any') as Wish['lodging'],
+  diet: one('diet', ''),
 }
 
 net.apiBase = process.env.PROXY_URL ?? 'http://127.0.0.1:8787'

@@ -1,7 +1,7 @@
 import type { Leg, Waypoint, Wish } from '../types'
 import type { Agent, CrewEvent } from './events'
 import { notable, type Article } from './wikipedia'
-import { scout, type Kind, type ScoutPick } from './scout'
+import { nearestWorthIt, scout, type Kind, type NearChoice, type ScoutPick } from './scout'
 import { critic } from './critic'
 import { audit, visitMinutes, windowOf } from './timekeeper'
 import { metresBetween, slug } from './geo'
@@ -17,6 +17,7 @@ import { metresBetween, slug } from './geo'
 
 export const RADIUS_M = 2500        // the compact area a day is drawn from
 const WANT_MATCH_M = 260            // how near an article must sit to be *this* place
+const WANT_LOOK_M = 750             // how far to look around a pin that landed on nothing
 
 /** One place in the day, however it got there. */
 export type Candidate = {
@@ -32,6 +33,10 @@ export type Candidate = {
       surroundings to talk about. */
   article: Article | null
   visitMin: number
+  /** Set when the pin landed on nothing and the day stands somewhere else
+      instead: what was pinned, and how far away the stop ended up. */
+  askedAs?: string
+  movedM?: number
 }
 
 /* A named place has to be timed too, and the Scout never saw it. The name is
@@ -56,20 +61,67 @@ export async function catalogueFor(origin: { lat: number; lon: number }, radiusM
   return (await notable(origin, radiusM, 40)).filter(a => a.extract.length > 80)
 }
 
-/** A place the person pinned, matched to the article standing on the same spot
-    if there is one. The pin's own coordinate always wins — the person put it
-    there — but the article is what the guide will have to read from. */
-export async function matchWant(w: Waypoint, catalogue: Article[], taken: Set<number>, wish: Wish): Promise<Candidate> {
-  let article = catalogue.find(a => !taken.has(a.pageId) && metresBetween(a, w) < WANT_MATCH_M) ?? null
-  if (!article) {
-    const near = await notable(w, WANT_MATCH_M, 1, 20).catch(() => [])
-    article = near[0] ?? null
+/** A place the person pinned, resolved to something the day can actually fly
+    to. Three ways that goes:
+ *
+ *   on the nose   an article stands on the same spot — the pin *is* that place,
+ *                 and its own coordinate is kept, because they put it there.
+ *   moved         the pin is on a corner, a hotel, a station, a patch of
+ *                 ground. The crew looks around it and a model picks the
+ *                 nearest thing worth flying to; the stop moves there and the
+ *                 book says so, with the distance. Quietly relocating someone's
+ *                 own choice would be the worst kind of helpful.
+ *   as pinned     nothing nearby is worth it. The pin stays, the guide will
+ *                 have only its surroundings to talk about, and the book says
+ *                 that too.
+ */
+export async function matchWant(
+  w: Waypoint, catalogue: Article[], taken: Set<number>, wish: Wish,
+  onEvent?: (e: CrewEvent) => void,
+): Promise<Candidate> {
+  const say = (state: 'working' | 'done' | 'failed', detail: string) =>
+    onEvent?.({ type: 'crew', agent: 'Scout', kind: 'agent', state, detail })
+
+  const onTheNose = catalogue.find(a => !taken.has(a.pageId) && metresBetween(a, w) < WANT_MATCH_M) ?? null
+  if (onTheNose) {
+    taken.add(onTheNose.pageId)
+    const kind = guessKind(onTheNose.title)
+    return {
+      id: slug(w.name), name: w.name, lat: w.lat, lon: w.lon, kind,
+      why: 'you asked for it by name', asked: true, article: onTheNose,
+      visitMin: visitMinutes(kind, wish.pace, wish.party),
+    }
   }
-  if (article) taken.add(article.pageId)
-  const kind = guessKind(article?.title ?? w.name)
+
+  // Nothing on the spot. Look around it, and let the model judge what the pin
+  // was reaching for.
+  say('working', `Nothing notable exactly at ${w.name} — looking around it`)
+  const nearby = (await notable(w, WANT_LOOK_M, 12, 80).catch(() => []))
+    .filter(a => !taken.has(a.pageId) && a.extract.length > 80)
+  const nothing: NearChoice = { article: null, why: '' }
+  const choice = await nearestWorthIt(w.name, nearby, wish).catch(() => nothing)
+
+  const found = choice.article
+  if (found) {
+    taken.add(found.pageId)
+    const moved = Math.round(metresBetween(w, found))
+    const kind = 'kind' in choice ? choice.kind : guessKind(found.title)
+    say('done', `${w.name} → ${found.title}, ${moved} m away: ${choice.why}`)
+    return {
+      id: slug(found.title), name: found.title,
+      lat: found.lat, lon: found.lon, kind,
+      why: choice.why || `the nearest thing worth flying to from ${w.name}`,
+      asked: true, article: choice.article,
+      visitMin: visitMinutes(kind, wish.pace, wish.party),
+      askedAs: w.name, movedM: moved,
+    }
+  }
+
+  say('failed', `Nothing worth flying to near ${w.name} — keeping your pin as it is`)
+  const kind = guessKind(w.name)
   return {
     id: slug(w.name), name: w.name, lat: w.lat, lon: w.lon, kind,
-    why: 'you asked for it by name', asked: true, article,
+    why: choice.why || 'you asked for it by name', asked: true, article: null,
     visitMin: visitMinutes(kind, wish.pace, wish.party),
   }
 }

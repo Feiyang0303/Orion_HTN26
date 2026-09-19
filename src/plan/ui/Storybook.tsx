@@ -1,9 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Mark, Stamp, Tape, Ticket } from './Marks'
-import { firstSentences, illustrationFor, markFor, notesFor, pressedFor, scatter, skyFor } from './decor'
-import { RouteMap, RouteSheet } from './RouteSheet'
+import { firstSentences, illustrationFor, markFor, notesFor, paletteFor, pressedFor, scatter, skyFor } from './decor'
+import { RouteSheet, TRANSPORT_MARK } from './RouteSheet'
+import FoldedMap from './FoldedMap'
 import type { Agent, CrewEvent } from '../events'
-import { HHMM, MINS, TRANSPORT_LABEL, type Beat, type Plan, type Stop, type Target } from '../../types'
+import {
+  HHMM, LODGING_LABEL, MINS, PARTY_LABEL, TRANSPORT_LABEL,
+  type Beat, type Day, type Plan, type Stop, type Table, type Target, type Trip,
+} from '../../types'
 
 /* The book.
  *
@@ -30,24 +34,27 @@ export const STOP_COLOURS = ['#3f7fd6', '#8e5fc9', '#3f9d63', '#e37d2d', '#d94a5
 export const colourOf = (index: number) => STOP_COLOURS[index % STOP_COLOURS.length]
 
 type Props = {
-  plan: Plan
+  trip: Trip
   events: CrewEvent[]
   planning: boolean
-  onBegin: () => void
+  /** Fly one day. The flythrough takes a Plan, and a Day *is* a Plan, so this
+      hands it straight over. */
+  onFly: (day: Day) => void
   onClose: () => void
+  onHome?: () => void
   /** The only edit the book allows: how long you mean to stay. It moves every
       arrival after it and nothing else — the flight's own pacing comes from
       the narration, so this cannot make the map lie. */
-  onStay?: (stopId: string, minutes: number) => void
+  onStay?: (dayNumber: number, stopId: string, minutes: number) => void
 }
 
-export default function Storybook({ plan, events, planning, onBegin, onClose, onStay }: Props) {
+export default function Storybook({ trip, events, planning, onFly, onClose, onHome, onStay }: Props) {
   const [at, setAt] = useState(0)
   const [turning, setTurning] = useState<'none' | 'fwd' | 'back'>('none')
   const touched = useRef(false)
 
-  const spreads = useMemo(() => buildSpreads(), [plan, planning, at])   // eslint-disable-line react-hooks/exhaustive-deps
-  const notes = useMemo(() => notesFor(plan), [plan])
+  const spreads = useMemo(() => buildSpreads(), [trip, planning, at])   // eslint-disable-line react-hooks/exhaustive-deps
+  const notes = useMemo(() => trip.days[0] ? notesFor(trip.days[0]) : [], [trip])
   const crew = useMemo(() => events.filter(e => e.type === 'crew') as Extract<CrewEvent, { type: 'crew' }>[], [events])
   const newest = crew.at(-1)
 
@@ -59,8 +66,9 @@ export default function Storybook({ plan, events, planning, onBegin, onClose, on
      you are reading is worse than missing a page appearing. */
   useEffect(() => {
     if (touched.current || !planning || !newest) return
-    const named = plan.stops.find(s => newest.detail.includes(s.name))
-    const key = named ? named.id : newest.agent === 'Router' ? 'route' : 'cover'
+    const named = trip.days.flatMap(d => d.stops).find(s => newest.detail.includes(s.name))
+    const dayNo = Number(/^Day (\d+)/.exec(newest.detail)?.[1] ?? 0)
+    const key = named ? named.id : dayNo ? `day${dayNo}` : newest.agent === 'Scout' ? 'cover' : 'cover'
     const i = spreads.findIndex(sp => sp.key === key)
     setAt(i >= 0 ? i : 0)
   }, [crew.length, planning])   // eslint-disable-line react-hooks/exhaustive-deps
@@ -119,10 +127,13 @@ export default function Storybook({ plan, events, planning, onBegin, onClose, on
       <CrewStrip crew={crew} planning={planning} />
 
       <div className="jr-book-actions">
+        {onHome && <button className="jr-btn ghost" onClick={onHome}>← Orion</button>}
         <button className="jr-btn ghost" onClick={onClose}>Back to the desk</button>
-        <button className="jr-btn primary" onClick={onBegin} disabled={planning || !plan.stops.length}>
-          Begin the flight
-        </button>
+        {/* Flying happens from a day's own page, because a trip has no single
+            route; this only says so. */}
+        <span className="jr-crew-line" style={{ flex: 1, textAlign: 'right' }}>
+          {planning ? 'The crew is still working…' : 'Open a day to fly it.'}
+        </span>
       </div>
     </div>
   )
@@ -132,37 +143,47 @@ export default function Storybook({ plan, events, planning, onBegin, onClose, on
   function buildSpreads() {
     const out: { key: string; tab: string; title: string; left: React.ReactNode; right: React.ReactNode }[] = []
 
-    out.push({ key: 'cover', tab: '✦', title: 'Cover', left: <Cover plan={plan} />, right: <Opening plan={plan} /> })
+    out.push({ key: 'cover', tab: '✦', title: 'Cover', left: <Cover trip={trip} />, right: <Opening trip={trip} /> })
 
-    if (plan.stops.length) out.push({
-      key: 'route', tab: '◇', title: 'The day',
-      left: <Timeline plan={plan} onPick={i => { touched.current = true; setAt(2 + i) }} />,
-      right: (
-        <Page title="On the ground" sub={kmOf(plan) ? `${kmOf(plan).toFixed(1)} km` : ''} className="jr-map-page">
-          <RouteMap plan={plan} height={240} />
-        </Page>
-      ),
+    if (trip.stays.length) out.push({
+      key: 'bed', tab: '⌂', title: 'Where you sleep',
+      left: <Beds trip={trip} />, right: <HowChosen trip={trip} />,
     })
 
-    plan.stops.forEach((stop, i) => out.push({
-      key: stop.id, tab: String(i + 1), title: stop.name,
-      left: <StopPlate plan={plan} stop={stop} index={i} />,
-      right: <StopEntry plan={plan} stop={stop} index={i} onStay={onStay} />,
-    }))
+    for (const day of trip.days) {
+      const here = out.length
+      out.push({
+        key: `day${day.number}`, tab: String(day.number), title: day.title,
+        left: <DayPage day={day} trip={trip} onPick={i => { touched.current = true; setAt(a => a + 1 + i) }} onFly={() => onFly(day)} />,
+        right: (
+          <Page title="On the ground" sub={kmOf(day) ? `${kmOf(day).toFixed(1)} km` : ''} className="jr-map-page">
+            {/* Folded while you are elsewhere in the book; it opens when you
+                turn to this spread, and the tiles load behind the paper as the
+                panels swing out. */}
+            <FoldedMap day={day} colours={STOP_COLOURS} open={at === here} />
+          </Page>
+        ),
+      })
+      day.stops.forEach((stop, i) => out.push({
+        key: stop.id, tab: '·', title: stop.name,
+        left: <StopPlate plan={day} stop={stop} index={i} />,
+        right: <StopEntry plan={day} stop={stop} index={i}
+          onStay={onStay ? (id, m) => onStay(day.number, id, m) : undefined} />,
+      }))
+    }
 
-    const targets = plan.stops.flatMap((s, i) => s.targets.map(t => ({ t, s, i })))
+    const targets = trip.days.flatMap(d => d.stops.flatMap((s, i) => s.targets.map(t => ({ t, s, i }))))
     if (targets.length) out.push({
       key: 'near', tab: '✧', title: 'What the guide will point at',
       left: <Near list={targets.slice(0, 3)} total={targets.length} />,
-      right: targets.length > 3 ? <Near list={targets.slice(3, 6)} total={targets.length} offset={3} /> : <HowFound plan={plan} />,
+      right: targets.length > 3 ? <Near list={targets.slice(3, 6)} total={targets.length} offset={3} /> : <HowFound plan={trip.days[0]} />,
     })
 
-    /* The closing spread is a summary, and a summary of a day that is still
-       being made is a wrong number in a confident typeface. It appears when
-       the day is actually finished. */
-    if (plan.stops.length && !planning) out.push({
-      key: 'end', tab: '❦', title: 'The end of the day',
-      left: <Ending plan={plan} />, right: <BeforeYouGo plan={plan} />,
+    /* The closing spread is a summary, and a summary of a trip that is still
+       being made is a wrong number in a confident typeface. */
+    if (trip.days.length && !planning) out.push({
+      key: 'end', tab: '❦', title: 'The end of the trip',
+      left: <Ending trip={trip} />, right: <BeforeYouGo trip={trip} />,
     })
 
     return out
@@ -172,6 +193,7 @@ export default function Storybook({ plan, events, planning, onBegin, onClose, on
 /* ------------------------------------------------------------------- pages */
 
 const kmOf = (plan: Plan) => (plan.legs.reduce((s, l) => s + l.distanceM, 0) + (plan.approach?.distanceM ?? 0)) / 1000
+const tripKm = (trip: Trip) => trip.days.reduce((s, d) => s + kmOf(d), 0)
 const endsAt = (plan: Plan) => {
   const last = plan.stops.at(-1)
   return last?.arrival ? HHMM(MINS(last.arrival) + last.visitMin) : '—'
@@ -189,13 +211,14 @@ function Page({ title, sub, children, className = '', before }: {
 }
 
 /** The little pills under a title. Each one is a fact the page already knows,
-    said in three words — the way of letting the eye pick a day apart before
-    reading any of it. */
+    said in three words. */
 function Tags({ plan, stop, index }: { plan: Plan; stop: Stop; index: number }) {
   const leg = plan.legs[index], next = plan.stops[index + 1]
   const tags: { t: string; k: string }[] = [
     { t: `stay ${Math.round(stop.visitMin)} min`, k: 'time' },
-    ...(stop.asked ? [{ t: 'yours by name', k: 'edit' }] : stop.fits ? [{ t: stop.fits.toLowerCase(), k: 'fit' }] : []),
+    ...(stop.askedAs ? [{ t: `${stop.movedM} m from your pin`, k: 'edit' }]
+      : stop.asked ? [{ t: 'yours by name', k: 'edit' }]
+      : stop.fits ? [{ t: stop.fits.toLowerCase(), k: 'fit' }] : []),
     ...(leg && next ? [{ t: `${Math.round(leg.durationSec / 60)}′ ${TRANSPORT_LABEL[leg.transport].toLowerCase()} → ${next.name}`, k: 'leg' }] : []),
     ...(stop.photo ? [{ t: 'photographed', k: 'photo' }] : [{ t: 'drawn', k: 'photo' }]),
     ...(stop.sources.length ? [] : [{ t: 'no article', k: 'warn' }]),
@@ -205,62 +228,36 @@ function Tags({ plan, stop, index }: { plan: Plan; stop: Stop; index: number }) 
   return <ul className="jr-tags">{tags.map((x, i) => <li key={i} className={`is-${x.k}`}>{x.t}</li>)}</ul>
 }
 
-function Timeline({ plan, onPick }: { plan: Plan; onPick: (i: number) => void }) {
-  return (
-    <Page title="The day" sub={plan.stops.length ? `${plan.wish.startAt} — ${endsAt(plan)}` : ''} className="jr-timeline-page">
-      {plan.from && plan.approach && (
-        <p className="jr-timeline-from">
-          <Mark name="station" size={15} /> From <b>{plan.from.name}</b>, {Math.round(plan.approach.durationSec / 60)} min
-          {' '}{TRANSPORT_LABEL[plan.approach.transport].toLowerCase()} to the first stop.
-        </p>
-      )}
-      <ol className="jr-timeline">
-        {plan.stops.map((s, i) => (
-          <li key={s.id} style={{ '--c': colourOf(i) } as React.CSSProperties}>
-            <button className="jr-timeline-row" onClick={() => onPick(i)}>
-              <span className="jr-disc">{i + 1}</span>
-              <span className="jr-timeline-body">
-                <span className="jr-timeline-head">
-                  <em>{s.arrival || '—'}</em><b>{s.name}</b><Mark name={markFor(s.name, i)} size={16} />
-                </span>
-                <span className="jr-timeline-sub">
-                  {s.blurb ? firstSentences(s.blurb, 1) : s.beats[0]?.text ?? 'Still being written.'}
-                </span>
-                <Tags plan={plan} stop={s} index={i} />
-              </span>
-            </button>
-          </li>
-        ))}
-      </ol>
-    </Page>
-  )
-}
+/* ------------------------------------------------------------------- cover */
 
-function Cover({ plan }: { plan: Plan }) {
-  const spots = scatter(plan.city, 3)
+function Cover({ trip }: { trip: Trip }) {
+  const spots = scatter(trip.city, 3)
+  const nights = trip.days.length
   return (
     <div className="jr-page jr-cover">
       <div className="jr-cover-rule" aria-hidden />
-      <p className="jr-cover-kicker">A day in</p>
-      <h1 className="jr-cover-title">{plan.city}</h1>
-      {plan.epigraph && <p className="jr-cover-epigraph">{plan.epigraph}</p>}
+      <p className="jr-cover-kicker">{nights === 1 ? 'A day in' : `${nights} days in`}</p>
+      <h1 className="jr-cover-title">{trip.city}</h1>
+      <p className="jr-cover-epigraph">
+        {trip.days.reduce((n, d) => n + d.stops.length, 0)} places, {tripKm(trip).toFixed(1)} km,
+        {trip.stays[0] ? ` sleeping at ${trip.stays[0].name}.` : ' no bed chosen.'}
+      </p>
       <div className="jr-cover-marks">
-        <Mark name={skyFor(plan.wish.startAt)} size={26} className="fade" />
-        <Mark name={pressedFor(plan.origin.lat)} size={58} className="pressed" />
+        <Mark name={skyFor(trip.wish.startAt)} size={26} className="fade" />
+        <Mark name={pressedFor(trip.origin.lat)} size={58} className="pressed" />
         <Mark name="compass" size={26} className="fade" />
       </div>
-      <p className="jr-cover-by">{plan.wish.interests.join(' · ') || 'no particular plan'}</p>
-      {plan.stops.length > 0 && (
-        <ol className="jr-cover-strip" aria-label="Stops">
-          {plan.stops.map((s, i) => (
-            <li key={s.id} style={{ '--c': colourOf(i) } as React.CSSProperties}>
-              <span className="jr-disc">{i + 1}</span><Mark name={markFor(s.name, i)} size={18} />
-            </li>
-          ))}
-        </ol>
-      )}
-      <Stamp mark={markFor(plan.stops[0]?.name ?? plan.city, 0)} place={plan.city}
-        value={kmOf(plan) ? `${kmOf(plan).toFixed(1)} km` : '—'} />
+      <p className="jr-cover-by">{trip.wish.interests.join(' · ') || 'no particular plan'}</p>
+      <ol className="jr-cover-strip" aria-label="Days">
+        {trip.days.map(d => (
+          <li key={d.number} style={{ '--c': colourOf(d.number - 1) } as React.CSSProperties}>
+            <span className="jr-disc">{d.number}</span>
+            <Mark name={markFor(d.stops[0]?.name ?? d.title, d.number)} size={18} />
+          </li>
+        ))}
+      </ol>
+      <Stamp mark={markFor(trip.days[0]?.stops[0]?.name ?? trip.city, 0)} place={trip.city}
+        value={tripKm(trip) ? `${tripKm(trip).toFixed(1)} km` : '—'} />
       {spots.map(s => (
         <span key={s.i} className="jr-foxing" aria-hidden
           style={{ left: `${8 + s.a * 78}%`, top: `${12 + s.b * 74}%`, ['--s' as string]: 0.6 + s.a }} />
@@ -269,37 +266,209 @@ function Cover({ plan }: { plan: Plan }) {
   )
 }
 
-function Opening({ plan }: { plan: Plan }) {
-  const asked = plan.wish.wants.filter(Boolean)
+function Opening({ trip }: { trip: Trip }) {
+  const asked = trip.wish.wants.filter(Boolean)
+  const moved = trip.days.flatMap(d => d.stops).filter(s => s.askedAs)
   return (
     <Page title="What you asked for">
       <dl className="jr-brief">
-        <div><dt>Hours</dt><dd>{plan.wish.startAt} — {plan.wish.endAt}</dd></div>
-        <div><dt>Pace</dt><dd>{plan.wish.pace}</dd></div>
-        <div><dt>Getting about</dt><dd>{TRANSPORT_LABEL[plan.wish.transport]}</dd></div>
-        {plan.from && <div><dt>Starting from</dt><dd>{plan.from.name}</dd></div>}
+        <div><dt>Days</dt><dd>{trip.days.length}</dd></div>
+        <div><dt>Hours</dt><dd>{trip.wish.startAt} — {trip.wish.endAt}</dd></div>
+        <div><dt>Who</dt><dd>{PARTY_LABEL[trip.wish.party]}</dd></div>
+        <div><dt>Getting about</dt><dd>{TRANSPORT_LABEL[trip.wish.transport]}</dd></div>
+        <div><dt>Bed</dt><dd>{LODGING_LABEL[trip.wish.lodging]}</dd></div>
+        {trip.wish.diet.trim() && <div><dt>At the table</dt><dd>{trip.wish.diet}</dd></div>}
       </dl>
       <p className="jr-hand">
         {asked.length
           ? `You wanted ${asked.slice(0, -1).join(', ')}${asked.length > 1 ? ' and ' : ''}${asked.at(-1)}.`
-          : 'You left the whole day to the scout.'}
+          : 'You left the whole trip to the crew.'}
       </p>
+      {/* The editor's note on the finished trip: written from the plan's own
+          fields and nothing else, which is why it can be trusted to say where
+          the days are tight. */}
+      {trip.preface && <p className="jr-blurb">{trip.preface}</p>}
+      {moved.length > 0 && (
+        <p className="jr-warn">
+          {moved.map(s => `You pinned ${s.askedAs}; nothing notable stands there, so the day goes to ${s.name}, ${s.movedM} m away.`).join(' ')}
+        </p>
+      )}
       <ul className="jr-checklist">
-        {plan.stops.map((s, i) => (
-          <li key={s.id} className={s.sources.length ? 'has-source' : ''}>
-            <Mark name={markFor(s.name, i)} size={17} /><span>{s.name}</span>{s.arrival && <em>{s.arrival}</em>}
+        {trip.days.map(d => (
+          <li key={d.number} className="has-source">
+            <Mark name={markFor(d.stops[0]?.name ?? d.title, d.number)} size={17} />
+            <span>{d.title}</span><em>{d.stops.length} stops</em>
           </li>
         ))}
-      </ul>
-      <ul className="jr-colophon jr-colophon-small">
-        <li>
-          Stops chosen by <b>{plan.provenance.scout}</b> · reviewed by <b>{plan.provenance.critic}</b> ·
-          order and times by <b>code</b> · entries by <b>{plan.provenance.narrator}</b> · voice <b>{plan.provenance.tts}</b>.
-        </li>
       </ul>
     </Page>
   )
 }
+
+/* ----------------------------------------------------------------- the bed */
+
+function Beds({ trip }: { trip: Trip }) {
+  return (
+    <Page title="Where you sleep" sub={`${trip.stays.length} from OpenStreetMap`} className="jr-found-page">
+      <ul className="jr-found">
+        {trip.stays.map((b, i) => (
+          <li key={b.id} style={{ '--c': STOP_COLOURS[i % STOP_COLOURS.length] } as React.CSSProperties}>
+            <div className="jr-found-plate"><Mark name="station" size={28} /></div>
+            <div className="jr-found-body">
+              <h3>{b.name}</h3>
+              <p>{b.why}</p>
+              <ul className="jr-tags">
+                <li className="is-fit">{b.kind.replace('_', ' ')}</li>
+                {b.stars != null && <li className="is-time">{b.stars} stars, self-declared</li>}
+                {b.address && <li className="is-photo">{b.address}</li>}
+              </ul>
+              <div className="jr-found-act">
+                <a className="jr-cite" href={b.source.url} target="_blank" rel="noreferrer">OpenStreetMap</a>
+              </div>
+            </div>
+          </li>
+        ))}
+        {!trip.stays.length && <li className="jr-empty">OpenStreetMap lists nothing to sleep in near the middle of this trip.</li>}
+      </ul>
+    </Page>
+  )
+}
+
+function HowChosen({ trip }: { trip: Trip }) {
+  return (
+    <Page title="How the bed and the table were chosen">
+      <p className="jr-blurb">
+        Hotels and restaurants are not in Wikipedia, so they come from OpenStreetMap: every place on
+        these pages is a real entry somebody mapped, with a real position, and the link under each one
+        goes to it.
+      </p>
+      <p className="jr-blurb">
+        OpenStreetMap has no ratings and no prices, so this book prints none. A star count, where it
+        appears, is what the hotel told OpenStreetMap about itself. Opening hours are quoted from the
+        tag exactly as written and may be out of date — the book cannot promise anywhere is open.
+      </p>
+      <p className="jr-blurb">
+        What the crew could weigh was distance from where you will actually be, the sort of bed you
+        asked for, the cuisine tag, and anything said about diets or step-free access. That is the
+        whole basis of every choice here, and it is why none of them claims to be the best in the city.
+      </p>
+      <div className="jr-pressed"><Mark name={pressedFor(trip.origin.lat)} size={72} className="pressed" /></div>
+    </Page>
+  )
+}
+
+/* ------------------------------------------------------------------- a day */
+
+function DayPage({ day, trip, onPick, onFly }: {
+  day: Day; trip: Trip; onPick: (i: number) => void; onFly: () => void
+}) {
+  /* The ink this day is drawn in comes from what is in it. */
+  const ink = paletteFor(day.stops.map(s => s.name))
+  const style = { '--ink-day': ink.accent, '--wash-day': ink.wash, '--rule-day': ink.rule } as React.CSSProperties
+  const leaving = (i: number) => HHMM(MINS(day.stops[i].arrival) + day.stops[i].visitMin)
+
+  return (
+    <div className="jr-page jr-day" style={style}>
+      <header className="jr-day-head">
+        <div>
+          <p className="jr-kicker">Day {day.number} · {trip.city}</p>
+          <h2>{day.title}</h2>
+        </div>
+        <span className="jr-day-hours">{day.stops[0]?.arrival ?? trip.wish.startAt} — {endsAt(day)}</span>
+      </header>
+
+      {/* The day itself: a time, a place, one line about it, and how you get to
+          the next one. What a place *is* belongs to the flight, which is where
+          someone is actually looking at it; a plan that reads like an
+          encyclopaedia is a plan nobody reads on the morning they use it. */}
+      <ol className="jr-day-run">
+        {day.stops.map((s, i) => {
+          const leg = day.legs[i]
+          const table = day.tables.find(t => t.nearStopId === s.id)
+          return (
+            <li key={s.id} style={{ '--c': colourOf(i) } as React.CSSProperties}>
+              <button className="jr-day-stop" onClick={() => onPick(i)}>
+                <span className="jr-day-when">{s.arrival}<em>{leaving(i)}</em></span>
+                <span className="jr-disc">{i + 1}</span>
+                <span className="jr-day-what">
+                  <b>{s.name}<Mark name={markFor(s.name, i)} size={15} /></b>
+                  <span className="jr-day-line">
+                    {s.askedAs ? `Yours — ${s.movedM} m from the pin you dropped. ` : ''}
+                    {firstSentences(s.fits || s.blurb, 1)}
+                  </span>
+                </span>
+              </button>
+
+              {table && <TableRow table={table} />}
+
+              {leg && (
+                <p className="jr-day-hop">
+                  <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor"
+                    strokeWidth="1.15" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                    <path d={TRANSPORT_MARK[leg.transport]} />
+                  </svg>
+                  {Math.round(leg.durationSec / 60)} min{leg.estimated ? ', estimated' : ''}
+                  <i>{(leg.distanceM / 1000).toFixed(1)} km</i>
+                </p>
+              )}
+            </li>
+          )
+        })}
+      </ol>
+
+      {/* Pencil in the corner: the things a plan should say out loud and
+          usually does not. Every line is counted from this day, never advice. */}
+      <ul className="jr-day-notes">
+        {dayNotes(day, trip).map((n, i) => <li key={i}>{n}</li>)}
+      </ul>
+
+      <div className="jr-day-foot">
+        <button className="jr-btn primary" onClick={onFly} disabled={!day.stops.length}>
+          Fly day {day.number}
+        </button>
+        <span className="jr-caption" style={{ margin: 0 }}>Each place is told properly in the air.</span>
+      </div>
+    </div>
+  )
+}
+
+/** Four lines, in the spirit of the notes people pencil into a paper itinerary
+    — and every one of them counted from this day rather than offered as
+    advice the book has no standing to give. */
+function dayNotes(day: Day, trip: Trip): string[] {
+  const out: string[] = []
+  const km = kmOf(day)
+  const walking = trip.wish.transport === 'walk'
+  if (km) out.push(`${km.toFixed(1)} km ${walking ? 'on foot' : `by ${trip.wish.transport}`} across the day — ${walking ? 'the shoes matter more than the bag' : 'the legs are priced door to door'}.`)
+  const est = day.legs.filter(l => l.estimated).length
+  if (est) out.push(`${est} leg${est === 1 ? '' : 's'} timed by straight line; the router did not answer. Allow a little more.`)
+  const hours = day.tables.filter(t => t.openingHours)
+  if (hours.length) out.push(`Hours are OpenStreetMap tags — ${hours[0].name} says “${hours[0].openingHours}”, unverified. Ring ahead if it matters.`)
+  const silent = day.stops.filter(s => !s.sources.length)
+  if (silent.length) out.push(`${silent.map(s => s.name).join(' and ')} has no article; the guide will stand there quietly.`)
+  const first = day.stops[0]
+  if (first && out.length < 4) out.push(`${first.name} opens the day at ${first.arrival}. Check its own hours before you set out — the book cannot.`)
+  return out.slice(0, 4)
+}
+
+/** A meal, sitting in the timeline where the clock left room for it. */
+function TableRow({ table }: { table: Table }) {
+  return (
+    <div className="jr-day-table">
+      <Mark name="market" size={20} />
+      <div>
+        <b>{table.meal} · {table.name}</b>
+        <span>
+          {table.cuisine ? table.cuisine.replace(/;/g, ', ') : table.kind.replace('_', ' ')}
+          {table.walkMin != null && <> · {table.walkMin} min from stop</>}
+        </span>
+        {table.why && <em>{table.why}</em>}
+      </div>
+    </div>
+  )
+}
+
+/* --------------------------------------------------------------- one place */
 
 function StopPlate({ plan, stop, index }: { plan: Plan; stop: Stop; index: number }) {
   const arriving = index === 0 ? plan.approach : plan.legs[index - 1] ?? null
@@ -347,9 +516,12 @@ function StopEntry({ plan, stop, index, onStay }: {
         : <p className="jr-writing">Still being written<span className="jr-nib" aria-hidden /></p>}
 
       <p className="jr-fits"><Mark name="key" size={15} />
-        {stop.asked
-          ? <span>Here because <b>you asked for it by name</b>.</span>
-          : <span>Here because <b>{stop.fits.toLowerCase()}</b>.</span>}
+        {stop.askedAs
+          ? <span>Here because you pinned <b>{stop.askedAs}</b> — nothing notable stands on that spot,
+              and this is <b>{stop.movedM} m</b> away. {stop.fits}.</span>
+          : stop.asked
+            ? <span>Here because <b>you asked for it by name</b>.</span>
+            : <span>Here because <b>{stop.fits.toLowerCase()}</b>.</span>}
       </p>
 
       <div className="jr-dial">
@@ -379,9 +551,7 @@ function StopEntry({ plan, stop, index, onStay }: {
   )
 }
 
-/** The narration, as it will be heard. Each beat can be played on its own; a
-    beat that points at something nearby says which thing, because that is the
-    moment the camera will turn. */
+/** The narration, as it will be heard. */
 function Beats({ stop }: { stop: Stop }) {
   const audio = useRef<HTMLAudioElement>(null)
   const [playing, setPlaying] = useState<number | null>(null)
@@ -423,15 +593,13 @@ function Near({ list, total, offset = 0 }: {
   return (
     <Page title={offset ? '' : 'What the guide will point at'} sub={offset ? '' : `${total} nearby`} className="jr-found-page">
       <ul className="jr-found">
-        {list.map(({ t, s, i }, k) => (
+        {list.map(({ t, s }, k) => (
           <li key={t.id} style={{ '--c': STOP_COLOURS[(offset + k + 3) % STOP_COLOURS.length] } as React.CSSProperties}>
             <div className="jr-found-plate"><Mark name={markFor(t.name, k)} size={28} /></div>
             <div className="jr-found-body">
               <h3>{t.name}</h3>
               <p>{firstSentences(t.summary, 1)}</p>
-              <ul className="jr-tags">
-                <li className="is-fit">from stop {i + 1}, {s.name}</li>
-              </ul>
+              <ul className="jr-tags"><li className="is-fit">near {s.name}</li></ul>
               <div className="jr-found-act">
                 <a className="jr-cite" href={t.source.url} target="_blank" rel="noreferrer">Wikipedia</a>
               </div>
@@ -444,7 +612,7 @@ function Near({ list, total, offset = 0 }: {
   )
 }
 
-function HowFound({ plan }: { plan: Plan }) {
+function HowFound({ plan }: { plan?: Plan }) {
   return (
     <Page title="How these turned up">
       <p className="jr-blurb">
@@ -457,67 +625,72 @@ function HowFound({ plan }: { plan: Plan }) {
         these summaries and told to say only what they say. A beat that mentions a place you cannot
         see from the stop would have to have been invented, so the writer is never given the chance.
       </p>
-      <div className="jr-pressed"><Mark name={pressedFor(plan.origin.lat)} size={80} className="pressed" /></div>
+      {plan && <div className="jr-pressed"><Mark name={pressedFor(plan.origin.lat)} size={80} className="pressed" /></div>}
       <p className="jr-caption">In the air, each of these is a turn of the camera at the moment it is named.</p>
     </Page>
   )
 }
 
-function Ending({ plan }: { plan: Plan }) {
-  const last = plan.stops.at(-1)
-  const moving = plan.legs.reduce((s, l) => s + l.durationSec, 0) / 60 + (plan.approach?.durationSec ?? 0) / 60
-  const staying = plan.stops.reduce((s, x) => s + x.visitMin, 0)
+/* -------------------------------------------------------------- the ending */
+
+function Ending({ trip }: { trip: Trip }) {
+  const stops = trip.days.flatMap(d => d.stops)
+  const moving = trip.days.reduce((s, d) =>
+    s + d.legs.reduce((n, l) => n + l.durationSec, 0) / 60 + (d.approach?.durationSec ?? 0) / 60, 0)
+  const staying = stops.reduce((s, x) => s + x.visitMin, 0)
   return (
-    <Page title="The end of the day" sub={endsAt(plan)} className="jr-ending">
-      <p className="jr-hand big">You finish at {endsAt(plan)}, at {last?.name}.</p>
+    <Page title="The end of the trip" sub={`${trip.days.length} day${trip.days.length === 1 ? '' : 's'}`} className="jr-ending">
+      <p className="jr-hand big">{trip.days.length === 1 ? 'One day' : `${trip.days.length} days`} in {trip.city}, {stops.length} places.</p>
       <ul className="jr-stats">
-        <li><b>{plan.stops.length}</b><span>stops</span></li>
-        <li><b>{kmOf(plan).toFixed(1)}</b><span>km</span></li>
-        <li><b>{Math.round(moving)}</b><span>min {TRANSPORT_LABEL[plan.wish.transport].toLowerCase()}</span></li>
+        <li><b>{stops.length}</b><span>stops</span></li>
+        <li><b>{tripKm(trip).toFixed(1)}</b><span>km</span></li>
+        <li><b>{Math.round(moving)}</b><span>min {TRANSPORT_LABEL[trip.wish.transport].toLowerCase()}</span></li>
         <li><b>{Math.round(staying / 60 * 10) / 10}</b><span>hours there</span></li>
       </ul>
       <ol className="jr-passport" aria-label="Stamps">
-        {plan.stops.map((s, i) => (
-          <li key={s.id} style={{ '--c': colourOf(i), '--rot': `${((i * 37) % 11) - 5}deg` } as React.CSSProperties}>
-            <Mark name={markFor(s.name, i)} size={26} /><b>{s.arrival}</b><span>{s.name}</span>
+        {trip.days.map(d => (
+          <li key={d.number} style={{ '--c': colourOf(d.number - 1), '--rot': `${((d.number * 37) % 11) - 5}deg` } as React.CSSProperties}>
+            <Mark name={markFor(d.stops[0]?.name ?? d.title, d.number)} size={26} />
+            <b>Day {d.number}</b><span>{d.title}</span>
           </li>
         ))}
       </ol>
-      <RouteSheet plan={plan} active={-1} />
-      <p className="jr-caption">The line of the day, as a keepsake. A diagram of what followed what, not a map.</p>
+      {trip.days[0] && <RouteSheet plan={trip.days[0]} active={-1} />}
+      <p className="jr-caption">The first day's line, as a keepsake. A diagram of what followed what, not a map.</p>
     </Page>
   )
 }
 
-function BeforeYouGo({ plan }: { plan: Plan }) {
+function BeforeYouGo({ trip }: { trip: Trip }) {
   const tips: { mark: Parameters<typeof Mark>[0]['name']; text: string }[] = []
-  const first = plan.stops[0]
-  const longest = [...plan.legs].sort((a, b) => b.durationSec - a.durationSec)[0]
-  const silent = plan.stops.filter(s => !s.sources.length)
-  const estimated = plan.legs.filter(l => l.estimated)
-  const mute = plan.stops.filter(s => s.beats.some(b => !b.audioUrl))
+  const stops = trip.days.flatMap(d => d.stops)
+  const first = trip.days[0]?.stops[0]
+  const silent = stops.filter(s => !s.sources.length)
+  const estimated = trip.days.flatMap(d => d.legs).filter(l => l.estimated)
+  const mute = stops.filter(s => s.beats.some(b => !b.audioUrl))
 
-  if (first) tips.push({ mark: 'sun', text: `${first.name} opens the day at ${first.arrival}. Check its hours before you set out — the book cannot.` })
-  if (longest && longest.durationSec > 15 * 60) {
-    const after = plan.stops.find(s => s.id === longest.fromStopId)
-    tips.push({ mark: 'compass', text: `The long leg is after ${after?.name}: ${Math.round(longest.durationSec / 60)} minutes ${TRANSPORT_LABEL[longest.transport].toLowerCase()}.` })
-  }
-  if (kmOf(plan) > 3 && plan.wish.transport === 'walk')
-    tips.push({ mark: 'fern', text: `${kmOf(plan).toFixed(1)} km on foot. The shoes matter more than the bag.` })
+  if (first) tips.push({ mark: 'sun', text: `${first.name} opens the trip at ${first.arrival}. Check its hours before you set out — the book cannot.` })
+  if (trip.stays[0]) tips.push({ mark: 'station', text: `${trip.stays[0].name} is the bed the concierge chose, on distance from your days. Nothing here says it is available, or what it costs.` })
+  if (trip.days.some(d => d.tables.length)) tips.push({ mark: 'market', text: 'Tables are OpenStreetMap entries near where you will be at that hour. Hours are quoted from tags and may be wrong; ring ahead if it matters.' })
+  if (tripKm(trip) > 3 && trip.wish.transport === 'walk')
+    tips.push({ mark: 'fern', text: `${tripKm(trip).toFixed(1)} km on foot across the trip. The shoes matter more than the bag.` })
   if (silent.length)
     tips.push({ mark: 'key', text: `${silent.map(s => s.name).join(' and ')} ${silent.length === 1 ? 'has' : 'have'} no Wikipedia article — the guide will stand there quietly.` })
   if (estimated.length)
     tips.push({ mark: 'clock', text: `${estimated.length} leg${estimated.length === 1 ? ' was' : 's were'} timed by straight line; the router did not answer. Allow a little more.` })
   if (mute.length)
-    tips.push({ mark: 'moon', text: `Some beats have no audio — the voice failed for them, and their lengths are estimated from the words.` })
-  tips.push({ mark: 'bloom', text: 'The flight follows this same order, over the real city, and says these same sentences.' })
+    tips.push({ mark: 'moon', text: 'Some beats have no audio — the voice failed for them, and their lengths are estimated from the words.' })
+  tips.push({ mark: 'bloom', text: 'Each day can be flown from its own page, over the real city, saying these same sentences.' })
 
   return (
     <Page title="Before you go" className="jr-before">
       <ul className="jr-tips">{tips.map((t, i) => <li key={i}><Mark name={t.mark} size={20} /><span>{t.text}</span></li>)}</ul>
-      <div className="jr-pressed"><Mark name={pressedFor(plan.origin.lat)} size={64} className="pressed" /></div>
       <ul className="jr-colophon jr-colophon-small">
-        <li>Places: <b>Nominatim</b> on OpenStreetMap · descriptions and photographs: <b>Wikipedia</b> and <b>Wikimedia Commons</b> · roads and times: <b>Google Routes</b> · the city itself: <b>Google photorealistic 3D tiles</b>.</li>
+        <li>
+          Places: <b>{trip.provenance.places}</b> · beds and tables: <b>{trip.provenance.lodging}</b> ·
+          roads and times: <b>{trip.provenance.router}</b> · photographs: <b>Wikimedia Commons</b> ·
+          the city itself: <b>Google photorealistic 3D tiles</b>.
+        </li>
       </ul>
     </Page>
   )

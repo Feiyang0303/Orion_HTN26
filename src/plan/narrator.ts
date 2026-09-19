@@ -136,3 +136,89 @@ export async function narrate(
 }
 
 export const withAudio = (d: Draft, audioUrl: string | null, durationSec: number): Beat => ({ ...d, audioUrl, durationSec })
+
+/* ------------------------------------------------------------- the preface */
+
+/* The one place a model is allowed to talk about the day as a whole rather
+ * than about one place. It is given the finished plan as fields — names,
+ * times, distances, who is travelling, what was asked for, what was moved and
+ * what was estimated — and may say nothing that is not in them. The value of
+ * it is that a person reading the book can see the reasoning: why this order,
+ * where the slack is, what to watch out for. A plan that cannot explain itself
+ * is just a list with times on it.
+ */
+
+const PREFACE_SYSTEM = `You are the editor of a day's itinerary, writing the short note that opens the
+book. You are given the finished plan as a list of facts.
+
+Write 3 to 5 sentences that make the day legible to the person about to live
+it: how it is shaped, why this order makes sense given the times and distances
+you are shown, where the pressure is, and anything they should know before they
+set out. Speak plainly and in the second person. Warm, dry, useful.
+
+HARD RULES
+- Use ONLY the facts given. No history, no descriptions of places, no adjectives
+  about how beautiful anything is, no claims about opening hours, prices,
+  crowds, weather or seasons. You know the plan, not the world.
+- Mention by name at most three of the stops.
+- If a stop was moved from where they pinned, say so plainly.
+- If the day ends later than the hour they gave, or a leg is long, or times are
+  estimated, say that rather than smoothing over it.
+- No exclamation marks. Do not welcome them, do not wish them well, do not
+  mention the flight or the book.
+
+Reply with a JSON object: {"preface":"<the paragraph>"}`
+
+export type PrefaceFacts = {
+  city: string
+  startAt: string
+  endsAt: string
+  windowEnd: string
+  party: string
+  pace: string
+  transport: string
+  budget: string
+  interests: string[]
+  from?: string
+  approachMin?: number
+  meals: { label: string; minutes: number; after: string }[]
+  totalKm: number
+  stops: {
+    name: string; arrival: string; stayMin: number; why: string
+    asked: boolean; askedAs?: string; movedM?: number
+    hasArticle: boolean; targets: number
+    legMinToNext?: number; legEstimated?: boolean
+  }[]
+}
+
+export async function writePreface(f: PrefaceFacts): Promise<string> {
+  const lines = f.stops.map((s, i) =>
+    `${i + 1}. ${s.name} — arrive ${s.arrival}, stay ${s.stayMin} min. ` +
+    (s.asked
+      ? s.askedAs
+        ? `They pinned "${s.askedAs}"; this stands ${s.movedM} m from that pin. `
+        : 'They asked for this one by name. '
+      : `Chosen by the scout: ${s.why}. `) +
+    (s.hasArticle ? '' : 'No article exists for it. ') +
+    (s.targets ? `${s.targets} things nearby to point at. ` : '') +
+    (s.legMinToNext ? `Then ${Math.round(s.legMinToNext)} min to the next${s.legEstimated ? ' (estimated)' : ''}.` : 'Last stop.')
+  ).join('\n')
+
+  const facts = [
+    `City: ${f.city}. ${f.stops.length} stops, ${f.totalKm.toFixed(1)} km of ground.`,
+    `They asked for ${f.startAt} to ${f.windowEnd}; the day as planned ends at ${f.endsAt}.`,
+    `Getting about: ${f.transport}. Pace: ${f.pace}. Who: ${f.party}. Budget: ${f.budget}.`,
+    f.interests.length ? `Interests: ${f.interests.join(', ')}.` : 'No interests given.',
+    f.from ? `Starting from ${f.from}, ${Math.round(f.approachMin ?? 0)} min to the first stop.` : 'No starting point given.',
+    f.meals.length ? f.meals.map(m => `${m.minutes} min kept clear for ${m.label} after ${m.after}.`).join(' ') : 'No meal breaks.',
+    '',
+    lines,
+  ].join('\n')
+
+  try {
+    const r = await askJson<{ preface: string }>('narrator', PREFACE_SYSTEM, facts, 900)
+    return String(r.preface ?? '').trim()
+  } catch {
+    return ''   // the book prints the counted epigraph and nothing is missing
+  }
+}

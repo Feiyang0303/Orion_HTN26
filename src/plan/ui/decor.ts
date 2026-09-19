@@ -125,3 +125,39 @@ export function firstSentences(text: string, n: number) {
   }
   return clean.split(/(?<=[.!?])\s+(?=[A-Z"“(])/).slice(0, n).join(' ').trim()
 }
+
+/* ------------------------------------------------------------- the palette */
+
+/* The ink a day is drawn in, taken from what is actually in it. A day of
+   harbours and bridges is blue-green; a day of cathedrals and castles is a
+   warm red-grey; a day of parks is green. This is the same rule as every other
+   mark in the book — point at a colour and ask which field chose it — and it
+   is why two days of the same trip do not look alike. */
+export type Palette = { accent: string; wash: string; rule: string; name: string }
+
+const PALETTES: Record<string, Palette> = {
+  water:   { accent: '#2d6f7b', wash: 'rgba(45,111,123,.10)', rule: '#9dbcc0', name: 'water' },
+  stone:   { accent: '#9a5a3c', wash: 'rgba(154,90,60,.10)',  rule: '#cfae95', name: 'old stone' },
+  green:   { accent: '#4a7c4e', wash: 'rgba(74,124,78,.10)',  rule: '#a9c3a6', name: 'green' },
+  market:  { accent: '#a8703a', wash: 'rgba(168,112,58,.10)', rule: '#d3b389', name: 'market' },
+  default: { accent: '#8a5a2b', wash: 'rgba(138,90,43,.09)',  rule: '#c2b18d', name: 'ink' },
+}
+
+const WATER = /harbour|harbor|port|quay|river|lake|canal|bay|beach|bridge|island|seine|pier|dock/i
+const STONE = /cathedral|church|basilica|castle|palace|fort|abbey|tower|monument|gate|temple|shrine|ruins?/i
+const GREEN = /park|garden|forest|wood|hill|meadow|botanic|arboretum/i
+const MARKET = /market|bazaar|hall|arcade|quarter|district|street|square/i
+
+/** The palette for a set of places, by what most of them are. */
+export function paletteFor(names: string[]): Palette {
+  const score = { water: 0, stone: 0, green: 0, market: 0 }
+  for (const n of names) {
+    if (WATER.test(n)) score.water++
+    if (STONE.test(n)) score.stone++
+    if (GREEN.test(n)) score.green++
+    if (MARKET.test(n)) score.market++
+  }
+  const best = (Object.entries(score) as [keyof typeof score, number][])
+    .sort((a, b) => b[1] - a[1])[0]
+  return best && best[1] > 0 ? PALETTES[best[0]] : PALETTES.default
+}

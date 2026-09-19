@@ -144,3 +144,51 @@ export async function scout(catalogue: Article[], brief: ScoutBrief): Promise<Sc
   if (!keep.length) throw new Error('The scout could not find enough good places nearby.')
   return keep.slice(0, count)
 }
+
+/* ---------------------------------------------------------------- anchoring */
+
+const NEAR_SYSTEM = `A person planning a day over a city has put a pin on the map. The pin is not
+on anything notable — it may be a street corner, a hotel, a station, or just a
+patch of ground they clicked. You are given the places with Wikipedia articles
+nearby, each with its distance from that pin.
+
+Choose the ONE that best honours what they meant by pinning there. Judge by:
+- Distance first. They pointed at a spot; something 150 m away is still that
+  spot, something 700 m away is a different part of town and needs to be much
+  better to be worth it.
+- Whether it reads from the air. The camera will fly to it and hold above it,
+  so a roofline, a span, a square or a park beats an interior.
+- What they said interests them, and who is travelling with them.
+- Whether it is plainly the thing they were pointing at. A pin on a station
+  forecourt beside a famous tower almost certainly meant the tower.
+
+If nothing nearby is worth flying to — the honest answer in a quiet
+neighbourhood — reply with {"id": null} and a reason. Do not reach for
+something a kilometre away to avoid saying no.
+
+Reply with a JSON object: {"id":"<catalogue id or null>","why":"<max 14 words: why this one, or why nothing>","kind":"<one of: ${KINDS.join(', ')}>"}`
+
+export type NearChoice = { article: Article; why: string; kind: Kind } | { article: null; why: string }
+
+/** The nearest thing worth flying to, for a pin that landed on nothing. */
+export async function nearestWorthIt(
+  pinned: string, nearby: Article[], wish: ScoutWish = {},
+): Promise<NearChoice> {
+  if (!nearby.length) return { article: null, why: 'nothing with an article stands near that pin' }
+  const byId = new Map(nearby.map(a => [`n${a.pageId}`, a]))
+  const lines = nearby.map(a =>
+    `n${a.pageId} | ${Math.round(a.distM)} m away | ${a.title} | ${a.extract.replace(/\s+/g, ' ').slice(0, 160)}`)
+  const user = `They pinned: ${pinned}\n` +
+    (wish.interests?.length ? `Interested in: ${wish.interests.join(', ')}.\n` : '') +
+    (wish.party ? `Who: ${PARTY_LINE[wish.party]}.\n` : '') +
+    (wish.budget ? `Budget: ${BUDGET_LINE[wish.budget]}.\n` : '') +
+    `\nNearby:\n${lines.join('\n')}`
+
+  const r = await askJson<{ id: string | null; why?: string; kind?: string }>('scout', NEAR_SYSTEM, user, 1200)
+  const article = r.id ? byId.get(r.id) : null
+  if (!article) return { article: null, why: String(r.why ?? 'nothing nearby was worth the detour').trim() }
+  return {
+    article, why: String(r.why ?? '').trim(),
+    kind: (KINDS as readonly string[]).includes(r.kind ?? '') ? r.kind as Kind : 'other',
+  }
+}

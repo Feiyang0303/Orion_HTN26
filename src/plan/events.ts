@@ -10,4 +10,5 @@ export type CrewEvent =
   | { type: 'crew'; agent: Agent; kind: 'tool' | 'agent'
       state: 'working' | 'done' | 'reworking' | 'failed'; detail: string }
   | { type: 'stop'; index: number; stop: Stop }   // a page is ready to show; index is its final position
-  | { type: 'plan'; plan: import('../types').Plan }  // the whole book, restated as it settles
+  | { type: 'plan'; plan: import('../types').Plan }  // one day, restated as it settles
+  | { type: 'trip'; trip: import('../types').Trip }  // the whole thing, once every day is written

@@ -763,8 +763,12 @@
    than its scrolling parent gets its overflowing top clipped away by
    justify-content: center, and no amount of scrolling brings it back. Auto
    margins centre the same way and still let the top scroll into view. */
-.orion-overlay.jr-stage { justify-content: flex-start; align-items: stretch; padding: 18px; }
-.orion-overlay.jr-stage > * { margin-block: auto; }
+/* `safe center` and nothing else. Centring a flex item that is taller than
+   its scrolling parent pushes the overflow above the scroll origin, where no
+   amount of scrolling reaches it — true of justify-content: center and just as
+   true of auto margins, which is how this page lost its title twice. `safe`
+   centres when there is room and falls back to the top when there is not. */
+.orion-overlay.jr-stage { justify-content: safe center; align-items: stretch; padding: 18px; }
 /* The desk sheet is a page and centres; the planner is a workspace and fills. */
 .orion-overlay.jr-stage > .jr-desk { width: min(660px, 100%); margin-inline: auto; }
 
@@ -853,7 +857,13 @@
    the sheet is on a desk, not in a void — but the page itself is a printed
    card and its ink is the same dark brown the book uses. */
 .orion-home {
-  width: min(880px, 100%); margin: auto;
+  /* The cover is the first thing anyone sees, so it is a sheet of paper on a
+     desk rather than a card in the middle of a screen: it takes the width it
+     can get and stands tall enough that the city only shows at its edges. */
+  /* margin-inline only: a block-direction `auto` margin centres the sheet by
+     pushing its top out of the scroll container's reach, which is the same
+     bug as centring with justify-content. The stage does the centring now. */
+  width: min(1180px, 100%); min-height: min(100%, 880px); margin-inline: auto;
   color: #3f3426;
   background: #efe4cb;
   border: 1px solid #cdbd99; border-radius: 2px;
@@ -861,38 +871,135 @@
   background-image:
     repeating-linear-gradient(0deg, rgba(120,95,60,.035) 0 1px, transparent 1px 3px),
     radial-gradient(130% 90% at 12% 0%, rgba(255,250,236,.7), transparent 55%);
-  display: flex; flex-direction: column; align-items: center; gap: 24px; text-align: center;
-  padding: 40px 38px 34px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 34px; text-align: center;
+  padding: 64px 60px 56px;
 }
 .orion-home header { display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .orion-home .jr-kicker { color: #9a6b3f; }
 .orion-home h1 {
-  margin: 0; font-family: var(--display); font-size: clamp(52px, 10vw, 96px);
-  font-weight: 400; letter-spacing: .03em; line-height: .96; color: #3f3426;
+  margin: 0; font-family: var(--display); font-size: clamp(64px, 12vw, 132px);
+  font-weight: 400; letter-spacing: .03em; line-height: .94; color: #3f3426;
 }
 .orion-home-lede {
-  margin: 4px 0 0; max-width: 46ch; font-family: var(--display); font-size: 19px;
+  margin: 6px 0 0; max-width: 50ch; font-family: var(--display); font-size: 23px;
   line-height: 1.5; color: #4a3e2e;
 }
 
 .orion-home-stages {
   list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; width: 100%;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); text-align: left;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); text-align: left;
 }
 .orion-home-stages li {
-  position: relative; padding: 18px 18px 16px;
+  position: relative; padding: 24px 24px 22px;
   background: rgba(255,250,236,.5); border: 1px solid #d9caa9; border-radius: 2px;
 }
 .orion-home-no {
   position: absolute; right: 12px; top: 8px;
-  font-family: var(--display); font-size: 28px; color: #c2b18d;
+  font-family: var(--display); font-size: 34px; color: #c2b18d;
 }
 .orion-home-stages h2 {
-  margin: 8px 0 4px; font-family: var(--display); font-weight: 400; font-size: 20px; color: #3f3426;
+  margin: 10px 0 6px; font-family: var(--display); font-weight: 400; font-size: 23px; color: #3f3426;
 }
-.orion-home-stages p { margin: 0; font-size: 13px; line-height: 1.55; color: #6a5c47; }
+.orion-home-stages p { margin: 0; font-size: 14px; line-height: 1.6; color: #6a5c47; }
 .orion-home-stages .jr-mark { color: #9a6b3f; }
 
 .orion-home-fine {
   margin: 0; max-width: 72ch; font-size: 11px; line-height: 1.6; color: #8a7a60;
 }
+
+/* The way back to the front page: the wordmark in the top corner, which is
+   where a person looks for it, not a separate button competing with the
+   step controls. */
+.jr-home-link {
+  align-self: flex-start; background: none; border: 0; padding: 0 0 2px;
+  color: #9a6b3f; font-size: 10.5px; letter-spacing: .22em; text-transform: uppercase;
+  border-bottom: 1px solid transparent;
+}
+.jr-home-link:hover { color: #8a5a2b; border-bottom-color: #c2b18d; }
+
+.jr-rule { width: 100%; height: 1px; border: 0; background: #cdbd99; opacity: .7; margin: 4px 0 0; }
+
+/* ======================================================================
+   A day, as a page of an itinerary rather than an encyclopaedia.
+   Time down the left, the places beside it, how you get between them under
+   each one. What a place *is* belongs to the flight; this page is for
+   reading on the morning you use it.
+   ====================================================================== */
+
+.jr-day { display: flex; flex-direction: column; gap: 12px; }
+
+.jr-day-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.jr-day-head .jr-kicker { margin: 0 0 2px; color: var(--ink-day, #8a5a2b); }
+.jr-day-head h2 {
+  margin: 0; font-family: var(--display); font-weight: 400; font-size: 30px;
+  line-height: 1.1; color: #3f3426;
+}
+.jr-day-hours {
+  font-family: var(--display); font-size: 15px; color: var(--ink-day, #8a5a2b);
+  white-space: nowrap; padding-top: 6px;
+}
+
+.jr-day-run { list-style: none; margin: 2px 0 0; padding: 0; }
+.jr-day-run > li { position: relative; padding-left: 0; }
+
+.jr-day-stop {
+  display: grid; grid-template-columns: 54px 26px 1fr; align-items: start; gap: 10px;
+  width: 100%; text-align: left; background: none; border: 0; padding: 7px 4px 7px 0;
+  border-radius: 2px;
+}
+.jr-day-stop:hover { background: var(--wash-day, rgba(138,90,43,.09)); }
+.jr-day-when {
+  display: flex; flex-direction: column; align-items: flex-end; line-height: 1.15;
+  font-family: var(--display); font-size: 16px; color: var(--ink-day, #8a5a2b); padding-top: 1px;
+}
+.jr-day-when em { font-style: normal; font-size: 11.5px; color: #9a8a70; font-family: var(--ui); }
+.jr-day-what { display: block; }
+.jr-day-what b {
+  display: flex; align-items: center; gap: 7px;
+  font-family: var(--display); font-weight: 400; font-size: 19px; color: #3f3426; line-height: 1.25;
+}
+.jr-day-what .jr-mark { color: var(--ink-day, #8a5a2b); opacity: .75; flex: none; }
+.jr-day-line { display: block; margin-top: 2px; font-size: 12.5px; line-height: 1.5; color: #6a5c47; }
+
+/* the walk to the next one, hanging off the time column */
+.jr-day-hop {
+  display: flex; align-items: center; gap: 7px; margin: 0 0 0 58px; padding: 3px 0 5px;
+  font-size: 11.5px; color: #8a7a60; border-left: 1px dashed var(--rule-day, #c2b18d);
+  padding-left: 12px;
+}
+.jr-day-hop svg { color: var(--ink-day, #8a5a2b); }
+.jr-day-hop i { font-style: normal; color: #9a8a70; }
+
+/* a meal, pressed into the day where the clock left room for it */
+.jr-day-table {
+  display: flex; align-items: flex-start; gap: 9px; margin: 2px 0 4px 58px;
+  padding: 8px 10px; border-radius: 2px;
+  background: var(--wash-day, rgba(138,90,43,.09));
+  border: 1px dashed var(--rule-day, #c2b18d);
+}
+.jr-day-table .jr-mark { color: var(--ink-day, #8a5a2b); flex: none; margin-top: 1px; }
+.jr-day-table b { display: block; font-family: var(--display); font-weight: 400; font-size: 15px; color: #3f3426; }
+.jr-day-table span { display: block; font-size: 11.5px; color: #6a5c47; }
+.jr-day-table em { display: block; margin-top: 2px; font-size: 11.5px; color: #8a7a60; }
+
+/* pencil in the corner */
+.jr-day-notes {
+  list-style: none; margin: auto 0 0; padding: 10px 12px 11px;
+  background: rgba(255,250,236,.55); border: 1px solid #d9caa9; border-radius: 2px;
+  transform: rotate(-.35deg);
+}
+.jr-day-notes li {
+  position: relative; padding-left: 13px; margin: 0 0 5px;
+  font-size: 11.5px; line-height: 1.55; color: #6a5c47;
+}
+.jr-day-notes li:last-child { margin-bottom: 0; }
+.jr-day-notes li::before {
+  content: ''; position: absolute; left: 2px; top: 7px; width: 4px; height: 4px;
+  border-radius: 50%; background: var(--ink-day, #8a5a2b); opacity: .5;
+}
+
+.jr-day-foot { display: flex; align-items: center; gap: 12px; }
+
+/* the folded map needs room on its page */
+.jr-map-page .jr-fold { min-height: 340px; }
