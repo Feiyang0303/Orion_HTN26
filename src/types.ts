@@ -87,10 +87,12 @@ export type Plan = {
 
 /** What the flythrough component takes and emits (B's public surface). */
 export type FlyProps = {
-  plan: Plan | null          // tiles preload while null/planning; dive starts on begin
-  begin: boolean
+  plan: Plan | null          // null while planning: tiles preload around `origin`
+  origin?: LatLon | null     // the geocoded point, known before the plan is; used only while plan is null
+  begin: boolean             // false = hold a slow planning view; true = dive and fly
   onStopReached: (stopId: string, index: number) => void
   onFinish: () => void
+  onExit?: () => void        // if given, the flight HUD offers "End tour"
 }
 
 /** A -> B on live replan. B swaps to `plan` without a cut: it keeps the

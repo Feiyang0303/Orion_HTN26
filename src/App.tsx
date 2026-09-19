@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import ErrorBoundary from './ui/ErrorBoundary'
+import FlyDev from './fly/dev/FlyDev'
 
 /* The shell. One canvas (tiles, owned by src/fly) sits behind one overlay
  * (the book, owned by src/plan) from the first frame, so tiles preload while
@@ -11,6 +12,8 @@ import ErrorBoundary from './ui/ErrorBoundary'
 export type Phase = 'ask' | 'planning' | 'reading' | 'flying' | 'done'
 
 export default function App() {
+  // Dev-only harness for the flythrough (src/fly), independent of the book.
+  if (import.meta.env.DEV && new URLSearchParams(location.search).has('fly-dev')) return <ErrorBoundary><FlyDev /></ErrorBoundary>
   const [phase] = useState<Phase>('ask')
   return (
     <ErrorBoundary>
