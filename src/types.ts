@@ -200,7 +200,7 @@ export type Plan = {
   preface: string
   generatedAt: string        // ISO
   /** Honest labelling for the UI: which parts were code, which were models. */
-  provenance: { router: 'code'; timekeeper: 'code'; scout: string; critic: string; narrator: string; tts: string }  // e.g. "elevenlabs:eleven_flash_v2_5"
+  provenance: { router: 'code'; timekeeper: 'code'; scout: string; critic: string; narrator: string; tts: string }  // e.g. "elevenlabs:eleven_v3"
 }
 
 /* ---- the trip ------------------------------------------------------------ */

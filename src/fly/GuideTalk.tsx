@@ -38,10 +38,10 @@ export default function GuideTalk({ day, city, stopIndex, caption, onClose }: {
     setTurns(t => [...t, { who: 'you', text: q }])
     setThinking(true)
     try {
-      const { spoken, shown } = await ask(q, live.current.turns, day, city, live.current.stopIndex, live.current.caption)
+      const { spoken, shown, mood } = await ask(q, live.current.turns, day, city, live.current.stopIndex, live.current.caption)
       setTurns(t => [...t, { who: 'guide', text: shown }])
       setThinking(false)
-      const a = await voice(spoken)
+      const a = await voice(spoken, mood)
       if (a) {
         audio.current = a
         setSpeaking(true)

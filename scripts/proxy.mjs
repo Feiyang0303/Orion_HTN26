@@ -137,44 +137,114 @@ async function voiceId(key) {
    a delivery note; every other model reads it aloud, brackets and all. */
 const untag = t => t.replace(/\[[^\]]{1,24}\]/g, ' ').replace(/\s{2,}/g, ' ').trim()
 
-async function speak(key, voice, text, model, stability) {
+/* How a mood is spoken, for models that have no audio tags.
+   Stability is the one lever every ElevenLabs model respects: low lets the
+   voice move, high pins it flat. `style` says how far to push the voice's own
+   character, and is only sent where it is supported — the flash models ignore
+   it, and sending it to them buys latency and nothing else. */
+const MOOD = {
+  excited:    { stability: 0.22, style: 0.55 },
+  amused:     { stability: 0.30, style: 0.45 },
+  curious:    { stability: 0.35, style: 0.40 },
+  warm:       { stability: 0.38, style: 0.35 },
+  thoughtful: { stability: 0.50, style: 0.25 },
+  calm:       { stability: 0.58, style: 0.15 },
+  serious:    { stability: 0.62, style: 0.10 },
+  // The written pages: read evenly, because there are dozens of them in a row.
+  read:       { stability: 0.45, style: 0.20 },
+}
+
+/* Which models this key can actually use.
+ *
+ * Guessing at a model id and catching the refusal works, but it spends a
+ * round trip on every first question and tells nobody what happened. The
+ * account knows: /v1/models lists what the key may call and which of them
+ * accept `style`. Asked once, cached, and printed at startup so which voice is
+ * doing what is a line in the log rather than a thing to infer from listening.
+ *
+ * The order of preference is the order of expressiveness. v3 (Eleven 3.0)
+ * performs audio tags, so it is the default. Failing that, multilingual_v2 is
+ * the most expressive of the rest and takes `style`; flash is the last resort
+ * if v3 is refused. A model named in the environment overrides all of it. */
+let tuned = null
+async function models(key) {
+  if (tuned) return tuned
+  const fast = env('ELEVENLABS_MODEL') || 'eleven_v3'
+  const forced = env('ELEVENLABS_MODEL_EXPRESSIVE')
+  if (forced) {
+    tuned = { fast, rich: forced, tags: /v3/.test(forced), style: !/flash/i.test(forced) }
+  } else {
+    const can = new Set(), styles = new Set()
+    try {
+      const r = await fetch('https://api.elevenlabs.io/v1/models', { headers: { 'xi-api-key': key } })
+      if (r.ok) for (const m of (await r.json()) ?? []) {
+        if (m.can_do_text_to_speech) can.add(m.model_id)
+        if (m.can_use_style) styles.add(m.model_id)
+      }
+    } catch { /* the preference list still ends somewhere sensible */ }
+    const rich = ['eleven_v3', 'eleven_multilingual_v2', 'eleven_turbo_v2_5', fast].find(id => can.has(id)) || fast
+    tuned = { fast, rich, tags: rich === 'eleven_v3', style: styles.has(rich) }
+  }
+  console.log(`[tts] pages: ${tuned.fast} · guide: ${tuned.rich} (${tuned.tags ? 'audio tags' : 'voice settings'}${tuned.style ? ' + style' : ''})`)
+  return tuned
+}
+
+async function speak(key, voice, text, model, mood, withStyle) {
+  const m = MOOD[mood] || MOOD.warm
   return fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voice}?output_format=mp3_44100_128`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'xi-api-key': key, accept: 'audio/mpeg' },
     body: JSON.stringify({
       text: text.trim().slice(0, 5000),
       model_id: model,
-      voice_settings: { stability, similarity_boost: 0.75 },
+      voice_settings: {
+        stability: m.stability, similarity_boost: 0.75, use_speaker_boost: true,
+        ...(withStyle ? { style: m.style } : {}),
+      },
     }),
   })
 }
 
 /* The written pages are spoken by the fast model: there are dozens of them and
-   they are read, not performed. The guide answering a question is one line at a
-   time and wants to sound like someone talking, so it asks for `expressive`,
-   which uses v3 and the audio tags the model wrote into the line.
-   
-   v3 is not on every account. When it is refused, rather than failing the
-   answer, the same line is spoken by the fast model with the tags taken out —
-   flatter, but the person still gets an answer, which matters more. */
+   they are read, not performed. The guide answering a question is one line at
+   a time and wants to sound like someone talking, so it asks for `expressive`.
+
+   Expressive means two different things depending on what the account has.
+   With v3 it means the audio tags in the line — [warmly], [laughs] — get
+   performed. Without v3, which is most accounts today, the tags would be read
+   out as words, so they are stripped and the feeling has to arrive another
+   way: the mood the model chose is turned into voice settings, and the line
+   itself was written to be sayable. A flat voice reading a well-shaped
+   sentence still sounds more like a person than a lively one reading a
+   paragraph.
+
+   Either way the answer arrives. Falling back is not a failure worth showing
+   anyone, and losing the reply because a model id was wrong would be. */
 async function tts(req, res) {
   const key = requireEnv('ELEVENLABS_API_KEY')
-  const { text, expressive } = await readJson(req)
+  const { text, expressive, mood } = await readJson(req)
   if (!text || typeof text !== 'string') throw new HttpError(400, 'text required')
   const voice = await voiceId(key)
-  const fast = env('ELEVENLABS_MODEL') || 'eleven_flash_v2_5'
+  const { fast, rich, tags, style } = await models(key)
 
   let upstream
   if (expressive) {
-    // Lower stability leaves v3 room to act on the tags; at 0.45 it flattens them out.
-    upstream = await speak(key, voice, text, env('ELEVENLABS_MODEL_EXPRESSIVE') || 'eleven_v3', 0.3)
+    // Tags are delivery notes to v3 and words to be read aloud to anything else.
+    upstream = await speak(key, voice, tags ? text : untag(text), rich, mood, style)
     if (!upstream.ok) {
       const why = (await upstream.text()).slice(0, 160)
-      console.warn(`[tts] expressive model refused (${upstream.status}: ${why}); falling back to ${fast}`)
-      upstream = await speak(key, voice, untag(text), fast, 0.45)
+      console.warn(`[tts] ${rich} refused (${upstream.status}: ${why}); speaking with ${fast} instead`)
+      tuned = { fast, rich: fast, tags: false, style: false }   // do not ask it again this run
+      upstream = await speak(key, voice, untag(text), fast, mood, false)
     }
   } else {
-    upstream = await speak(key, voice, untag(text), fast, 0.45)
+    const pageModel = /v3/.test(fast)
+    upstream = await speak(key, voice, pageModel ? text : untag(text), fast, 'read', false)
+    if (!upstream.ok && fast !== 'eleven_flash_v2_5') {
+      const why = (await upstream.text()).slice(0, 160)
+      console.warn(`[tts] ${fast} refused (${upstream.status}: ${why}); speaking pages with eleven_flash_v2_5`)
+      upstream = await speak(key, voice, untag(text), 'eleven_flash_v2_5', 'read', false)
+    }
   }
 
   if (!upstream.ok) throw new HttpError(502, `elevenlabs ${upstream.status}: ${(await upstream.text()).slice(0, 200)}`)

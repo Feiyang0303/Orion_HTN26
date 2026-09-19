@@ -17,9 +17,15 @@ import { report } from '../telemetry'
  * has never checked is worse than one who says to look it up. The same rule
  * the narrator works under, in a form that survives being asked anything.
  *
- * The reply carries ElevenLabs audio tags — [warmly], [laughs], a pause on an
- * ellipsis — which the v3 model performs. The tags are stripped before the
- * line is shown, so the caption reads as a sentence and the speaker acts it.
+ * Sounding human is two things, because most accounts do not have the model
+ * that performs audio tags. The reply carries them anyway — [warmly],
+ * [laughs] — for the accounts that do, and they are stripped before the line
+ * is shown either way. But it also names its own mood, which becomes voice
+ * settings on any model, and it is written to be *said*: short sentences, a
+ * real pause where someone would take one, the feeling in the words rather
+ * than in a bracket. That last part is the one that survives everywhere. A
+ * flat voice reading a well-shaped line still sounds like a person; a lively
+ * one reading a paragraph does not.
  */
 
 export type Turn = { who: 'you' | 'guide'; text: string }
@@ -36,13 +42,21 @@ Spoken, not written. One breath — two or three sentences, rarely more. You are
 standing next to them, not reading a page. Contractions, plain words, no lists,
 no headings, no "certainly!".
 
+SAYING IT, NOT WRITING IT
+Your answer is read aloud by a speech model. Assume it will NOT act stage
+directions, so the feeling has to be in the words and the punctuation:
+- Short sentences. A long one flattens out when it is spoken.
+- "..." where you would genuinely trail off or let something land.
+- A dash for the aside you would actually throw in — like this one.
+- Start somewhere real: "Oh, that one?" carries more than "That building is".
+- Italics do not exist out loud. If a word matters, put it last.
+
 AUDIO TAGS
-Your answer is read by a speech model that performs bracketed tags. Use one or
-two per answer, where the feeling actually changes — never one on every
-sentence. Put a tag before the words it colours.
+Add one or two bracketed tags where the feeling turns, for the voices that can
+perform them — never one per sentence, and never in place of writing the line
+properly, because most of the time they are removed before it is spoken.
 Available: [warmly] [thoughtfully] [excited] [curious] [amused] [laughs]
 [softly] [whispers] [sighs] [matter-of-fact]
-Use "..." where you would actually trail off or pause for effect.
 
 WHAT YOU KNOW
 Only what you are told below, plus ordinary knowledge about the world and this
@@ -56,8 +70,9 @@ perfectly good answer from a guide.
 If they ask something off-topic, answer it briefly and naturally. You are a
 person they are talking to, not a kiosk.
 
-FORMAT — a JSON object:
-{"say": "[warmly] That's the one ... it's older than it looks."}`
+FORMAT — a JSON object with the line and the mood it is said in.
+"mood" is one of: excited, amused, curious, warm, thoughtful, calm, serious.
+{"say": "[warmly] That's the one ... it's older than it looks.", "mood": "warm"}`
 
 const ctx = (day: Flown, city: string, stopIndex: number, caption: string) => {
   const here: Stop | undefined = day.stops[stopIndex]
@@ -93,16 +108,20 @@ export async function ask(
     said ? `\nSo far:\n${said}` : '',
     `\nThey ask: "${question.trim()}"`,
   ].join('\n')
-  const r = await askJson<{ say?: string }>('narrator', SYSTEM, user, 400)
+  const r = await askJson<{ say?: string; mood?: string }>('narrator', SYSTEM, user, 400)
   const spoken = String(r.say ?? '').trim().slice(0, 600)
   if (!spoken) throw new Error('the guide had nothing to say')
-  return { spoken, shown: untag(spoken) }
+  const mood = MOODS.includes(String(r.mood)) ? String(r.mood) : 'warm'
+  return { spoken, shown: untag(spoken), mood }
 }
 
-/** The answer, out loud, in the guide's own voice and acting its own tags. */
-export async function voice(spoken: string): Promise<HTMLAudioElement | null> {
+const MOODS = ['excited', 'amused', 'curious', 'warm', 'thoughtful', 'calm', 'serious']
+
+/** The answer, out loud: the tags where a voice can act them, and the mood as
+    voice settings where it cannot. */
+export async function voice(spoken: string, mood = 'warm'): Promise<HTMLAudioElement | null> {
   try {
-    const bytes = await postBytes('tts', { text: spoken, expressive: true })
+    const bytes = await postBytes('tts', { text: spoken, expressive: true, mood })
     const url = URL.createObjectURL(new Blob([bytes], { type: 'audio/mpeg' }))
     const audio = new Audio(url)
     audio.addEventListener('ended', () => URL.revokeObjectURL(url), { once: true })
