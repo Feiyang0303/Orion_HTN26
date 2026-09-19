@@ -32,12 +32,14 @@ import type { Day, LatLon, Stay, Trip, Wish } from '../../types'
 
 type Line = { who: 'you' | 'editor'; text: string }
 
-export default function Studio({ wish, mode, origin, saved, onFly, onHome, onMap, onCrew, saveAudio }: {
+export default function Studio({ wish, mode, origin, saved: given, onTrip, onFly, onHome, onMap, onCrew, saveAudio }: {
   wish: Wish
   mode: Mode
   origin: Place
   /** A trip that was saved earlier: opened as it was, with nothing planned again. */
   saved?: Saved
+  /** Told whenever there is a trip (and each time it changes), so the shell can hand it back if this screen is left and returned to. */
+  onTrip?: (s: Saved) => void
   onFly: (day: Day) => void
   onHome: () => void
   onMap: (view: MapView) => void
@@ -45,6 +47,8 @@ export default function Studio({ wish, mode, origin, saved, onFly, onHome, onMap
   onCrew: (events: CrewEvent[], working: boolean) => void
   saveAudio: (planId: string, name: string, bytes: ArrayBuffer) => Promise<string>
 }) {
+  // Read once. The shell keeps the current trip up to date in this prop, and that must never restart the run.
+  const [saved] = useState(given)
   const [events, setEvents] = useState<CrewEvent[]>([])
   const [drafts, setDrafts] = useState<DayDraft[]>([])
   const [stay, setStay] = useState<Stay | null>(null)
@@ -115,6 +119,7 @@ export default function Studio({ wish, mode, origin, saved, onFly, onHome, onMap
     try { const r = await saveTrip(tripKey.current, t, mode, origin); lastSaved.current = t; setKeep(r.persistent ? 'saved' : 'local'); return true }
     catch { setKeep('failed'); return false }
   }, [mode, origin])
+  useEffect(() => { if (trip) onTrip?.({ id: tripKey.current, trip, mode, origin, updatedAt: Date.now() }) }, [trip, mode, origin, onTrip])
   useEffect(() => {
     if (!trip || trip === lastSaved.current) return
     const t = setTimeout(() => { void persist(trip) }, 1200)
