@@ -157,6 +157,40 @@ namespace Orion.Tests
             for (int i = 1; i < pts.Count; i++) Assert.LessOrEqual(Geo.MetresBetween(pts[i - 1], pts[i]), Anchor.SampleStepM + .01);
         }
 
+        /// <summary>A day shaped like the ones the web app really sends: some stops the guide says nothing at, and no clips.</summary>
+        static Day Sparse() => new Day
+        {
+            origin = new LatLon { lat = 43.65, lon = -79.38 },
+            stops = new[]
+            {
+                new Stop { id = "a", name = "A" },
+                new Stop { id = "b", name = "B", beats = new[] { new Beat { text = "One.", durationSec = 11.2f }, new Beat { text = "Two.", targetId = "t", durationSec = 3 } } },
+                new Stop { id = "c", name = "C" },
+            },
+            legs = new[] { new Leg { transport = "walk", distanceM = 1063 }, new Leg { transport = "transit", distanceM = 3699 } },
+        };
+
+        [Test]
+        public void AStopWithNothingSaidIsStillVisited()
+        {
+            var tl = new Timeline(Sparse(), Ride.StraightSec);
+            var silent = tl.Segments[0];
+            Assert.AreEqual(0, silent.Beats.Length);
+            Assert.AreEqual(Timeline.LeadSec + Timeline.TailSec + 2, silent.T1 - silent.T0, 1e-4f, "long enough to look around");
+            Assert.IsNull(silent.ActiveBeat(silent.T0 + 1));
+            Assert.AreEqual(5, tl.Segments.Count);
+            Assert.AreSame(tl.Segments[2], tl.DwellOf(1));
+            Assert.AreEqual(tl.Segments[4].T0, tl.DwellStart[2]);
+        }
+
+        [Test]
+        public void ALongLegCostsNoMoreClockThanAKilometre()
+        {
+            Assert.AreEqual(Ride.StraightSec(1000), Ride.StraightSec(3699));
+            var tl = new Timeline(Sparse(), Ride.StraightSec);
+            Assert.AreEqual(Ride.StraightSec(1000), tl.Segments[3].T1 - tl.Segments[3].T0, 1e-4f);
+        }
+
         [Test]
         public void TheDirectorNeverComesCloserThanPhotogrammetryAllows()
         {
