@@ -28,6 +28,16 @@ function limiter(max: number) {
 
 const queue = limiter(CONCURRENT)
 
+/* The page revokes its blob URLs when the shell unmounts, so a trip carried
+   across that still names clips that no longer exist. A revoked URL is worse
+   than none: this pass would see a clip already there and not speak the beat
+   again, and the flight would then play silence. Reading a live blob is a
+   memory read, so asking is cheap. */
+async function playable(url: string): Promise<boolean> {
+  if (!url.startsWith('blob:')) return true
+  try { return (await fetch(url)).ok } catch { return false }
+}
+
 /** Speak every beat that still has no clip. Used when a day is about to fly,
     not when the journal is drawn. The legs' bridge lines are beats too: they
     are what the day sounds like between the places, and a day flown with the
@@ -37,12 +47,16 @@ export async function voiceDay<T extends { id: string; stops: Stop[]; legs?: Leg
   saveAudio: (planId: string, name: string, bytes: ArrayBuffer) => Promise<string>,
 ): Promise<T> {
   const voice = async (b: Beat, name: string): Promise<Beat> => {
-    if (b.audioUrl || !b.text.trim()) return b
+    if (!b.text.trim()) return b
+    if (b.audioUrl && await playable(b.audioUrl)) return b
+    const stale = !!b.audioUrl        // it named a clip, and the clip is gone
     try {
       const { bytes, durationSec } = await speak(b.text)
       return { ...b, audioUrl: await saveAudio(day.id, name, bytes), durationSec }
     } catch {
-      return b        // the caption still carries it; the flight is not stopped for a clip
+      // The caption still carries it; the flight is not stopped for a clip. A
+      // dead URL is dropped so nothing downstream believes there is audio.
+      return stale ? { ...b, audioUrl: null } : b
     }
   }
   const [stops, legs] = await Promise.all([
