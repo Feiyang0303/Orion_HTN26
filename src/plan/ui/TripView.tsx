@@ -208,7 +208,7 @@ function StopCard({ stop, index, onFocus }: { stop: Stop; index: number; onFocus
                       <span className="t-beat-mark" aria-hidden>{b.targetId ? '◎' : '●'}</span>
                       <p>
                         {b.claims?.length ? <Sentences claims={b.claims} /> : b.text}
-                        <small>{b.targetId ? `looking at ${stop.targets.find(t => t.id === b.targetId)?.name ?? 'something nearby'} · ` : ''}{b.durationSec.toFixed(0)}s{b.audioUrl ? '' : ' · voice not recorded'}</small>
+                        <small>{b.targetId ? `looking at ${stop.targets.find(t => t.id === b.targetId)?.name ?? 'something nearby'}` : ''}</small>
                       </p>
                     </li>
                   ))}

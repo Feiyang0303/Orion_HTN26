@@ -16,6 +16,7 @@ import SavedTrips from './plan/ui/SavedTrips'
 import JournalLibrary from './plan/ui/JournalLibrary'
 import { loadTrip, type Saved } from './trips/store'
 import type { Day, LatLon } from './types'
+import { voiceDay } from './plan/tts'
 import { breadcrumb, report, tag, withProfiler } from './telemetry'
 import Note from './ui/Note'
 
@@ -95,15 +96,24 @@ function App() {
   const onCrew = useCallback((events: CrewEvent[], working: boolean) => { setCrewEvents(events); setCrewWorking(working) }, [])
   const goHome = useCallback(() => { setResume(null); setLive(null); setKickoff(null); setFlying(null); setMap(EMPTY_MAP); setCrewEvents([]); setCrewWorking(false); setGlobeCity(null); setPhase('kickoff') }, [])
   const openJournal = useCallback((from: 'kickoff' | 'studio') => { setJournalFrom(from); setPhase('journal') }, [])
-  const flySavedDay = useCallback((saved: Saved, day: Day) => {
-    setResume(saved)
-    setKickoff({ wish: saved.trip.wish, mode: saved.mode, origin: saved.origin })
-    setOrigin({ lat: saved.origin.lat, lon: saved.origin.lon })
-    setGlobeCity({ lat: saved.origin.lat, lon: saved.origin.lon })
-    setFlying(day)
-    setFlightFrom('journal')
-    setPhase('flying')
-  }, [])
+  const startFly = useCallback((day: Day, from: 'studio' | 'journal', saved?: Saved) => {
+    void (async () => {
+      const voiced = await voiceDay(day, saveAudio)
+      if (saved) {
+        setResume({ ...saved, trip: { ...saved.trip, days: saved.trip.days.map(d => d.number === voiced.number ? voiced : d) } })
+        setKickoff({ wish: saved.trip.wish, mode: saved.mode, origin: saved.origin })
+        setOrigin({ lat: saved.origin.lat, lon: saved.origin.lon })
+        setGlobeCity({ lat: saved.origin.lat, lon: saved.origin.lon })
+      }
+      setLive(prev => prev
+        ? { ...prev, trip: { ...prev.trip, days: prev.trip.days.map(d => d.number === voiced.number ? voiced : d) } }
+        : prev)
+      setFlying(voiced)
+      setFlightFrom(from)
+      setPhase('flying')
+    })()
+  }, [saveAudio])
+  const flySavedDay = useCallback((saved: Saved, day: Day) => startFly(day, 'journal', saved), [startFly])
   const inFlight = phase === 'flying' || phase === 'done'
   // Which world is on screen. The globe is the stage until the trip is written; the real
   // city takes over then. The city's tiles only start loading once there are places to
@@ -149,7 +159,7 @@ function App() {
               {/* Keyed on the brief: new preferences are a new session, not an edit of the old one. */}
               <Studio key={resume?.id ?? `${kickoff.origin.name}-${kickoff.wish.days}-${kickoff.mode}`} saved={live ?? resume ?? undefined} onTrip={setLive}
                 wish={kickoff.wish} mode={kickoff.mode} origin={kickoff.origin}
-                onFly={day => { setFlying(day); setFlightFrom('studio'); setPhase('flying') }}
+                onFly={day => startFly(day, 'studio')}
                 onHome={goHome} onJournal={() => openJournal('studio')} onMap={setMap} onCrew={onCrew} saveAudio={saveAudio} />
             </motion.div>
           )}

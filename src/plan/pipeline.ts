@@ -34,6 +34,9 @@ export type PipelineOptions = {
   /** Where a beat's mp3 goes; returns the URL the browser will play it from.
       Browser: a blob URL. Fixture script: a file under public/plans/<id>/. */
   saveAudio: (planId: string, name: string, bytes: ArrayBuffer) => Promise<string>
+  /** Speak now. The app leaves this off and voices a day when it flies;
+      the paper journal never needs the clips. */
+  voice?: boolean
   signal?: AbortSignal
 }
 
@@ -68,6 +71,7 @@ export async function writePages(skeleton: Skeleton, opts: PipelineOptions): Pro
 
   say('Narrator', 'agent', 'working', `Writing ${chosen.length} pages`)
   let voiceFailed = false
+  const speakNow = opts.voice === true
 
   /* Wikipedia first: the opening note needs article/target counts, not the
      spoken draft, so it can start as soon as the sources are in. */
@@ -161,15 +165,17 @@ export async function writePages(skeleton: Skeleton, opts: PipelineOptions): Pro
         (weak.length ? `, ${traced.traced} of ${traced.total} after the rewrite` : ''))
     }
 
-    const beats = await Promise.all(drafts.map((d, i) => voiceQueue(async () => {
-      try {
-        const { bytes, durationSec } = await speak(d.text)
-        return withAudio(d, await saveAudio(planId, `${c.id}-${i}.mp3`, bytes), durationSec)
-      } catch (e) {
-        if (!voiceFailed) { voiceFailed = true; say('Voice', 'agent', 'failed', String((e as Error).message)) }
-        return withAudio(d, null, +estimateSec(d.text).toFixed(2))
-      }
-    })))
+    const beats = speakNow
+      ? await Promise.all(drafts.map((d, i) => voiceQueue(async () => {
+        try {
+          const { bytes, durationSec } = await speak(d.text)
+          return withAudio(d, await saveAudio(planId, `${c.id}-${i}.mp3`, bytes), durationSec)
+        } catch (e) {
+          if (!voiceFailed) { voiceFailed = true; say('Voice', 'agent', 'failed', String((e as Error).message)) }
+          return withAudio(d, null, +estimateSec(d.text).toFixed(2))
+        }
+      })))
+      : drafts.map(d => withAudio(d, null, +estimateSec(d.text).toFixed(2)))
 
     const brk = clock.breaks.find(b => b.after === index)
     const stop: Stop = {

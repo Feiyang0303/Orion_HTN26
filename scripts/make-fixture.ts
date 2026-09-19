@@ -53,6 +53,7 @@ if (missing.length) console.warn(`Warning: proxy is missing keys for: ${missing.
 
 const plan = await planTour(wish, {
   mode,
+  voice: true,
   onEvent: e => { if (e.type === 'crew') console.log(`[${e.agent}${e.kind === 'tool' ? ' (tool)' : ''}] ${e.state}: ${e.detail}`) },
   saveAudio: async (planId, name, bytes) => {
     const dir = join('public', 'plans', planId, 'audio')

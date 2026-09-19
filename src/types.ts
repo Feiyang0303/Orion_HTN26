@@ -120,7 +120,7 @@ export type Claim = {
 export type Beat = {
   text: string
   targetId?: string          // must match a Stop.targets[].id; absent = just the stop itself
-  audioUrl: string | null    // pre-generated TTS; null only if TTS failed
+  audioUrl: string | null    // spoken for the flythrough; the journal never plays this
   durationSec: number        // real audio duration; a words/rate estimate when audioUrl is null
   claims?: Claim[]           // each sentence traced to its source, or marked unverified
 }

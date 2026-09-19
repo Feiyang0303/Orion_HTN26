@@ -17,7 +17,7 @@ export function loadEnv(file = '.env') {
 export const scrub = str => String(str)
   .replace(/mongodb(?:\+srv)?:\/\/[^@\s/]+@/gi, 'mongodb://[redacted]@')
   .replace(/([?&](?:key|session|token|apikey|api_key)=)[^&#\s"']+/gi, '$1[redacted]')
-  .replace(/\b(?:sk-[A-Za-z0-9_-]*\*{3,}[A-Za-z0-9]*|sk-[A-Za-z0-9_-]{8,}|AIza[A-Za-z0-9_-]{20,}|xi-[A-Za-z0-9]{16,})/g, '[redacted-key]')
+  .replace(/\b(?:sk_[A-Za-z0-9]{8,}|sk-[A-Za-z0-9_-]*\*{3,}[A-Za-z0-9]*|sk-[A-Za-z0-9_-]{8,}|AIza[A-Za-z0-9_-]{20,}|xi-[A-Za-z0-9]{16,})/g, '[redacted-key]')
 // Cycle-safe and bounded: Sentry's own event and span objects can be circular.
 export const scrubDeep = (v, seen = new WeakSet(), depth = 0) => {
   if (typeof v === 'string') return scrub(v)

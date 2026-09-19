@@ -105,16 +105,78 @@ async function llm(req, res) {
 }
 
 /* ---- TTS ---------------------------------------------------------------- */
-async function tts(req, res) {
-  const key = requireEnv('ELEVENLABS_API_KEY')
-  const voice = requireEnv('ELEVENLABS_VOICE_ID')
-  const { text } = await readJson(req)
-  if (!text) throw new HttpError(400, 'text required')
-  const upstream = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voice}?output_format=mp3_44100_128`, {
+/* George is a default ElevenLabs voice (warm storyteller). Library voices
+   like Rachel 402 on a free key; we pick from the account when unset. */
+const DEFAULT_VOICE = 'JBFqnCBsd6RMkjVDRZzb'
+let resolvedVoice = ''
+
+async function listVoices(key) {
+  const r = await fetch('https://api.elevenlabs.io/v1/voices', { headers: { 'xi-api-key': key } })
+  const data = await r.json().catch(() => ({}))
+  return data.voices ?? []
+}
+
+async function voiceId(key) {
+  if (resolvedVoice) return resolvedVoice
+  const set = env('ELEVENLABS_VOICE_ID')
+  if (set) return (resolvedVoice = set)
+  try {
+    const voices = await listVoices(key)
+    resolvedVoice = voices.find(v => v.voice_id === DEFAULT_VOICE)?.voice_id
+      || voices.find(v => /george|storyteller|alice|educator/i.test(v.name ?? ''))?.voice_id
+      || voices.find(v => v.category === 'premade' || v.category === 'default')?.voice_id
+      || voices[0]?.voice_id
+      || DEFAULT_VOICE
+  } catch {
+    resolvedVoice = DEFAULT_VOICE
+  }
+  return resolvedVoice
+}
+
+/* Strip the audio tags out of a line. v3 reads "[warmly] it is right there" as
+   a delivery note; every other model reads it aloud, brackets and all. */
+const untag = t => t.replace(/\[[^\]]{1,24}\]/g, ' ').replace(/\s{2,}/g, ' ').trim()
+
+async function speak(key, voice, text, model, stability) {
+  return fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voice}?output_format=mp3_44100_128`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'xi-api-key': key, accept: 'audio/mpeg' },
-    body: JSON.stringify({ text, model_id: env('ELEVENLABS_MODEL') || 'eleven_flash_v2_5' }),
+    body: JSON.stringify({
+      text: text.trim().slice(0, 5000),
+      model_id: model,
+      voice_settings: { stability, similarity_boost: 0.75 },
+    }),
   })
+}
+
+/* The written pages are spoken by the fast model: there are dozens of them and
+   they are read, not performed. The guide answering a question is one line at a
+   time and wants to sound like someone talking, so it asks for `expressive`,
+   which uses v3 and the audio tags the model wrote into the line.
+   
+   v3 is not on every account. When it is refused, rather than failing the
+   answer, the same line is spoken by the fast model with the tags taken out —
+   flatter, but the person still gets an answer, which matters more. */
+async function tts(req, res) {
+  const key = requireEnv('ELEVENLABS_API_KEY')
+  const { text, expressive } = await readJson(req)
+  if (!text || typeof text !== 'string') throw new HttpError(400, 'text required')
+  const voice = await voiceId(key)
+  const fast = env('ELEVENLABS_MODEL') || 'eleven_flash_v2_5'
+
+  let upstream
+  if (expressive) {
+    // Lower stability leaves v3 room to act on the tags; at 0.45 it flattens them out.
+    upstream = await speak(key, voice, text, env('ELEVENLABS_MODEL_EXPRESSIVE') || 'eleven_v3', 0.3)
+    if (!upstream.ok) {
+      const why = (await upstream.text()).slice(0, 160)
+      console.warn(`[tts] expressive model refused (${upstream.status}: ${why}); falling back to ${fast}`)
+      upstream = await speak(key, voice, untag(text), fast, 0.45)
+    }
+  } else {
+    upstream = await speak(key, voice, untag(text), fast, 0.45)
+  }
+
   if (!upstream.ok) throw new HttpError(502, `elevenlabs ${upstream.status}: ${(await upstream.text()).slice(0, 200)}`)
   res.writeHead(200, { 'content-type': 'audio/mpeg' }).end(Buffer.from(await upstream.arrayBuffer()))
 }
@@ -183,7 +245,7 @@ const routes = {
     // fails only when the process is down — which is what uptime is for.
     sentry: !!env('SENTRY_DSN'),
     persistentTrips: trips.persistent,
-    keys: { openai: !!env('OPENAI_API_KEY'), elevenlabs: !!env('ELEVENLABS_API_KEY') && !!env('ELEVENLABS_VOICE_ID'), routes: !!routesKey() },
+    keys: { openai: !!env('OPENAI_API_KEY'), elevenlabs: !!env('ELEVENLABS_API_KEY'), routes: !!routesKey() },
   }),
   'GET /api/wiki': handleWiki,
   'POST /api/overpass': (req, res) => handleOverpass(req, res, readJson),
