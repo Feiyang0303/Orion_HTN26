@@ -5,8 +5,8 @@
  *   GET  /api/health          which keys are configured (booleans only)
  *   POST /api/llm             { role: 'scout'|'critic'|'narrator', system, user, maxTokens } -> { text }
  *   POST /api/tts             { text } -> audio/mpeg (ElevenLabs, mp3_44100_128)
- *   POST /api/routes/matrix   { points: LatLon[] } -> { distanceM: (number|null)[][], durationSec: (number|null)[][] }
- *   POST /api/routes/walk     { from: LatLon, to: LatLon } -> { encodedPolyline, distanceM, durationSec }
+ *   POST /api/routes/matrix   { points: LatLon[], transport? } -> { distanceM: (number|null)[][], durationSec: (number|null)[][] }
+ *   POST /api/routes/walk     { from: LatLon, to: LatLon, transport? } -> { encodedPolyline, distanceM, durationSec }
  */
 import { createServer } from 'node:http'
 import { readFileSync, existsSync } from 'node:fs'
@@ -20,6 +20,8 @@ if (existsSync('.env')) {
 
 const env = name => process.env[name] || ''
 const PORT = Number(env('PORT') || 8787)
+const DEFAULT_MODELS = { scout: 'gpt-4o', critic: 'gpt-4o', narrator: 'gpt-4o' }
+const routesKey = () => env('GOOGLE_ROUTES_KEY') || env('VITE_GOOGLE_MAPS_KEY')
 
 class HttpError extends Error {
   constructor(status, message) { super(message); this.status = status }
@@ -36,9 +38,10 @@ const readJson = req => new Promise((resolve, reject) => {
 async function llm(req, res) {
   const key = requireEnv('OPENAI_API_KEY')
   const { role, system, user, maxTokens = 2000 } = await readJson(req)
-  const model = requireEnv(`LLM_MODEL_${String(role).toUpperCase()}`)
-  // The narrator is the fast, low-reasoning call; scout/critic use the model default unless overridden.
-  const effort = env(`LLM_EFFORT_${String(role).toUpperCase()}`) || (role === 'narrator' ? 'low' : '')
+  const model = env(`LLM_MODEL_${String(role).toUpperCase()}`) || DEFAULT_MODELS[role] || ''
+  if (!model) throw new HttpError(501, `LLM_MODEL_${String(role).toUpperCase()} is not set on the proxy.`)
+  // Reasoning models only: gpt-4o rejects reasoning_effort. Narrator stays low on those models.
+  const effort = env(`LLM_EFFORT_${String(role).toUpperCase()}`) || (role === 'narrator' && /(?:^o\d|gpt-5)/i.test(model) ? 'low' : '')
   const upstream = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
@@ -73,11 +76,16 @@ async function tts(req, res) {
 
 /* ---- Routes ------------------------------------------------------------- */
 const wp = p => ({ location: { latLng: { latitude: p.lat, longitude: p.lon } } })
+/* The desk's transport, in the Routes API's words. Anything unknown walks,
+   because a wrong travel mode is a wrong day and walking is the honest floor. */
+const MODE = { walk: 'WALK', cycle: 'BICYCLE', transit: 'TRANSIT', drive: 'DRIVE' }
+const modeOf = t => MODE[t] || 'WALK'
 const secs = d => (d ? parseFloat(String(d).replace('s', '')) : 0)
 
 async function routesMatrix(req, res) {
-  const key = requireEnv('GOOGLE_ROUTES_KEY')
-  const { points } = await readJson(req)
+  const key = routesKey()
+  if (!key) throw new HttpError(501, 'GOOGLE_ROUTES_KEY is not set on the proxy.')
+  const { points, transport } = await readJson(req)
   if (!Array.isArray(points) || points.length < 2) throw new HttpError(400, 'need >= 2 points')
   const upstream = await fetch('https://routes.googleapis.com/distanceMatrix/v2:computeRouteMatrix', {
     method: 'POST',
@@ -88,7 +96,7 @@ async function routesMatrix(req, res) {
     body: JSON.stringify({
       origins: points.map(p => ({ waypoint: wp(p) })),
       destinations: points.map(p => ({ waypoint: wp(p) })),
-      travelMode: 'WALK',
+      travelMode: modeOf(transport),
     }),
   })
   const rows = await upstream.json()
@@ -105,27 +113,28 @@ async function routesMatrix(req, res) {
 }
 
 async function routesWalk(req, res) {
-  const key = requireEnv('GOOGLE_ROUTES_KEY')
-  const { from, to } = await readJson(req)
+  const key = routesKey()
+  if (!key) throw new HttpError(501, 'GOOGLE_ROUTES_KEY is not set on the proxy.')
+  const { from, to, transport } = await readJson(req)
   const upstream = await fetch('https://routes.googleapis.com/directions/v2:computeRoutes', {
     method: 'POST',
     headers: {
       'content-type': 'application/json', 'x-goog-api-key': key,
       'x-goog-fieldmask': 'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline',
     },
-    body: JSON.stringify({ origin: wp(from), destination: wp(to), travelMode: 'WALK', polylineEncoding: 'ENCODED_POLYLINE' }),
+    body: JSON.stringify({ origin: wp(from), destination: wp(to), travelMode: modeOf(transport), polylineEncoding: 'ENCODED_POLYLINE' }),
   })
   const data = await upstream.json()
   if (!upstream.ok) throw new HttpError(502, data?.error?.message ?? `routes ${upstream.status}`)
   const r = data.routes?.[0]
-  if (!r) throw new HttpError(502, 'no walking route found')
+  if (!r) throw new HttpError(502, 'no route found')
   json(res, 200, { encodedPolyline: r.polyline.encodedPolyline, distanceM: r.distanceMeters ?? 0, durationSec: secs(r.duration) })
 }
 
 const routes = {
   'GET /api/health': (_req, res) => json(res, 200, {
     ok: true,
-    keys: { openai: !!env('OPENAI_API_KEY'), elevenlabs: !!env('ELEVENLABS_API_KEY') && !!env('ELEVENLABS_VOICE_ID'), routes: !!env('GOOGLE_ROUTES_KEY') },
+    keys: { openai: !!env('OPENAI_API_KEY'), elevenlabs: !!env('ELEVENLABS_API_KEY') && !!env('ELEVENLABS_VOICE_ID'), routes: !!routesKey() },
   }),
   'POST /api/llm': llm,
   'POST /api/tts': tts,

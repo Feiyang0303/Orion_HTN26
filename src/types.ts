@@ -8,7 +8,8 @@
  *  - Coordinates are WGS84 degrees, always { lat, lon } objects, never bare
  *    tuples: [lat, lon] vs [lon, lat] is the classic silent bug, and a
  *    polyline of a few hundred points is cheap enough to name.
- *  - Times are seconds (durationSec) or metres (distanceM). No strings.
+ *  - Times are seconds (durationSec) or metres (distanceM). No strings, except
+ *    a clock time a person reads, which is 'HH:MM'.
  *  - Everything here is JSON-serialisable: a finished Plan is cached to disk
  *    as-is and loaded back with no transformation.
  */
@@ -22,6 +23,41 @@ export type Source = {
   label: string     // "Wikipedia: Old Town Hall"
   url: string
 }
+
+/* ---- what the person asked for ------------------------------------------- */
+
+export type Transport = 'walk' | 'cycle' | 'transit' | 'drive'
+export const TRANSPORT_LABEL: Record<Transport, string> = {
+  walk: 'On foot', cycle: 'By bicycle', transit: 'Public transport', drive: 'Driving',
+}
+
+export type Pace = 'gentle' | 'steady' | 'full'
+/** How long a pace lingers, as a multiplier on the Timekeeper's per-kind table.
+    Derived from the journal's 85 / 60 / 42 minutes against a 60-minute middle. */
+export const PACE_FACTOR: Record<Pace, number> = { gentle: 1.4, steady: 1, full: 0.7 }
+
+/** The desk, as data. Everything on it changes the plan; nothing on it is
+    decoration. `wants` are places named by the person and are never dropped. */
+export type Wish = {
+  city: string
+  wants: string[]        // free text, one place per line, exactly as typed
+  startAt: string        // '09:30'
+  endAt: string          // '18:00'
+  from: string           // a hotel, a station, or ''
+  interests: string[]
+  pace: Pace
+  transport: Transport
+}
+
+/** A name resolved to a point on the earth. */
+export type Waypoint = LatLon & {
+  asked: string          // the text the person typed, kept so the book can say so
+  name: string
+  /** Kept, not resolved silently, when the geocoder was not sure. */
+  alternatives?: { name: string; lat: number; lon: number }[]
+}
+
+/* ---- the plan ------------------------------------------------------------ */
 
 /** A nearby thing the guide may point at. Comes from Wikipedia geosearch
     (~300 m around a stop), never from the model: a Beat's targetId must be
@@ -60,15 +96,27 @@ export type Stop = LatLon & {
   /** Timekeeper output (code, not an LLM). B derives dwell from beats, this
       is what the book prints ("~25 min here"). */
   visitMin: number
+  /** Clock time the Timekeeper has you arriving, 'HH:MM'. B ignores it. */
+  arrival: string
+  /** Why this is in the day, in the person's own words where possible. */
+  fits: string
+  /** True when the person named this place themselves. Those are never
+      dropped, reordered away, or overruled by the Critic. */
+  asked: boolean
 }
 
-/** legs[i] is the walk from stops[i] to stops[i+1]; legs.length === stops.length - 1. */
+/** legs[i] is the journey from stops[i] to stops[i+1]; legs.length === stops.length - 1. */
 export type Leg = {
   fromStopId: string
   toStopId: string
-  polyline: LatLon[]         // decoded Routes polyline, walking
+  polyline: LatLon[]         // decoded Routes polyline
   distanceM: number
   durationSec: number
+  transport: Transport
+  /** True when the router could not answer and this is a straight line priced
+      at a walking-speed guess. The book says so out loud; a confident line
+      drawn across a river is the most expensive lie a travel app can tell. */
+  estimated: boolean
 }
 
 export type Plan = {
@@ -78,6 +126,15 @@ export type Plan = {
   mode: 'full' | 'short'     // short = ~3 stops, ~15 s each, for demos
   stops: Stop[]
   legs: Leg[]
+  /** The desk that produced this plan, kept so the book can print what was asked. */
+  wish: Wish
+  /** Where the day starts from, if the person gave one. A hotel is not
+      somewhere you visit, so it is not a stop. */
+  from: Waypoint | null
+  /** The hop from `from` to the first stop. Belongs to no stop. */
+  approach: Leg | null
+  /** One line under the title, written from the day itself. */
+  epigraph: string
   generatedAt: string        // ISO
   /** Honest labelling for the UI: which parts were code, which were models. */
   provenance: { router: 'code'; timekeeper: 'code'; scout: string; critic: string; narrator: string; tts: string }  // e.g. "elevenlabs:eleven_flash_v2_5"
@@ -98,3 +155,12 @@ export type FlyProps = {
 /** A -> B on live replan. B swaps to `plan` without a cut: it keeps the
     camera and re-derives its timeline from the first stop not yet reached. */
 export type Replan = { reason: string; plan: Plan; fromStopId: string }
+
+/* ---- clock helpers (shared by the timekeeper and the book) --------------- */
+
+export const MINS = (t: string) => {
+  const [h, m] = (t || '0:0').split(':').map(Number)
+  return (h || 0) * 60 + (m || 0)
+}
+export const HHMM = (mins: number) =>
+  `${String(Math.floor(mins / 60) % 24).padStart(2, '0')}:${String(Math.round(mins) % 60).padStart(2, '0')}`

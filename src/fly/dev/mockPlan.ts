@@ -11,6 +11,7 @@ const ll = (lat: number, lon: number): LatLon => ({ lat, lon })
 
 const stop = (id: string, name: string, at: LatLon, targets: Stop['targets'], beats: Beat[]): Stop => ({
   id, name, ...at, blurb: '[mock] placeholder blurb', photo: null, visitMin: 15,
+  arrival: '10:00', fits: '[mock] the shape of the day', asked: false,
   sources: [{ kind: 'wikipedia', label: `Wikipedia: ${name}`, url: 'https://en.wikipedia.org' }], targets, beats,
 })
 const target = (id: string, name: string, at: LatLon) => ({
@@ -41,14 +42,19 @@ const stops: Stop[] = [
 // Real walking routes from the Google Routes API (computeRoutes, WALK), fetched once and pasted in,
 // so this file needs no key at runtime. Stops are still approximate coordinates.
 const legs: Leg[] = [
-  { fromStopId: "notre-dame", toStopId: "pont-neuf", distanceM: 861, durationSec: 727,
+  { fromStopId: "notre-dame", toStopId: "pont-neuf", distanceM: 861, durationSec: 727, transport: 'walk', estimated: false,
     polyline: [ll(48.85328, 2.35013), ll(48.85354, 2.34926), ll(48.85357, 2.34902), ll(48.85362, 2.34892), ll(48.85364, 2.34877), ll(48.85371, 2.34856), ll(48.85369, 2.34833), ll(48.85385, 2.34784), ll(48.85376, 2.34773), ll(48.85357, 2.34759), ll(48.85353, 2.34749), ll(48.85352, 2.34734), ll(48.85353, 2.34725), ll(48.85364, 2.34731), ll(48.85365, 2.34726), ll(48.85367, 2.34727), ll(48.85369, 2.34708), ll(48.85362, 2.34706), ll(48.85372, 2.34673), ll(48.85396, 2.34608), ll(48.85405, 2.34596), ll(48.85407, 2.34579), ll(48.85434, 2.34506), ll(48.85438, 2.34510), ll(48.85449, 2.34486), ll(48.85444, 2.34480), ll(48.85487, 2.34384), ll(48.85494, 2.34386), ll(48.85528, 2.34326), ll(48.85532, 2.34312), ll(48.85547, 2.34295), ll(48.85541, 2.34282), ll(48.85658, 2.34153), ll(48.85681, 2.34127), ll(48.85671, 2.34112), ll(48.85678, 2.34094), ll(48.85702, 2.34113), ll(48.85695, 2.34131)] },
-  { fromStopId: "pont-neuf", toStopId: "louvre", distanceM: 847, durationSec: 676,
+  { fromStopId: "pont-neuf", toStopId: "louvre", distanceM: 847, durationSec: 676, transport: 'walk', estimated: false,
     polyline: [ll(48.85700, 2.34126), ll(48.85702, 2.34113), ll(48.85715, 2.34125), ll(48.85725, 2.34138), ll(48.85739, 2.34142), ll(48.85841, 2.34229), ll(48.85847, 2.34229), ll(48.85892, 2.33982), ll(48.85897, 2.33962), ll(48.85915, 2.33968), ll(48.85914, 2.33976), ll(48.86000, 2.34022), ll(48.86033, 2.33872), ll(48.86027, 2.33863), ll(48.86026, 2.33849), ll(48.86033, 2.33840), ll(48.86041, 2.33839), ll(48.86090, 2.33635), ll(48.86102, 2.33642)] },
 ]
 
 export const mockPlan: Plan = {
   id: 'mock-paris', city: 'Paris', origin: ll(48.85700, 2.34130), mode: 'short', stops, legs,
+  wish: {
+    city: 'Paris', wants: [], from: '', startAt: '10:00', endAt: '18:00',
+    interests: ['History'], pace: 'steady', transport: 'walk',
+  },
+  from: null, approach: null, epigraph: '[mock] three places on the river.',
   generatedAt: new Date(0).toISOString(),
   provenance: { router: 'code', timekeeper: 'code', scout: 'mock', critic: 'mock', narrator: 'mock', tts: 'none' },
 }
