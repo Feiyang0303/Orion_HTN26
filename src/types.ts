@@ -173,6 +173,12 @@ export type Leg = {
       at a walking-speed guess. The book says so out loud; a confident line
       drawn across a river is the most expensive lie a travel app can tell. */
   estimated: boolean
+  /** How this leg is actually travelled, in words, when the router knew: "the
+      4 subway from Châtelet to Saint-Michel". Google Routes gives the line and
+      the two stations; a guide who can say which platform is a different thing
+      from one who says "take the metro". Absent on foot and where transit
+      details were not returned. */
+  how?: string
   /** One line spoken on the way, so the day sounds like a journey rather than
       a set of pages read in a row. Absent when it could not be written; the
       flight then crosses this leg in silence. The journal never plays it. */
@@ -196,6 +202,14 @@ export type Plan = {
   /** The way back from the last stop to `from` at the end of the day, so the
       day is a loop from the bed and not a line that stops in the street. */
   back: Leg | null
+  /** The welcome, spoken over the city before the day begins: who is speaking,
+      what the day holds, the forecast and what to wear — the one thing that
+      could not be in the book, because it was not known when the book was
+      written. Absent when it could not be written. */
+  opening?: Beat
+  /** The goodbye, spoken over the last place. Different for a day on its own,
+      a day with more to come, and the last day of a trip. */
+  closing?: Beat
   /** One line under the title, counted from the day itself. */
   epigraph: string
   /** A short paragraph on how this particular day is shaped and why, written

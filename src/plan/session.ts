@@ -164,7 +164,7 @@ async function morePlacesImpl(s: Session, avoid: Candidate[], count: number): Pr
 const asWaypoint = (b: Stay): Waypoint => ({ asked: b.name, name: b.name, lat: b.lat, lon: b.lon })
 
 /** One day, routed from the bed, timed, written and fed. */
-async function buildDay(s: Session, draft: DayDraft, number: number, opts: PipelineOptions): Promise<Day> {
+async function buildDay(s: Session, draft: DayDraft, number: number, opts: PipelineOptions, plan_of?: { count: number; nextTitle?: string }): Promise<Day> {
   const { wish } = s
   const from = s.bed ? asWaypoint(s.bed) : null
   if (!draft.stops.length) throw new Error(`Day ${number} has no places in it.`)
@@ -191,7 +191,10 @@ async function buildDay(s: Session, draft: DayDraft, number: number, opts: Pipel
     bed: s.bed ? { id: s.bed.id, name: s.bed.name, lat: s.bed.lat, lon: s.bed.lon } : null,
   }, wish, s.signal)
 
-  const plan = await writePages({ wish, mode: s.mode, origin: s.origin, from, stops: ordered, legs, approach, back }, {
+  const plan = await writePages({
+    wish, mode: s.mode, origin: s.origin, from, stops: ordered, legs, approach, back,
+    day: { number, count: plan_of?.count ?? 1, title: draft.title, nextTitle: plan_of?.nextTitle },
+  }, {
     ...opts, written: s.written, signal: s.signal,
     onEvent: e => s.onEvent(e.type === 'crew' ? { ...e, detail: `Day ${number}: ${e.detail}` } : e),
   })
@@ -207,7 +210,7 @@ async function buildDay(s: Session, draft: DayDraft, number: number, opts: Pipel
 async function stagePlanImpl(s: Session, drafts: DayDraft[], opts: PipelineOptions): Promise<Trip> {
   const work = drafts.filter(d => d.stops.length)
   const days = (await mapLimited(work, DAY_CONCURRENCY, async (d, i) => {
-    const day = await buildDay(s, d, i + 1, opts)
+    const day = await buildDay(s, d, i + 1, opts, { count: work.length, nextTitle: work[i + 1]?.title })
     s.onEvent({ type: 'plan', plan: day })
     return day
   })).sort((a, b) => a.number - b.number)

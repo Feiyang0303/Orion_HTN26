@@ -6,21 +6,34 @@ import type { Beat, Plan } from '../types'
  * is the sum of its beats' audio lengths, so the camera never outruns or
  * waits on the guide.
  *
- *   dive → dwell(stop 0) → travel(leg 0) → dwell(stop 1) → … → dwell(last)
+ *   hold(welcome) → dive → dwell(stop 0) → travel(leg 0) → … → dwell(last) → hold(goodbye)
+ *
+ * The gaps are deliberately small. Every one of them was audible: a beat is a
+ * sentence or two of one continuous talk, not a slide, and a guide who leaves
+ * a third of a second between every sentence sounds like a station
+ * announcement. What silence there is belongs at the seams, not inside them.
  */
 
 export const DIVE_SEC = 5      // planning view → first stop
-export const LEAD_SEC = 1.4    // camera settles before the guide speaks
-export const BEAT_GAP = 0.35   // breath between beats
-export const TAIL_SEC = 1.0    // hold after the last beat before moving on
-export const BRIDGE_LEAD_SEC = 0.8   // the camera is under way before the line on the way is spoken
+export const LEAD_SEC = 0.7    // camera settles before the guide speaks
+export const BEAT_GAP = 0.12   // breath between beats: a breath, not a pause
+export const TAIL_SEC = 0.5    // hold after the last beat before moving on
+export const HOLD_LEAD_SEC = 0.6     // before the welcome and the goodbye
+export const BRIDGE_LEAD_SEC = 0.35  // the camera is under way before the line on the way is spoken
 export const FLY_MPS = 35      // cruising speed between stops (eased, so peak is higher)
-export const MIN_TRAVEL_SEC = 5
-export const MAX_TRAVEL_SEC = 16
+export const MIN_TRAVEL_SEC = 4
+/* A leg with nothing to say is crossed quickly; a leg with a line to say takes
+   as long as the line, and no longer. The old ceiling of sixteen seconds was
+   set when legs were silent, and it left the guide finishing mid-river and the
+   rest of the crossing in silence. */
+export const MAX_TRAVEL_SEC = 9
 
 export type BeatSlot = { index: number; t0: number; t1: number; beat: Beat }
 
 export type Segment =
+  /** The two ends of the day, spoken over the wide view of the whole city:
+      the welcome before the dive and the goodbye after the last place. */
+  | { kind: 'hold'; which: 'opening' | 'closing'; t0: number; t1: number; beats: BeatSlot[] }
   | { kind: 'dive'; t0: number; t1: number }
   | { kind: 'dwell'; stop: number; t0: number; t1: number; beats: BeatSlot[] }
   /** `beats` holds the leg's bridge line, if it has one: the same shape as a
@@ -46,6 +59,17 @@ export function buildTimeline(plan: Plan, travelSec = flatTravelSec): Timeline {
   let t = 0
   const push = <S extends Segment>(mk: (t0: number) => S) => { const s = mk(t); segments.push(s); t = s.t1; return s }
 
+  /** A beat said over the wide view: the camera is already where it needs to be,
+      so the segment is exactly as long as the words. */
+  const hold = (which: 'opening' | 'closing', beat: Beat | undefined) => {
+    if (!beat) return
+    push(t0 => {
+      const slot: BeatSlot = { index: 0, t0: t0 + HOLD_LEAD_SEC, t1: t0 + HOLD_LEAD_SEC + beat.durationSec, beat }
+      return { kind: 'hold', which, t0, t1: slot.t1 + TAIL_SEC, beats: [slot] }
+    })
+  }
+
+  hold('opening', plan.opening)
   push(t0 => ({ kind: 'dive', t0, t1: t0 + DIVE_SEC }))
   plan.stops.forEach((stop, i) => {
     dwellStart[i] = t
@@ -70,6 +94,8 @@ export function buildTimeline(plan: Plan, travelSec = flatTravelSec): Timeline {
       return { kind: 'travel', leg: i, t0, t1: Math.max(t0 + flat, slot.t1 + TAIL_SEC), beats: [slot] }
     })
   })
+
+  hold('closing', plan.closing)
 
   const total = t
   const at = (time: number) => {

@@ -1,5 +1,5 @@
 import { report, observeCrew } from '../telemetry'
-import type { Leg, Plan, Stop, Target, Wish } from '../types'
+import type { Beat, Leg, Plan, Stop, Target, Wish } from '../types'
 import { HHMM, MINS, TRANSPORT_LABEL } from '../types'
 import type { Agent, CrewEvent } from './events'
 import { verdict } from './events'
@@ -7,7 +7,8 @@ import { geocode, locate } from './geocode'
 import { notable, photoFor, warmStopSources, wikiSource, type Article } from './wikipedia'
 import { bestOrder, legsFor, travelSecs } from './router'
 import { schedule, windowOf } from './timekeeper'
-import { narrate, withAudio, writeBridges, writePreface, type Draft, type Mode, type StopContext } from './narrator'
+import { narrate, withAudio, writeBridges, writeClosing, writeOpening, writePreface, type Draft, type Mode, type StopContext } from './narrator'
+import { forecast, wearLine, weatherLine } from './weather'
 import { estimateSec, speak } from './tts'
 import { auditText, repair, tally, unsupportedIn } from './auditor'
 import { findStops, matchWant, roomFor, tripRadius, type Candidate, type Skeleton } from './crew'
@@ -55,7 +56,8 @@ const voiceQueue = limiter(MAX_TTS_CONCURRENT)
 /** The book. Targets, narration and voice per stop, in parallel, plus the
     photo — then the clock over the finished set. */
 export async function writePages(skeleton: Skeleton, opts: PipelineOptions): Promise<Plan> {
-  const { wish, mode, origin, from, stops: chosen, legs, approach, back = null } = skeleton
+  const { wish, mode, origin, from, stops: chosen, legs, approach, back = null, day } = skeleton
+  const dayNumber = day?.number ?? 1, dayCount = day?.count ?? 1
   const { saveAudio } = opts
   const onEvent = observeCrew(opts.onEvent ?? (() => {}))
   const say = (agent: Agent, kind: 'tool' | 'agent', state: 'working' | 'done' | 'reworking' | 'failed', detail: string) =>
@@ -68,6 +70,13 @@ export async function writePages(skeleton: Skeleton, opts: PipelineOptions): Pro
     say('Timekeeper', 'tool', 'done',
       clock.breaks.map(b => `${b.minutes} min kept clear for ${b.label} after ${chosen[b.after]?.name}`).join('; '))
   }
+
+  /* The forecast for THIS day of the trip, read as the journal reads it: the
+     days from tomorrow, in order, and honest about not reaching far ahead. It
+     is fetched alongside the pages because nothing else waits on it. */
+  const weatherP = forecast(origin, Math.max(1, dayNumber), opts.signal)
+    .then(f => f[dayNumber - 1])
+    .catch(() => undefined)
 
   say('Narrator', 'agent', 'working', `Writing ${chosen.length} pages`)
   let voiceFailed = false
@@ -201,7 +210,7 @@ export async function writePages(skeleton: Skeleton, opts: PipelineOptions): Pro
       from: stops[i]?.name ?? '', to: stops[i + 1]?.name ?? '',
       transport: TRANSPORT_LABEL[l.transport].toLowerCase(),
       minutes: Math.round(l.durationSec / 60),
-      km: +(l.distanceM / 1000).toFixed(1),
+      km: +(l.distanceM / 1000).toFixed(1), how: l.how,
       fromAbout: stops[i]?.blurb, about: stops[i + 1]?.blurb,
     }))).catch(() => legs.map(() => ''))
     spanned = await Promise.all(legs.map(async (l, i): Promise<Leg> => {
@@ -224,12 +233,53 @@ export async function writePages(skeleton: Skeleton, opts: PipelineOptions): Pro
       written ? `${written} of ${legs.length} legs have something said on the way` : 'The legs are flown in silence')
   }
 
+  /* The two ends. The opening carries the forecast, which is the one thing in
+     the whole day that the book could not already have told them. */
+  const onFootKm = [...legs, ...(approach ? [approach] : []), ...(back ? [back] : [])]
+    .filter(l => l.transport === 'walk').reduce((n, l) => n + l.distanceM, 0) / 1000
+  const weather = await weatherP
+  const transportWords = [...new Set([...(approach ? [approach] : []), ...legs, ...(back ? [back] : [])]
+    .map(l => TRANSPORT_LABEL[l.transport].toLowerCase()))].join(' and ') || TRANSPORT_LABEL[wish.transport === 'auto' ? 'walk' : wish.transport].toLowerCase()
+
+  say('Narrator', 'agent', 'working', 'Writing the welcome and the goodbye')
+  const [openingText, closingText] = await Promise.all([
+    writeOpening({
+      city: origin.name, number: dayNumber, count: dayCount, title: day?.title,
+      stops: stops.map(st => st.name), startAt: HHMM(window.startMin), endsAt: clock.endsAt,
+      transport: transportWords, party: wish.party, interests: wish.interests, from: from?.name,
+      weather: weather ? weatherLine(weather) : undefined,
+      wear: wearLine(weather, onFootKm),
+    }).catch(() => ''),
+    writeClosing({
+      city: origin.name, number: dayNumber, count: dayCount, title: day?.title,
+      last: stops[stops.length - 1]?.name ?? '', stopCount: stops.length,
+      km: totalKm, endsAt: clock.endsAt, nextTitle: day?.nextTitle, back: back ? from?.name : undefined,
+    }).catch(() => ''),
+  ])
+  const voiceEnd = async (text: string, name: string): Promise<Beat | undefined> => {
+    if (!text) return undefined
+    if (!speakNow) return withAudio({ text }, null, +estimateSec(text).toFixed(2))
+    return voiceQueue(async () => {
+      try {
+        const { bytes, durationSec } = await speak(text)
+        return withAudio({ text }, await saveAudio(planId, name, bytes), durationSec)
+      } catch {
+        return withAudio({ text }, null, +estimateSec(text).toFixed(2))
+      }
+    })
+  }
+  const [opening, closing] = await Promise.all([voiceEnd(openingText, 'opening.mp3'), voiceEnd(closingText, 'closing.mp3')])
+  say('Narrator', 'agent', opening || closing ? 'done' : 'failed',
+    opening && closing ? `The day opens with the forecast for ${weather?.label ?? 'a day no forecast reaches'} and closes ${dayCount > 1 ? `as day ${dayNumber} of ${dayCount}` : 'on its own'}`
+      : 'One of the two ends could not be written')
+
   const preface = await prefaceP
   say('Narrator', 'agent', preface ? 'done' : 'failed', preface ? 'The opening note is written' : 'No opening note — the counted line stands alone')
 
   const plan: Plan = {
     id: planId, city: origin.name, origin: { lat: origin.lat, lon: origin.lon }, mode, stops, legs: spanned,
     wish, from, approach, back,
+    ...(opening ? { opening } : {}), ...(closing ? { closing } : {}),
     epigraph: epigraphFor(stops, legs, approach, window, clock.endsAt), preface,
     generatedAt: new Date().toISOString(),
     provenance: {

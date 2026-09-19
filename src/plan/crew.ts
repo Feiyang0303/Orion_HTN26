@@ -234,4 +234,8 @@ export type Skeleton = {
   legs: Leg[]            // stops[i] -> stops[i+1]
   approach: Leg | null   // from -> stops[0]
   back?: Leg | null      // stops[last] -> from
+  /** Where this day sits in the trip. Absent means a day on its own, which is
+      what the headless planner makes. The guide's two ends need it: a day with
+      more to come does not end the way the last one does. */
+  day?: { number: number; count: number; title?: string; nextTitle?: string }
 }

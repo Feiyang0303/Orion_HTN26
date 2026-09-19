@@ -137,7 +137,7 @@ export type StopContext = {
    forbids them: the brochure adjective, and saying the tour out loud. Checked
    in code, quoted back, and rewritten once — the same shape as the Auditor's
    pass over the facts, applied to the voice. */
-const BROCHURE = /\b(iconic|magnificent|stunning|breathtaking|timeless|legendary|must-see|majestic|awe-inspiring|world-renowned|picturesque|a (?:true )?(?:jewel|gem)|testament to|steeped in|nestled|splendou?r|ethereal|resplendent|unparalleled|storied)\b/i
+const BROCHURE = /\b(iconic|magnificent|stunning|breathtaking|timeless|legendary|must-see|majestic|awe-inspiring|world-renowned|picturesque|a (?:true )?(?:jewel|gem)|testament to|steeped in|nestled|splendou?r|ethereal|resplendent|unparalleled|storied|amazing|incredible|wonderful|spectacular|fabulous|unforgettable)\b/i
 const TOUR_TALK = /\b(our (?:next|tour|flight)|we(?:'ll|'re| will| shall| now| then| can| may)?(?: \w+)? (?:fly|flying|head|heading|move|moving|turn|turning|arrive|arriving|go|going|travel|travelling|traveling|continue|leave|leaving)|this (?:tour|flight)|your (?:tour|flight)|next view|coming up next|as you can see|welcome to)\b/i
 
 function beatStyleProblem(text: string): string | null {
@@ -315,6 +315,9 @@ export type BridgeLeg = {
   transport: string        // already a human label, e.g. "on foot"
   minutes: number
   km: number
+  /** The router's own words for how this leg is travelled, when it knew:
+      "the 4 subway from Châtelet to Saint-Michel". */
+  how?: string
   /** One sentence about each end of the leg, from their own source text — the
       two ends are what a line can be drawn between. */
   fromAbout?: string
@@ -329,9 +332,19 @@ You are given the legs of one day, in order. Write one line for each leg, in
 the same order.
 
 WHAT A LINE IS
-One sentence, two at most — twelve to twenty-five words. It is not an
-introduction. They will see where they are going and you will tell them about
-it when they get there; this line exists so the two places feel related.
+Two sentences, three where a leg has directions to give — twenty to fifty
+words. It is not an introduction. They will see where they are going and you
+will tell them about it when they get there; this line exists so the two
+places feel related, and so they know how they are getting there.
+
+HOW THEY GET THERE
+When a leg's facts include a "How" — a line and two stations — say it, in
+plain words, as the first thing: which line, from which station, to which
+station. "You'll pick up the 4 from Châtelet and ride two stops to
+Saint-Michel." That is the single most useful sentence you will say all day,
+so it is never dropped in favour of something prettier. Where there is no
+"How", say the mode and roughly how long it takes instead. Then draw the
+thread between the two places.
 
 Ways a line can do that — vary them, and never use the same move twice in a
 row:
@@ -341,6 +354,9 @@ row:
   to the people who took it
 - put the crossing in human terms: a few streets, a long run across the city
 - open a small question the next place will answer
+
+Say it all in one flow. A line that lands as two disconnected halves — the
+directions, then a fact — is worse than either on its own.
 
 RULES
 - Use ONLY the facts given for that leg — the two names and the two
@@ -366,11 +382,12 @@ Bad:  "Next up is the Musée d'Orsay, an iconic museum in a stunning old
        railway station."            (announces it, praises it, adds adjectives)
 Bad:  "From one gothic jewel to another, we walk along the river."
                                     ("we", and "jewel" was not in the facts)
-Good: "Relics were kept behind that glass. Where you are going, the thing kept
-       behind glass is paint."
+Good: "Relics were kept behind that glass. Fourteen minutes on foot now, and
+       where you are going the thing kept behind glass is paint."
+Good: "You'll take the 12 from Solférino down to Concorde, four stops. That
+       station stopped taking trains a long time ago — the tower you are going
+       to was never meant to last either."
 Good: "Twenty minutes of streets, and the century changes twice."
-Good: "That station stopped taking trains a long time ago. The tower ahead was
-       never meant to last either."
 
 Reply with a JSON object: {"bridges":["line for leg 1","line for leg 2"]} —
 exactly one line per leg, in order.`
@@ -386,6 +403,9 @@ const ANNOUNCING = /\b(next up|our next stop|we (?:head|arrive|travel|make our w
 function styleProblem(text: string): string | null {
   if (COACH.test(text)) return 'it says "we" — you are speaking to them, not for both of you'
   if (ANNOUNCING.test(text)) return 'it announces the arrival instead of connecting the two places'
+  /* A leg is as long as the line said on it, so a line of eight words is a leg
+     flown in silence. Length is not a style here, it is the pacing. */
+  if (text.split(/\s+/).length < 16) return 'it is too short — the crossing would be flown in silence around it; give it a second sentence'
   return beatStyleProblem(text)
 }
 
@@ -396,11 +416,12 @@ export async function writeBridges(city: string, legs: BridgeLeg[]): Promise<str
   const trim = (t: string) => t.replace(/\s+/g, ' ').slice(0, 220)
   const factsFor = (l: BridgeLeg, i: number) =>
     `Leg ${i + 1}: ${l.from} to ${l.to}. About ${l.minutes} minutes ${l.transport}, ${l.km} km.` +
+    (l.how ? `\n  How: ${trim(l.how)}` : '') +
     (l.fromAbout ? `\n  Leaving: ${trim(l.fromAbout)}` : '') +
     (l.about ? `\n  Arriving: ${trim(l.about)}` : '')
   const facts = `City: ${city}. ${legs.length} leg${legs.length === 1 ? '' : 's'}.\n\n` +
     legs.map(factsFor).join('\n')
-  const budget = Math.max(500, legs.length * 140)
+  const budget = Math.max(700, legs.length * 220)
 
   /** Only lines whose every number is in that leg's own facts. */
   const keep = (out: unknown[]) => legs.map((l, i) => {
@@ -435,3 +456,196 @@ export async function writeBridges(city: string, legs: BridgeLeg[]): Promise<str
     return legs.map(() => '')     // the seams go quiet; nothing else is lost
   }
 }
+
+/* --------------------------------------------------- the two ends of a day */
+
+/* A day used to begin mid-sentence over the first roof and end when the last
+ * beat ran out. Both ends are now spoken, and they are the only two places the
+ * guide is allowed to address the listener directly: to say hello, and to say
+ * that was the day.
+ *
+ * Everything in them is a fact of the plan or a number from the forecast, and
+ * the forecast is the reason the opening exists at all — it is the one thing
+ * the listener could not have read in the book beforehand, because it was not
+ * known when the book was written.
+ */
+
+export type OpeningFacts = {
+  city: string
+  /** Day n of m, where m is 1 for a single day. */
+  number: number
+  count: number
+  title?: string
+  stops: string[]
+  startAt: string
+  endsAt: string
+  transport: string
+  party: Party
+  interests: string[]
+  from?: string
+  /** Straight from weatherLine(): the day it is a forecast for and its numbers. */
+  weather?: string
+  /** Straight from wearLine(). */
+  wear?: string
+}
+
+const OPENING_SYSTEM = `You are a guide, and the person listening has just lifted off over a real
+city for a day you planned together. This is the first thing you say to them.
+Reply with JSON.
+
+WHAT IT CONTAINS, in this order and all of it:
+1. A greeting that names the city, and says who you are — their guide for the
+   day. Warm, brief, not a compere. If you are given a day number out of
+   several, say which day of the trip this is.
+2. The shape of the day in one breath: how many places, roughly when it starts
+   and ends, and how they are getting about.
+3. The weather, in the words you are given, said as weather and not as a
+   readout. If you are told which day the forecast is for, say so plainly,
+   because it is a forecast and not a promise.
+4. What to wear, from the line you are given. This is the useful part — an
+   umbrella, a layer for the evening, shoes. Say it like someone at the door.
+5. One sentence that hands over to the first place, naming it.
+
+HOW IT SOUNDS
+Spoken. Six to nine sentences, and they run on into each other the way someone
+talks — not a list read aloud. Contractions. Warm and unhurried, no
+exclamation marks, no "get ready", no "buckle up", no "without further ado".
+You may say "we" here, and only here: you are setting off together.
+
+HARD RULES
+- Use ONLY the facts given. Never a number that is not in them. Say nothing
+  about any of the places beyond naming the first one — you have not arrived
+  yet and the pages will do that work.
+- If no forecast was given, say plainly that the forecast does not reach this
+  day yet and to check the sky the night before. Never invent weather.
+- Say clock times the way a person says them out loud — "half nine", "just
+  after two", "around five" — never "09:30" or "17:40". This is read aloud,
+  and a spoken "fourteen thirty-four" is nobody's idea of an afternoon.
+- Do not mention the camera, the flight, the tour, the app, or a screen.
+
+Reply with a JSON object: {"say":"<the whole thing, as one paragraph>"}`
+
+export type ClosingFacts = {
+  city: string
+  number: number
+  count: number
+  title?: string
+  last: string
+  stopCount: number
+  km: number
+  endsAt: string
+  /** The next day's name, when there is a next day and it is known. */
+  nextTitle?: string
+  back?: string
+}
+
+const CLOSING_SYSTEM = `You are a guide, and the day you have been showing someone is over. The last
+place is below them. This is the last thing you say. Reply with JSON.
+
+WHICH ENDING THIS IS — you are told, and they are not the same:
+- The only day. Close the whole thing: what they covered, and a warm goodbye
+  that does not oversell what they have just seen.
+- A day with more to come. Close this day, then hand forward to the next one
+  by name if you are given it, the way you would at the end of an evening —
+  a sentence, not a trailer.
+- The last of several days. Close the trip, not just the day. You may look
+  back across the days here; that is the whole point of being at the end.
+
+HOW IT SOUNDS
+Spoken. Four to six sentences, running on into each other. Contractions. Warm,
+a little slower than the rest of the day, and plain — this is the one moment
+that sounds false if it strains, and the way it strains is always the same:
+reaching for feeling instead of saying what happened. Say what they actually
+did. That is the warmth. You may say "we".
+
+NEVER, because every one of these is a greetings card and not a guide:
+"I hope you enjoyed", "I hope you've", anything about what they will
+remember or carry with them, "memories", "linger", "journey", "adventure",
+"safe travels", "take care", "until next time", thanking them for anything,
+or telling them the city will stay with them. Do not describe the light, the
+hour, the sun going down, or the way anywhere feels underfoot.
+
+HARD RULES
+- Use ONLY the facts given: the places, the count, the distance, the time.
+  Never a number that is not in them, and nothing about any place beyond its
+  name — no adjectives for places you have not been told about.
+- Say clock times the way a person says them out loud — "twenty to six", "just
+  gone two" — never "17:40". This is read aloud.
+- Do not mention the camera, the flight, the tour, the app, or a screen.
+- Do not invite them to do anything else, rate anything, or come back.
+
+HOW IT READS
+Bad:  "What a day. Four incredible places and 7.3 kilometres of charm and
+       history — I hope Paris lingers sweetly in your memory."
+Bad:  "As the sun dips towards 17:40, our journey ends. Safe travels."
+Good: "That's the four of them, and about seven kilometres of Paris under you.
+       The tower's the last of it — and honestly, it's the one that takes the
+       longest to get bored of. We're done a little after twenty to six, which
+       is earlier than I'd have guessed this morning. That's the day."
+Good: "Day two done. The river and the left bank, four stops, and you're back
+       at the hotel from here. Tomorrow is Montmartre, and it's a slower one —
+       which after today's walking is not an accident."
+
+Reply with a JSON object: {"say":"<the whole thing, as one paragraph>"}`
+
+/* The farewell has one failure mode and it is very strong: the model reaches
+   for a greetings card. Told not to in six ways it still writes "I hope these
+   days linger in your memory", so the phrases are checked here as well. */
+const FAREWELL = /\b(i hope|hope you|memor(?:y|ies)|linger|journey|adventure|safe travels|take care|until next time|thanks? (?:you )?for|stay with you|cherish)\b/i
+
+function farewellProblem(text: string): string | null {
+  const m = text.match(FAREWELL)
+  if (m) return `it says "${m[0]}", which is a greetings card and not a guide`
+  return beatStyleProblem(text.replace(TOUR_TALK, 'x'))    // "we head back" is fine at the end
+}
+
+/** Shared by both ends: ask once, keep it only if every number in it is a
+    number it was given. The retry is for the voice, as everywhere else. */
+async function saySomething(system: string, facts: string, budget: number, problem: (t: string) => string | null): Promise<string> {
+  let best = ''
+  let bestScore = Infinity
+  let note = ''
+  /* Three, not two, and only here: there are two of these per day rather than
+     one per stop, so the extra call is nothing, and the farewell is the line
+     most likely to need asking twice. */
+  for (let attempt = 0; attempt < 3; attempt++) {
+    let text: string
+    try {
+      const r = await askJson<{ say?: string }>('narrator', system, facts + note, budget)
+      text = String(r.say ?? '').trim().replace(/\s+/g, ' ')
+    } catch { break }
+    if (!text) continue
+    const hay = facts.replace(/,/g, '')
+    if (!numbersIn(text).every(n => hay.includes(n))) { note = '\n\nYour last attempt used a number that is not in the facts above. Use only the numbers you are given.'; continue }
+    const why = problem(text)
+    const score = why ? 1 : 0
+    if (score < bestScore) { bestScore = score; best = text }
+    if (!why) break
+    note = `\n\nYour last attempt broke a rule of the voice: ${why}. Write it again without that.`
+  }
+  return best
+}
+
+export const writeOpening = (f: OpeningFacts): Promise<string> => saySomething(OPENING_SYSTEM, [
+  `City: ${f.city}.`,
+  f.count > 1 ? `This is day ${f.number} of ${f.count}${f.title ? `, called "${f.title}"` : ''}.` : 'This is a single day out, not part of a longer trip.',
+  `${f.stops.length} places: ${f.stops.join(', ')}.`,
+  `It runs from ${f.startAt} to about ${f.endsAt}, getting about ${f.transport}.`,
+  f.from ? `They set out from ${f.from}.` : '',
+  `Who is travelling: ${f.party}.`,
+  f.interests.length ? `They said they are interested in ${f.interests.join(', ')}.` : '',
+  f.weather ? `Forecast — ${f.weather}. (That is the day the forecast is for, which may not be the day they travel.)` : 'No forecast reaches this day.',
+  f.wear ? `What to wear: ${f.wear}.` : '',
+  `The first place is ${f.stops[0] ?? ''}.`,
+].filter(Boolean).join('\n'), 700, t => beatStyleProblem(t.replace(TOUR_TALK, 'x')))
+
+export const writeClosing = (f: ClosingFacts): Promise<string> => saySomething(CLOSING_SYSTEM, [
+  `City: ${f.city}.`,
+  f.count === 1 ? 'This is the only day: close the whole thing.'
+    : f.number < f.count ? `This is day ${f.number} of ${f.count}, and there are more to come${f.nextTitle ? `. The next day is called "${f.nextTitle}"` : ''}.`
+    : `This is day ${f.number} of ${f.count}, the last one: close the trip.`,
+  f.title ? `Today was called "${f.title}".` : '',
+  `${f.stopCount} places, ${f.km.toFixed(1)} km of ground, ending about ${f.endsAt}.`,
+  `The last place, below them now, is ${f.last}.`,
+  f.back ? `From here they head back to ${f.back}.` : '',
+].filter(Boolean).join('\n'), 600, farewellProblem)

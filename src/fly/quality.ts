@@ -10,10 +10,10 @@
  * creeps back to full detail when there is room, so a weak machine gets a
  * smooth flight and a strong one gets the best the data can give. */
 
-export type Shot = 'map' | 'dive' | 'travel' | 'dwell'
+export type Shot = 'map' | 'hold' | 'dive' | 'travel' | 'dwell'
 
 /** Screen-space error targets, in pixels. The tile renderer's own default is 16. */
-export const TARGET: Record<Shot, number> = { map: 30, dive: 9, travel: 8, dwell: 4 }
+export const TARGET: Record<Shot, number> = { map: 30, hold: 24, dive: 9, travel: 8, dwell: 4 }
 
 const SLOW = 1 / 34     // below ~34 fps, back off
 const FAST = 1 / 52     // above ~52 fps, there is room to give detail back

@@ -4,7 +4,7 @@ import type { MutableRefObject } from 'react'
    and three controls. Everything else stays out of the way of the city. */
 
 export type Hud = {
-  phase: 'idle' | 'dive' | 'dwell' | 'travel' | 'done'
+  phase: 'idle' | 'hold' | 'dive' | 'dwell' | 'travel' | 'done'
   stopIndex: number; stopCount: number; stopName: string
   caption: string; targetName: string; targetSource: string
   paused: boolean; progress: number
@@ -17,13 +17,14 @@ export default function FlightHud({ hud, control, onExit, onAsk }: {
   onAsk?: () => void
 }) {
   const done = hud.phase === 'done'
-  const label = hud.phase === 'dive' ? 'Beginning the tour' : done ? 'Tour complete'
+  const label = hud.phase === 'hold' ? (hud.stopIndex ? 'That was the day' : 'Before we set off')
+    : hud.phase === 'dive' ? 'Beginning the tour' : done ? 'Tour complete'
     : hud.phase === 'travel' ? `Walking to stop ${hud.stopIndex + 1} of ${hud.stopCount}` : `Stop ${hud.stopIndex + 1} of ${hud.stopCount}`
   return (
     <>
       <div className="hud-top">
         <small>{label}</small>
-        <b>{hud.phase === 'dive' ? '' : hud.stopName}</b>
+        <b>{hud.phase === 'dive' || hud.phase === 'hold' ? '' : hud.stopName}</b>
       </div>
       {hud.caption && (
         <div className="hud-caption" aria-live="polite">

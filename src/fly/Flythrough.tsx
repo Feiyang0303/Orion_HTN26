@@ -189,7 +189,7 @@ function Rig({ plan, begin, onStopReached, onFinish, onHud, control, tiles, load
     // ---- guide audio: one clip per beat, driven by the same clock --------
     // A travel segment carries its bridge line as a beat of its own, so the key
     // has to say which kind of segment it came from or leg 0 and stop 0 collide.
-    const beatKey = beat ? `${seg.kind}${seg.kind === 'travel' ? seg.leg : seg.kind === 'dwell' ? seg.stop : ''}:${beat.index}` : ''
+    const beatKey = beat ? `${seg.kind}${seg.kind === 'travel' ? seg.leg : seg.kind === 'dwell' ? seg.stop : seg.kind === 'hold' ? seg.which : ''}:${beat.index}` : ''
     if (beatKey !== st.beatKey) {
       st.audio?.pause(); st.audio = null; st.beatKey = beatKey
       if (beat?.beat.audioUrl) { st.audio = new Audio(beat.beat.audioUrl); st.audio.play().catch(() => {}) }
@@ -204,7 +204,9 @@ function Rig({ plan, begin, onStopReached, onFinish, onHud, control, tiles, load
     }
     const eye = tmp.eye, look = tmp.lk
     let smooth = 2
-    if (!st.started) {
+    if (!st.started || seg.kind === 'hold') {
+      // The welcome and the goodbye are said over the whole city, from the same
+      // slow orbit the planning view holds, so the day opens and closes wide.
       planPose(dt, eye, look); st.planEye.copy(eye); st.planLook.copy(look)
     } else if (seg.kind === 'dive') {
       shots.dwell(0, null, undefined, 0, st.t, eye, look)
@@ -239,7 +241,8 @@ function Rig({ plan, begin, onStopReached, onFinish, onHud, control, tiles, load
     }
 
     // ---- HUD (only when something the user can see changed) --------------
-    const stopIdx = seg.kind === 'dwell' ? seg.stop : seg.kind === 'travel' ? seg.leg + 1 : 0
+    const stopIdx = seg.kind === 'dwell' ? seg.stop : seg.kind === 'travel' ? seg.leg + 1
+      : seg.kind === 'hold' && seg.which === 'closing' ? plan.stops.length - 1 : 0
     const target = beat?.beat.targetId && dwellStop >= 0 ? plan.stops[dwellStop].targets.find(x => x.id === beat.beat.targetId) : undefined
     const hud: Hud = {
       phase: !st.started ? 'idle' : st.finished ? 'done' : seg.kind,

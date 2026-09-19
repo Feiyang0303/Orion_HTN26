@@ -307,15 +307,58 @@ async function routesMatrix(req, res) {
   json(res, 200, { distanceM, durationSec })
 }
 
+/* What Google calls the vehicle, in the word a person would use. A guide who
+   says "board the heavy rail service" is not a guide. */
+const VEHICLE = {
+  SUBWAY: 'subway', METRO_RAIL: 'metro', HEAVY_RAIL: 'train', COMMUTER_TRAIN: 'train',
+  HIGH_SPEED_TRAIN: 'train', LONG_DISTANCE_TRAIN: 'train', RAIL: 'train', MONORAIL: 'monorail',
+  TRAM: 'tram', BUS: 'bus', INTERCITY_BUS: 'coach', TROLLEYBUS: 'trolleybus',
+  FERRY: 'ferry', CABLE_CAR: 'cable car', GONDOLA_LIFT: 'cable car', FUNICULAR: 'funicular',
+  SHARE_TAXI: 'share taxi', OTHER: 'transit',
+}
+
+/* The one sentence a person on the ground actually needs: which line, from
+   which station, to which station. Routes knows it per transit step, and a
+   leg can be two rides with a change between them, so they are joined in
+   order. Undefined when the leg has no transit in it, which is most of them. */
+export function howOf(route) {
+  const bits = []
+  for (const leg of route.legs ?? []) {
+    for (const step of leg.steps ?? []) {
+      const t = step.transitDetails
+      if (!t) continue
+      const line = t.transitLine?.nameShort || t.transitLine?.name
+      const kind = VEHICLE[t.transitLine?.vehicle?.type]
+        || String(t.transitLine?.vehicle?.name?.text ?? t.transitLine?.vehicle?.name ?? '').toLowerCase()
+        || 'transit'
+      const from = t.stopDetails?.departureStop?.name
+      const to = t.stopDetails?.arrivalStop?.name
+      const stops = t.stopCount
+      const ride = [
+        line ? `the ${line} ${kind}` : kind,
+        from && to ? `from ${from} to ${to}` : from ? `from ${from}` : to ? `to ${to}` : '',
+        stops ? `(${stops} stop${stops === 1 ? '' : 's'})` : '',
+      ].filter(Boolean).join(' ')
+      if (ride) bits.push(ride)
+    }
+  }
+  return bits.length ? bits.join(', then ') : undefined
+}
+
 async function routesWalk(req, res) {
   const key = routesKey()
   if (!key) throw new HttpError(501, 'GOOGLE_ROUTES_KEY is not set on the proxy.')
   const { from, to, transport } = await readJson(req)
+  const transit = modeOf(transport) === 'TRANSIT'
   const upstream = await fetch('https://routes.googleapis.com/directions/v2:computeRoutes', {
     method: 'POST',
     headers: {
       'content-type': 'application/json', 'x-goog-api-key': key,
-      'x-goog-fieldmask': 'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline',
+      // The transit step details are what let the guide name the line and the two
+      // stations. They are only returned for TRANSIT, and asking for them on a walk
+      // costs nothing but the field mask, so they are only asked for when they exist.
+      'x-goog-fieldmask': 'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline'
+        + (transit ? ',routes.legs.steps.transitDetails' : ''),
     },
     body: JSON.stringify({ origin: wp(from), destination: wp(to), travelMode: modeOf(transport), polylineEncoding: 'ENCODED_POLYLINE' }),
   })
@@ -323,7 +366,13 @@ async function routesWalk(req, res) {
   if (!upstream.ok) throw new HttpError(502, data?.error?.message ?? `routes ${upstream.status}`)
   const r = data.routes?.[0]
   if (!r) throw new HttpError(502, 'no route found')
-  json(res, 200, { encodedPolyline: r.polyline.encodedPolyline, distanceM: r.distanceMeters ?? 0, durationSec: secs(r.duration) })
+  const how = transit ? howOf(r) : undefined
+  json(res, 200, {
+    encodedPolyline: r.polyline.encodedPolyline,
+    distanceM: r.distanceMeters ?? 0,
+    durationSec: secs(r.duration),
+    ...(how ? { how } : {}),
+  })
 }
 
 const routes = {
