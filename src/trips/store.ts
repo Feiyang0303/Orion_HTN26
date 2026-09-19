@@ -1,12 +1,17 @@
 import type { Place } from '../plan/geocode'
-import type { Trip } from '../types'
+import type { Beat, Trip } from '../types'
 
 /* Trips that outlive the page. The proxy keeps them (in MongoDB when it is
  * configured, in memory when it is not); this is the browser's side of that.
  *
  * A trip's narration lives in the page as blob URLs, which nothing else can open,
  * so saving uploads each clip once and stores the trip with addresses the proxy
- * serves. The trip in the page is left as it is. */
+ * serves. The trip in the page is left as it is.
+ *
+ * Every clip, not just the stops': a leg's bridge line is spoken the same way
+ * and would otherwise be stored as a blob URL that is dead the moment the page
+ * reloads — and a dead URL is worse than none, because the voicing pass sees a
+ * clip already there and leaves the leg silent for good. */
 
 export type Saved = { id: string; trip: Trip; mode: 'full' | 'short'; origin: Place; updatedAt: number }
 export type Summary = { id: string; city: string; days: number; places: number; updatedAt: number }
@@ -36,8 +41,8 @@ const uploaded = new Map<string, string>()          // `${tripId}|${blobUrl}` ->
 /** Saves the trip. `persistent` is false when the proxy has no database and will forget it on restart. */
 export async function saveTrip(id: string, trip: Trip, mode: Saved['mode'], origin: Place): Promise<{ updatedAt: number; persistent: boolean }> {
   const copy: Trip = structuredClone(trip)
-  for (const day of copy.days) for (const stop of day.stops) for (const beat of stop.beats) {
-    if (!beat.audioUrl?.startsWith('blob:')) continue
+  const upload = async (beat: Beat | undefined) => {
+    if (!beat?.audioUrl?.startsWith('blob:')) return
     const key = `${id}|${beat.audioUrl}`
     let url = uploaded.get(key)
     if (!url) {
@@ -47,6 +52,10 @@ export async function saveTrip(id: string, trip: Trip, mode: Saved['mode'], orig
       uploaded.set(key, url)
     }
     beat.audioUrl = url
+  }
+  for (const day of copy.days) {
+    for (const stop of day.stops) for (const beat of stop.beats) await upload(beat)
+    for (const leg of day.legs) await upload(leg.bridge)
   }
   const r = await call(`/api/trips/save?id=${id}&owner=${owner()}`, { method: 'POST', body: JSON.stringify({ trip: copy, mode, origin }) })
   return r.json()
