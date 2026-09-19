@@ -98,11 +98,38 @@ export async function forecast(at: LatLon, days: number, signal?: AbortSignal): 
   }
 }
 
-/** The memo line: what to wear, and what day it is a forecast for, so nobody
+/** The memo line: the forecast, and what day it is a forecast for, so nobody
     reads a Tuesday forecast as a promise about their Friday. */
 export function weatherLine(w: DayWeather | undefined): string {
-  if (!w) return 'no forecast reaches this far ahead; look the night before and dress for it'
+  if (!w) return 'no forecast reaches this far ahead; look the night before'
   const wet = w.rainChance >= 40 || w.rainMm >= 1
+  // What to do about it belongs to the line below, which is the one that says
+  // "take an umbrella". This one only reports.
   return `${w.label}: ${w.minC}–${w.maxC}°C, ${w.sky}`
-    + (wet ? ` — ${w.rainChance}% chance of rain, take a coat` : '')
+    + (wet ? `, ${w.rainChance}% chance of rain` : '')
+}
+
+/** What to put on, from the same numbers. Temperature decides the layer, the
+    swing between day and evening decides whether to carry another, and the
+    chance of rain decides the umbrella — which is the one thing a person
+    actually wants a forecast to tell them and the one thing a temperature
+    range never says out loud. The walking is in here too, because how far you
+    are on your feet is as much a clothing decision as the weather is. */
+export function wearLine(w: DayWeather | undefined, kmOnFoot: number): string {
+  const shoes = kmOnFoot >= 6 ? `shoes you can do ${kmOnFoot.toFixed(0)} km in` : 'comfortable shoes'
+  if (!w) return `${shoes}, and check the sky the night before — no forecast reaches this day yet`
+  const bits: string[] = [
+    w.maxC >= 28 ? 'light clothes and something for the sun'
+      : w.maxC >= 22 ? 'a t-shirt is enough'
+      : w.maxC >= 16 ? 'a jumper or a light jacket'
+      : w.maxC >= 10 ? 'a proper jacket'
+      : w.maxC >= 4 ? 'a warm coat'
+      : 'a winter coat, hat and gloves',
+  ]
+  if (w.maxC - w.minC >= 9 && w.minC < 16) bits.push(`it drops to ${w.minC}° by evening, so carry a layer`)
+  if (/snow/.test(w.sky)) bits.push('boots — there is snow in it')
+  else if (w.rainChance >= 60 || w.rainMm >= 3) bits.push('take an umbrella')
+  else if (w.rainChance >= 35) bits.push('an umbrella, just in case')
+  bits.push(shoes)
+  return bits.join('; ')
 }

@@ -308,6 +308,14 @@ input[type='time'].o-input { color-scheme: dark; padding: .7em .9em; }
   position: fixed; left: 22px; top: 54px; bottom: 22px; width: min(500px, calc(100vw - 44px)); overflow-y: auto; padding: 30px 28px 26px;
   display: flex; flex-direction: column; gap: 22px; scroll-behavior: smooth;
 }
+/* The panel is a column flex box with a bounded height and its own scrollbar.
+   Flex items shrink before a scrollbar appears, so every card in here was
+   being squeezed a little shorter than its contents and clipping them — most
+   visibly the stay card, whose photographs were sliced off at the bottom
+   edge. They keep their natural height; the panel scrolls, which is what it
+   has an overflow rule for. */
+.t-panel > * { flex: none; }
+
 .t-panel::-webkit-scrollbar { width: 6px; }
 .t-panel::-webkit-scrollbar-thumb { background: rgba(255, 240, 210, .14); border-radius: 6px; }
 
@@ -325,8 +333,12 @@ input[type='time'].o-input { color-scheme: dark; padding: .7em .9em; }
 .t-stay-mark { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: rgba(255, 255, 255, .07); color: var(--ink); }
 .t-stay h3 { margin: 4px 0 2px; font: 500 15px/1.3 var(--ui); }
 .t-stay p:last-child { margin: 0; font-size: 12.5px; color: var(--ink-3); }
-.t-stay a, .t-meal-in a { color: var(--ink-3); display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; transition: background .2s, color .2s; }
-.t-stay a:hover, .t-meal-in a:hover { background: rgba(255, 255, 255, .08); color: var(--amber-2); }
+/* The source link at the end of the card, and nothing else. This used to be
+   `.t-stay a`, which also caught the three photograph links inside the card
+   and forced each of them into a 30px round button — so every photograph
+   overflowed its own link, the row, and the card's bottom edge. */
+.t-stay > a, .t-meal-in a { color: var(--ink-3); display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; transition: background .2s, color .2s; }
+.t-stay > a:hover, .t-meal-in a:hover { background: rgba(255, 255, 255, .08); color: var(--amber-2); }
 
 .t-days { display: flex; flex-direction: column; gap: 34px; }
 .t-day { display: flex; flex-direction: column; gap: 16px; }
@@ -434,7 +446,7 @@ input[type='time'].o-input { color-scheme: dark; padding: .7em .9em; }
 /* the bed: what OSM knows, and the street outside it */
 .t-stay-facts { margin: 4px 0 0; font-size: 12px; opacity: .72; }
 .t-stay-photos { display: flex; gap: 6px; margin-top: 8px; }
-.t-stay-photos a { flex: 1; min-width: 0; }
+.t-stay-photos a { flex: 1; min-width: 0; display: block; width: auto; height: auto; border-radius: 4px; overflow: hidden; }
 .t-stay-photos img { width: 100%; height: 64px; object-fit: cover; border-radius: 4px; display: block; }
 /* While the journal is open it owns the screen: its own bar carries the way
    back and the way out, and the studio's would sit on top of it. */

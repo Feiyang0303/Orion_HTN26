@@ -259,7 +259,7 @@
 .jp-memo .jp-tape { position: absolute; left: 50%; top: -9px; width: 70px; height: 18px; transform: translateX(-50%) rotate(-3deg); background: rgba(214,196,150,.6); border: 1px solid rgba(160,140,90,.35); }
 .jp-memo ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 3px 26px; }
 .jp-memo > div { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
-.jp-memo li { display: grid; grid-template-columns: calc(var(--u) * 6.9) 1fr; gap: calc(var(--u) * 0.5); font-size: calc(var(--u) * 1.14); line-height: 1.35; color: #5c4a33; }
+.jp-memo li { display: grid; grid-template-columns: max-content 1fr; gap: calc(var(--u) * 0.5); font-size: calc(var(--u) * 1.14); line-height: 1.35; color: #5c4a33; }
 .jp-memo li b { font-family: 'Caveat', cursive; font-weight: 700; font-size: calc(var(--u) * 1.43); color: var(--ink-day, #8a5a2b); }
 .jp-closing { margin: 0; font-family: 'Homemade Apple', 'Caveat', cursive; font-size: calc(var(--u) * 1.1); color: #5c4a33; align-self: end; }
 .jp-fly {

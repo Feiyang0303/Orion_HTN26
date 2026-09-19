@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Food, Sketch, TransportGlyph, foodFor, sketchFor } from './Sketches'
 import { paletteFor } from './decor'
-import { weatherLine, type DayWeather } from '../weather'
+import { weatherLine, wearLine, type DayWeather } from '../weather'
 import { HHMM, MINS, TRANSPORT_LABEL, type Day, type LatLon, type Trip } from '../../types'
 
 /* One day, as a page of a hand-drawn travel journal.
@@ -187,7 +187,6 @@ export default function JournalPage({ day, trip, open, onFly, weather }: {
   const lunch = day.tables.find(t => t.meal === 'lunch')
   const dinner = day.tables.find(t => t.meal === 'dinner')
   const km = (day.legs.reduce((n, l) => n + l.distanceM, 0) + (day.approach?.distanceM ?? 0) + (day.back?.distanceM ?? 0)) / 1000
-  const modes = [...new Set([...(day.approach ? [day.approach] : []), ...day.legs, ...(day.back ? [day.back] : [])].map(l => l.transport))]
   const endsAt = day.stops.length ? HHMM(MINS(day.stops[day.stops.length - 1].arrival) + day.stops[day.stops.length - 1].visitMin) : trip.wish.endAt
   const homeAt = day.back ? HHMM(MINS(endsAt) + day.back.durationSec / 60) : endsAt
   const longest = [...day.legs].sort((a, b) => b.durationSec - a.durationSec)[0]
@@ -201,14 +200,17 @@ export default function JournalPage({ day, trip, open, onFly, weather }: {
     day.stops[0] ? `check ${day.stops[0].name.split(',')[0]}'s hours first` : '',
   ].filter(Boolean).slice(0, 3)
 
-  /* The four things on the memo. Counted where they can be, plain where they
-     cannot: the forecast only reaches so far, and past that the book says so
-     rather than inventing a number for day nine. */
+  /* The memo says two things, because two things were all it ever actually
+     knew. Carry your ID and buy a day pass are advice anyone could give about
+     anywhere; they took up half the note and told the reader nothing about
+     this day. What is left is what only this page can say: the forecast for
+     the day, and what to wear given that forecast and how far it walks — and
+     past the forecast's horizon it says so rather than inventing a number. */
+  const onFoot = [...(day.approach ? [day.approach] : []), ...day.legs, ...(day.back ? [day.back] : [])]
+    .filter(l => l.transport === 'walk').reduce((n, l) => n + l.distanceM, 0) / 1000
   const memo = [
-    ['ID', 'carry it — museums and some churches check, and the hotel will'],
     ['Weather', weatherLine(weather)],
-    ['Shoes', `${km.toFixed(1)} km ${modes.map(m => TRANSPORT_LABEL[m].toLowerCase()).join(' & ')} — comfortable ones`],
-    ['Getting about', modes.includes('transit') ? 'a day pass usually beats singles' : modes.includes('walk') ? 'all of it on foot; a card for the way home' : 'a card, and the hotel address written down'],
+    ['What to wear', wearLine(weather, onFoot)],
   ]
 
   const style = {
