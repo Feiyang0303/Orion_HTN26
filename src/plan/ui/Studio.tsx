@@ -28,13 +28,15 @@ import type { Day, LatLon, Stay, Trip, Wish } from '../../types'
 
 type Line = { who: 'you' | 'editor'; text: string }
 
-export default function Studio({ wish, mode, origin, onFly, onHome, onMap, saveAudio }: {
+export default function Studio({ wish, mode, origin, onFly, onHome, onMap, onCrew, saveAudio }: {
   wish: Wish
   mode: Mode
   origin: Place
   onFly: (day: Day) => void
   onHome: () => void
   onMap: (view: MapView) => void
+  /** What the crew is doing, for the globe behind the screen. */
+  onCrew: (events: CrewEvent[], working: boolean) => void
   saveAudio: (planId: string, name: string, bytes: ArrayBuffer) => Promise<string>
 }) {
   const [events, setEvents] = useState<CrewEvent[]>([])
@@ -86,6 +88,7 @@ export default function Studio({ wish, mode, origin, onFly, onHome, onMap, saveA
   /* ------------------------------------------------------------- the map -- */
 
   const stage = trip ? 'trip' : 'crew'
+  useEffect(() => { onCrew(events, !trip) }, [events, trip, onCrew])
   useEffect(() => {
     const days = trip?.days ?? partial
     const pins: MapView['pins'] = []

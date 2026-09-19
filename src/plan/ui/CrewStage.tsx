@@ -1,7 +1,6 @@
 import { useMemo } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import CrewScene from '../../crew/CrewScene'
-import { fold, MEMBER } from '../../crew/roster'
+import { fold, MEMBER, type LedgerEntry } from '../../crew/roster'
 import type { CrewEvent } from '../events'
 import type { DayDraft } from '../session'
 import { dayColour } from '../../ui/palette'
@@ -27,7 +26,7 @@ export default function CrewStage({ city, events, drafts, error, onRetry, onBack
   onRetry: () => void
   onBack: () => void
 }) {
-  const { status } = useMemo(() => fold(events), [events])
+  const { status, ledger } = useMemo(() => fold(events), [events])
   const active = PHASES.findIndex(p => status[p.agent].state === 'working')
   const reached = Math.max(active, ...PHASES.map((p, i) => (status[p.agent].state !== 'idle' ? i : -1)))
 
@@ -53,15 +52,24 @@ export default function CrewStage({ city, events, drafts, error, onRetry, onBack
       </header>
 
       <div className="cw-body">
-        <motion.div className="cw-stage o-glass" initial={{ opacity: 0, scale: .97 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: .9, ease: [.22, .9, .24, 1] }}>
-          <CrewScene events={events} className="cs-full" />
+        <aside className="cw-ledger o-glass">
+          <div className="cw-ledger-head"><span>The ledger</span><b>{ledger.length}</b></div>
+          <ul>
+            <AnimatePresence initial={false}>
+              {ledger.slice(-9).reverse().map(e => <Entry key={e.id} e={e} />)}
+            </AnimatePresence>
+            {!ledger.length && <li className="cw-empty"><span>Waiting for the crew…</span></li>}
+          </ul>
           {error && (
             <div className="cw-error" role="alert">
               <p>{error}</p>
               <div><button className="o-btn primary small" onClick={onRetry}>Try again</button></div>
             </div>
           )}
-        </motion.div>
+        </aside>
+
+        {/* the middle is left empty on purpose: the globe and the crew are behind it */}
+        <div className="cw-centre" aria-hidden />
 
         <aside className="cw-found">
           <p className="o-eyebrow">Taking shape</p>
@@ -86,5 +94,14 @@ export default function CrewStage({ city, events, drafts, error, onRetry, onBack
         </aside>
       </div>
     </div>
+  )
+}
+
+function Entry({ e }: { e: LedgerEntry }) {
+  return (
+    <motion.li layout initial={{ opacity: 0, x: -16 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, height: 0 }} transition={{ duration: .5, ease: [.22, .9, .24, 1] }}
+      className={e.failed ? 'is-failed' : ''} style={{ ['--c' as string]: MEMBER[e.agent].colour }}>
+      <i /><span><b>{MEMBER[e.agent].name}</b> {e.text.length > 110 ? e.text.slice(0, 109) + '…' : e.text}</span>
+    </motion.li>
   )
 }

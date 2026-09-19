@@ -3,7 +3,9 @@ import { AnimatePresence, motion } from 'motion/react'
 import ErrorBoundary from './ui/ErrorBoundary'
 import FlyDev from './fly/dev/FlyDev'
 import PlanTest from './fly/dev/PlanTest'
-import CrewDev from './crew/CrewDev'
+import CrewDev from './globe/CrewDev'
+import GlobeScene from './globe/GlobeScene'
+import type { CrewEvent } from './plan/events'
 import Flythrough from './fly/Flythrough'
 import type { MapView } from './fly/MapRig'
 import Kickoff, { type KickoffResult } from './plan/ui/Kickoff'
@@ -43,6 +45,9 @@ export default function App() {
   const [kickoff, setKickoff] = useState<KickoffResult | null>(null)
   const [flying, setFlying] = useState<Day | null>(null)
   const [map, setMap] = useState<MapView>(EMPTY_MAP)
+  const [globeCity, setGlobeCity] = useState<LatLon | null>(null)
+  const [crewEvents, setCrewEvents] = useState<CrewEvent[]>([])
+  const [crewWorking, setCrewWorking] = useState(false)
   const audioUrls = useRef<string[]>([])
 
   useEffect(() => () => { audioUrls.current.forEach(URL.revokeObjectURL) }, [])
@@ -61,16 +66,23 @@ export default function App() {
     return url
   }, [])
 
-  const goHome = useCallback(() => { setKickoff(null); setFlying(null); setMap(EMPTY_MAP); setPhase('kickoff') }, [])
+  const onCrew = useCallback((events: CrewEvent[], working: boolean) => { setCrewEvents(events); setCrewWorking(working) }, [])
+  const goHome = useCallback(() => { setKickoff(null); setFlying(null); setMap(EMPTY_MAP); setCrewEvents([]); setCrewWorking(false); setGlobeCity(null); setPhase('kickoff') }, [])
   const inFlight = phase === 'flying' || phase === 'done'
+  // Which world is on screen. The globe is the stage until the trip is written; the real
+  // city takes over then. The city's tiles only start loading once there are places to
+  // put on them, so they arrive well before they are needed without competing with the globe.
+  const onGlobe = phase === 'kickoff' || (phase === 'studio' && crewWorking)
+  const showCity = !onGlobe
+  const cityWanted = inFlight || (phase === 'studio' && (map.pins.length > 0 || !crewWorking))
 
   return (
     <ErrorBoundary>
       <main className="orion" data-ground="night">
-        <div className="orion-ground">
+        <div className="orion-ground" style={{ opacity: showCity ? 1 : 0 }}>
           <Flythrough
             plan={inFlight ? flying : null}
-            origin={origin}
+            origin={cityWanted ? origin : null}
             map={map}
             begin={phase === 'flying'}
             onStopReached={() => {}}
@@ -78,12 +90,20 @@ export default function App() {
             onExit={() => setPhase('studio')}
           />
         </div>
-        <div className="orion-veil" style={{ opacity: inFlight ? 0 : 1 }} />
+        <div className="orion-veil" style={{ opacity: inFlight || !showCity ? 0 : 1 }} />
+
+        <AnimatePresence>
+          {onGlobe && (
+            <motion.div key="globe" className="orion-globe" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: .9 }}>
+              <GlobeScene mode={phase === 'kickoff' ? 'kickoff' : 'crew'} city={globeCity} events={crewEvents} places={map.pins.filter(p => !p.home)} className="orion-globe-canvas" />
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         <AnimatePresence mode="wait">
           {phase === 'kickoff' && (
             <motion.div key="kickoff" className="orion-layer" {...layer}>
-              <Kickoff onCity={p => setOrigin({ lat: p.lat, lon: p.lon })}
+              <Kickoff onCity={p => { setOrigin({ lat: p.lat, lon: p.lon }); setGlobeCity({ lat: p.lat, lon: p.lon }) }}
                 onStart={r => { setKickoff(r); setOrigin({ lat: r.origin.lat, lon: r.origin.lon }); setPhase('studio') }} />
             </motion.div>
           )}
@@ -93,7 +113,7 @@ export default function App() {
               <Studio key={`${kickoff.origin.name}-${kickoff.wish.days}-${kickoff.mode}`}
                 wish={kickoff.wish} mode={kickoff.mode} origin={kickoff.origin}
                 onFly={day => { setFlying(day); setPhase('flying') }}
-                onHome={goHome} onMap={setMap} saveAudio={saveAudio} />
+                onHome={goHome} onMap={setMap} onCrew={onCrew} saveAudio={saveAudio} />
             </motion.div>
           )}
           {phase === 'done' && (
