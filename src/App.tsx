@@ -4,6 +4,7 @@ import ErrorBoundary from './ui/ErrorBoundary'
 import FlyDev from './fly/dev/FlyDev'
 import PlanTest from './fly/dev/PlanTest'
 import VRPage from './vr/VRPage'
+import { CURRENT } from './vr/share'
 import CrewDev from './globe/CrewDev'
 import GlobeScene from './globe/GlobeScene'
 import type { CrewEvent } from './plan/events'
@@ -57,15 +58,18 @@ function App() {
   const [resume, setResume] = useState<Saved | null>(null)
   const [journalFrom, setJournalFrom] = useState<'kickoff' | 'studio'>('kickoff')
   const [flightFrom, setFlightFrom] = useState<'studio' | 'journal'>('studio')
+  // The trip on screen, kept here so leaving the studio (to fly) and coming back does not plan it again.
+  const [live, setLive] = useState<Saved | null>(null)
 
   useEffect(() => () => { audioUrls.current.forEach(URL.revokeObjectURL) }, [])
 
-  const vr = new URLSearchParams(location.search).get('vr')
+  // /vr is the headset's address and always shows the trip last sent to it; /?vr=<id> opens one by name.
+  const vr = location.pathname === '/vr' ? CURRENT : new URLSearchParams(location.search).get('vr')
   if (vr) return <ErrorBoundary><VRPage id={vr} /></ErrorBoundary>
   // A saved trip, opened as it was: the same screen the crew ends on, with nothing planned again.
   const openSaved = useCallback((id: string) => {
     loadTrip(id).then(t => {
-      setResume(t)
+      setResume(t); setLive(null)
       setKickoff({ wish: t.trip.wish, mode: t.mode, origin: t.origin })
       setOrigin({ lat: t.origin.lat, lon: t.origin.lon }); setGlobeCity({ lat: t.origin.lat, lon: t.origin.lon })
       setPhase('studio')
@@ -89,7 +93,7 @@ function App() {
   }, [])
 
   const onCrew = useCallback((events: CrewEvent[], working: boolean) => { setCrewEvents(events); setCrewWorking(working) }, [])
-  const goHome = useCallback(() => { setResume(null); setKickoff(null); setFlying(null); setMap(EMPTY_MAP); setCrewEvents([]); setCrewWorking(false); setGlobeCity(null); setPhase('kickoff') }, [])
+  const goHome = useCallback(() => { setResume(null); setLive(null); setKickoff(null); setFlying(null); setMap(EMPTY_MAP); setCrewEvents([]); setCrewWorking(false); setGlobeCity(null); setPhase('kickoff') }, [])
   const openJournal = useCallback((from: 'kickoff' | 'studio') => { setJournalFrom(from); setPhase('journal') }, [])
   const flySavedDay = useCallback((saved: Saved, day: Day) => {
     setResume(saved)
@@ -136,14 +140,14 @@ function App() {
           {phase === 'kickoff' && (
             <motion.div key="kickoff" className="orion-layer" {...layer}>
               <Kickoff onCity={p => { setOrigin({ lat: p.lat, lon: p.lon }); setGlobeCity({ lat: p.lat, lon: p.lon }) }}
-                onStart={r => { setResume(null); setKickoff(r); setOrigin({ lat: r.origin.lat, lon: r.origin.lon }); setPhase('studio') }} />
+                onStart={r => { setResume(null); setLive(null); setKickoff(r); setOrigin({ lat: r.origin.lat, lon: r.origin.lon }); setPhase('studio') }} />
               <SavedTrips onOpenJournal={() => openJournal('kickoff')} />
             </motion.div>
           )}
           {phase === 'studio' && kickoff && (
             <motion.div key="studio" className="orion-layer" {...layer}>
               {/* Keyed on the brief: new preferences are a new session, not an edit of the old one. */}
-              <Studio key={resume?.id ?? `${kickoff.origin.name}-${kickoff.wish.days}-${kickoff.mode}`} saved={resume ?? undefined}
+              <Studio key={resume?.id ?? `${kickoff.origin.name}-${kickoff.wish.days}-${kickoff.mode}`} saved={live ?? resume ?? undefined} onTrip={setLive}
                 wish={kickoff.wish} mode={kickoff.mode} origin={kickoff.origin}
                 onFly={day => { setFlying(day); setFlightFrom('studio'); setPhase('flying') }}
                 onHome={goHome} onJournal={() => openJournal('studio')} onMap={setMap} onCrew={onCrew} saveAudio={saveAudio} />

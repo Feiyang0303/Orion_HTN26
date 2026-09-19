@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'motion/react'
 import { deleteTrip, listTrips, loadTrip, type Saved, type Summary } from '../../trips/store'
 import type { Day } from '../../types'
 import Icon from '../../ui/Icon'
+import { vrLink } from '../../vr/share'
 import Journal from './Journal'
 import './journal-library.css'
 
@@ -31,6 +32,7 @@ export default function JournalLibrary({ onClose, onPlan, onOpenTrip, onFly }: {
   const [opening, setOpening] = useState<string | null>(null)
   const [selected, setSelected] = useState<Saved | null>(null)
   const [remove, setRemove] = useState<string | null>(null)
+  const [vr, setVr] = useState<{ id: string; state: 'busy' | 'ready' | 'failed'; url?: string; copied?: boolean } | null>(null)
   const [error, setError] = useState('')
   const [name, setName] = useState(savedName)
 
@@ -67,6 +69,16 @@ export default function JournalLibrary({ onClose, onPlan, onOpenTrip, onFly }: {
       setRemove(null)
       await refresh()
     } catch { setError('That trip could not be removed.') }
+  }
+
+  const sendToVr = async (id: string) => {
+    setVr({ id, state: 'busy' })
+    try {
+      const url = await vrLink(id)
+      let copied = false
+      try { await navigator.clipboard.writeText(url); copied = true } catch { /* the visible link is the fallback */ }
+      setVr({ id, state: 'ready', url, copied })
+    } catch { setVr({ id, state: 'failed' }) }
   }
 
   if (selected) {
@@ -148,10 +160,18 @@ export default function JournalLibrary({ onClose, onPlan, onOpenTrip, onFly }: {
                       ) : (
                         <>
                           <button type="button" onClick={() => onOpenTrip(trip.id)}>Edit trip</button>
+                          <button type="button" onClick={() => void sendToVr(trip.id)} disabled={vr?.id === trip.id && vr.state === 'busy'}>{vr?.id === trip.id && vr.state === 'busy' ? 'Preparing VR…' : 'Send to VR'}</button>
                           <button type="button" onClick={() => setRemove(trip.id)}>Remove</button>
                         </>
                       )}
                     </div>
+                    {vr?.id === trip.id && vr.state === 'ready' && vr.url && (
+                      <div className="jl-vr" role="status">
+                        <span>{vr.copied ? 'VR link copied' : 'Open on the headset'}</span>
+                        <a href={vr.url} target="_blank" rel="noreferrer">{vr.url}</a>
+                      </div>
+                    )}
+                    {vr?.id === trip.id && vr.state === 'failed' && <p className="jl-vr is-error" role="alert">Couldn’t prepare this trip for VR.</p>}
                   </motion.li>
                 ))}
               </AnimatePresence>

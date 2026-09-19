@@ -79,6 +79,9 @@ export function tripRoutes({ json, readJson, readBuf, HttpError }) {
   const store = uri ? mongoBackend(uri) : memoryBackend()
   if (!uri) console.log('trips: MONGODB_URI is not set, so saved trips are kept in memory and lost when this restarts')
 
+  // The one trip a headset opens at /vr. Held in memory: it is a pointer set moments before putting the headset on.
+  let current = ''
+
   const q = req => new URL(req.url, 'http://x').searchParams
   const idOf = req => { const id = q(req).get('id') ?? ''; if (!ID.test(id)) throw new HttpError(400, 'bad trip id'); return id }
   const ownerOf = req => { const o = q(req).get('owner') ?? ''; if (!ID.test(o)) throw new HttpError(400, 'bad owner'); return o }
@@ -116,6 +119,17 @@ export function tripRoutes({ json, readJson, readBuf, HttpError }) {
         if (d && d.owner !== ownerOf(req)) throw new HttpError(403, 'this trip belongs to someone else')
         if (d) await store.remove(id)
         json(res, 200, { ok: true })
+      },
+      /** Which trip /vr shows. Setting it replaces the last one: there is one headset session at a time. */
+      'POST /api/vr/current': async (req, res) => {
+        const id = idOf(req)
+        if (!(await store.get(id))) throw new HttpError(404, 'no such trip')
+        current = id
+        json(res, 200, { id })
+      },
+      'GET /api/vr/current': async (_req, res) => {
+        if (!current) throw new HttpError(404, 'nothing has been sent to VR yet')
+        json(res, 200, { id: current })
       },
       'PUT /api/trips/clip': async (req, res) => {
         const name = q(req).get('name') ?? ''

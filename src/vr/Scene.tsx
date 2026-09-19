@@ -13,7 +13,6 @@ import { resample, smootherstep } from '../fly/geo'
 import { legStyle, smoothHeights } from '../fly/legStyle'
 import type { Transport } from '../types'
 import { dayColour } from '../ui/palette'
-import { report } from '../telemetry'
 import { store } from './store'
 
 /* The trip as a table you stand at.
@@ -80,17 +79,17 @@ export default function Scene({ days, store: xr, onReady }: { days: Day[]; store
     t.errorTarget = rig.mode === 'table' ? 18 : 10
   }, [loadTick, rig.mode])
 
-  // The renderer only knows the flat camera. In a headset the eyes are a different one, and
-  // its resolution is the framebuffer's, so the tiles are told both or they never refine.
+  // What the tile loader is told to make sharp. It chooses tiles for the cameras it knows, and a
+  // headset's eyes are not reliably one of them, so it is given one of its own: a camera standing
+  // where the person's head is, looking where they will look (down at the table, or out at the
+  // street). It is never drawn from; it only decides which tiles exist.
+  const eye = useMemo(() => new THREE.PerspectiveCamera(60, 1, .1, 1000), [])
   useEffect(() => {
-    if (!inXR) return
     const t = tiles.current
-    try {
-      const cam = gl.xr.getCamera()
-      const layer = gl.xr.getSession()?.renderState.baseLayer
-      t?.setCamera(cam); t?.setResolution(cam, layer?.framebufferWidth ?? 2880, layer?.framebufferHeight ?? 1600)
-    } catch (e) { report(e, 'vr.tiles-camera', { level: 'warning' }) }
-  }, [inXR, gl, loadTick])
+    if (!t) return
+    t.setCamera(eye); t.setResolution(eye, 1600, 1600)
+    return () => { t.deleteCamera(eye) }
+  }, [eye, loadTick])
 
   // The city is cut to the table by clipping planes on its own materials.
   const clipPlanes = useMemo(() => [0, 1, 2, 3, 4].map(() => new THREE.Plane(new THREE.Vector3(0, 1, 0), 1e9)), [])
@@ -217,11 +216,30 @@ export default function Scene({ days, store: xr, onReady }: { days: Day[]; store
         }
       }
     }
-    // Near and far follow the scale, so depth keeps its precision at both.
+    // Near and far follow the scale, so depth keeps its precision at both. In a headset they are
+    // handed to the runtime, which measures them in the person's own metres (before the rig is
+    // scaled up), so there they are the real numbers; on a screen the camera lives in the city's
+    // metres and they are multiplied out.
     const cam = camera as THREE.PerspectiveCamera
-    const s = rig.mode === 'table' ? tableScale : 1
-    const near = rig.mode === 'table' ? .04 * s : .3, far = rig.mode === 'table' ? 40 * s : 20000
+    const k = inXR ? 1 : rig.mode === 'table' ? tableScale : 1
+    const near = (rig.mode === 'table' ? .05 : .3) * k, far = (rig.mode === 'table' ? 40 : 20000) * k
     if (cam.near !== near || cam.far !== far) { cam.near = near; cam.far = far; cam.updateProjectionMatrix() }
+
+    /* the eye the tile loader looks through, at the person's head */
+    if (origin.current && g.ready) {
+      const o = origin.current
+      o.updateMatrixWorld(true)
+      if (rig.mode === 'table') {
+        eye.position.copy(o.localToWorld(tmp.a.set(0, 1.45, .35)))
+        eye.lookAt(o.localToWorld(tmp.b.set(0, TABLE.y - .05, TABLE.z)))
+        eye.fov = 60; eye.near = .05 * tableScale; eye.far = 40 * tableScale
+      } else {
+        eye.position.copy(o.localToWorld(tmp.a.set(0, 1.6, 0)))
+        eye.lookAt(g.stops[standAt] ?? o.localToWorld(tmp.b.set(0, 1.6, -30)))
+        eye.fov = 120; eye.near = .3; eye.far = 20000      // wide: they can turn their head
+      }
+      eye.updateProjectionMatrix(); eye.updateMatrixWorld(true)
+    }
 
     /* the table's edges: the city beyond them is clipped away (in tile materials only, so the person's own things are never cut) */
     const P = clipPlanes
