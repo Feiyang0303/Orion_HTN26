@@ -1,6 +1,6 @@
 {
   "name": "Orion",
   "rootNamespace": "Orion",
-  "references": ["CesiumRuntime", "Unity.Mathematics", "Unity.TextMeshPro", "Unity.InputSystem"],
+  "references": ["CesiumForUnity", "Unity.Mathematics", "Unity.TextMeshPro", "Unity.InputSystem"],
   "autoReferenced": true
 }

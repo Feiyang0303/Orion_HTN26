@@ -57,7 +57,7 @@ namespace Orion.World
 
         public Vector3 ToWorld(double lat, double lon)
         {
-            double3 ecef = CesiumWgs84Ellipsoid.LongitudeLatitudeHeightToEarthCenteredEarthFixed(new double3(lon, lat, 0));
+            double3 ecef = georeference.ellipsoid.LongitudeLatitudeHeightToCenteredFixed(new double3(lon, lat, 0));
             double3 p = georeference.TransformEarthCenteredEarthFixedPositionToUnity(ecef);
             return georeference.transform.TransformPoint(new Vector3((float)p.x, (float)p.y, (float)p.z));
         }
