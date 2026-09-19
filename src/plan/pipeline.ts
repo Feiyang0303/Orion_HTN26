@@ -1,3 +1,4 @@
+import { report, observeCrew } from '../telemetry'
 import type { Plan, Stop, Target, Wish } from '../types'
 import { HHMM, MINS } from '../types'
 import type { Agent, CrewEvent } from './events'
@@ -48,7 +49,8 @@ function limiter(max: number) {
     photo — then the clock over the finished set. */
 export async function writePages(skeleton: Skeleton, opts: PipelineOptions): Promise<Plan> {
   const { wish, mode, origin, from, stops: chosen, legs, approach } = skeleton
-  const { onEvent = () => {}, saveAudio } = opts
+  const { saveAudio } = opts
+  const onEvent = observeCrew(opts.onEvent ?? (() => {}))
   const say = (agent: Agent, kind: 'tool' | 'agent', state: 'working' | 'done' | 'reworking' | 'failed', detail: string) =>
     onEvent({ type: 'crew', agent, kind, state, detail })
 
@@ -98,6 +100,7 @@ export async function writePages(skeleton: Skeleton, opts: PipelineOptions): Pro
       try {
         drafts = (await narrate({ name: c.name, extract: a?.extract ?? '' }, targets, mode, ctx)).beats
       } catch (e) {
+        report(e, 'narrator.stop', { level: 'warning', extra: { stop: c.name } })
         say('Narrator', 'agent', 'failed', `${c.name}: ${(e as Error).message}`)
       }
     }
@@ -165,7 +168,8 @@ export async function writePages(skeleton: Skeleton, opts: PipelineOptions): Pro
 /** The whole run, headless: what the fixture script and any caller without a
     planning page uses. Identical to what the page does, in one call. */
 export async function planTour(wish: Wish, opts: PipelineOptions & { mode?: Mode }): Promise<Plan> {
-  const { mode = 'full', onEvent = () => {}, signal } = opts
+  const { mode = 'full', signal } = opts
+  const onEvent = observeCrew(opts.onEvent ?? (() => {}))
   const say = (agent: Agent, kind: 'tool' | 'agent', state: 'working' | 'done' | 'failed', detail: string) =>
     onEvent({ type: 'crew', agent, kind, state, detail })
 
@@ -248,7 +252,8 @@ const perDay = (mode: Mode) => (mode === 'short' ? 3 : 4)
 export type TripOptions = PipelineOptions & { mode?: Mode }
 
 export async function planTrip(wish: Wish, opts: TripOptions): Promise<Trip> {
-  const { mode = 'full', onEvent = () => {}, signal } = opts
+  const { mode = 'full', signal } = opts
+  const onEvent = observeCrew(opts.onEvent ?? (() => {}))
   const say = (agent: Agent, kind: 'tool' | 'agent', state: 'working' | 'done' | 'failed', detail: string) =>
     onEvent({ type: 'crew', agent, kind, state, detail })
   const nDays = Math.max(1, Math.min(7, Math.round(wish.days || 1)))

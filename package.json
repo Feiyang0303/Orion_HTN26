@@ -5,9 +5,9 @@
   "type": "module",
   "description": "Name a place. An AI crew plans your day on real streets, then a guide flies you through it over the real city.",
   "scripts": {
-    "dev": "concurrently -k -n web,proxy -c cyan,magenta \"vite\" \"node scripts/proxy.mjs\"",
+    "dev": "concurrently -k -n web,proxy -c cyan,magenta \"vite\" \"node --import ./scripts/instrument.mjs scripts/proxy.mjs\"",
     "web": "vite",
-    "proxy": "node scripts/proxy.mjs",
+    "proxy": "node --import ./scripts/instrument.mjs scripts/proxy.mjs",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b",
     "fixture": "tsx scripts/make-fixture.ts"
@@ -15,6 +15,8 @@
   "dependencies": {
     "@react-three/drei": "^10.7.6",
     "@react-three/fiber": "^9.4.0",
+    "@sentry/node": "^10.75.0",
+    "@sentry/react": "^10.75.0",
     "3d-tiles-renderer": "^0.5.3",
     "react": "~19.2.0",
     "react-dom": "~19.2.0",

@@ -1,8 +1,9 @@
+import { report } from '../telemetry'
 import { useCallback, useMemo, type ReactNode } from 'react'
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js'
 import { TilesRenderer, TilesPlugin, TilesAttributionOverlay } from '3d-tiles-renderer/r3f'
 import { GoogleCloudAuthPlugin, GLTFExtensionsPlugin, ReorientationPlugin, TileCompressionPlugin, TilesFadePlugin } from '3d-tiles-renderer/plugins'
-import type { Intersection, Object3D, Raycaster, Vector3 } from 'three'
+import type { Camera, Intersection, Object3D, Raycaster, Vector3 } from 'three'
 import { DEG } from './geo'
 
 /* Google Photorealistic 3D Tiles. Reoriented so the search point is the
@@ -22,10 +23,12 @@ export async function probeTiles(): Promise<{ ok: true } | { ok: false; why: str
   try {
     const res = await fetch(`${ROOT}?key=${key}`)
     if (res.ok) return { ok: true }
+    report(new Error(`tiles root answered ${res.status}`), 'tiles.probe', { level: 'error', extra: { status: res.status } })
     return { ok: false, why: res.status === 403 || res.status === 400
       ? `Google rejected the tiles key (${res.status}). Check that the Map Tiles API is enabled and the key's referrer allows this origin.`
       : `Google's tile server answered ${res.status}.` }
-  } catch {
+  } catch (e) {
+    report(e, 'tiles.probe', { level: 'error' })
     return { ok: false, why: "Couldn't reach Google's tile server. Check the connection." }
   }
 }
@@ -35,6 +38,12 @@ export type TilesHandle = {
   raycast: (raycaster: Raycaster, intersects: Intersection[]) => void
   ellipsoid: { getCartographicToPosition: (lat: number, lon: number, height: number, target: Vector3) => Vector3 }
   group: Object3D
+  // Extra cameras are how tiles get preloaded: the renderer keeps every tile any registered camera needs.
+  setCamera: (c: Camera) => boolean
+  deleteCamera: (c: Camera) => boolean
+  setResolution: (c: Camera, w: number, h: number) => boolean
+  stats: { queued: number; downloading: number; parsing: number; loaded: number }
+  lruCache: { cachedBytes: number }
 }
 
 export default function GoogleTiles({ lat, lon, onLoadEnd, tilesRef, children }: {
@@ -49,7 +58,13 @@ export default function GoogleTiles({ lat, lon, onLoadEnd, tilesRef, children }:
   const authArgs = useMemo(() => [{ apiToken }], [apiToken])
   const gltfArgs = useMemo(() => [{ dracoLoader }], [dracoLoader])
   const orientArgs = useMemo(() => [{ lat: lat * DEG, lon: lon * DEG, height: 0, up: '+y' as const, recenter: true }], [lat, lon])
-  const setRef = useCallback((t: unknown) => tilesRef(t as TilesHandle | null), [tilesRef])
+  const setRef = useCallback((t: unknown) => {
+    const handle = t as (TilesHandle & { addEventListener: (type: string, fn: (e: { error?: unknown; url?: string }) => void) => void }) | null
+    // Tile failures are reported (throttled per message in telemetry). The URL is
+    // scrubbed there, because Google's carries the API key and a session token.
+    handle?.addEventListener('load-error', e => report(e.error ?? new Error('tile failed to load'), 'tiles.load', { level: 'warning', extra: { url: e.url } }))
+    tilesRef(handle)
+  }, [tilesRef])
   if (!apiToken) return null
   return (
     <TilesRenderer ref={setRef} onTilesLoadEnd={onLoadEnd}>

@@ -50,11 +50,13 @@ type Props = {
   busy?: string | null
 }
 
-/* Carto's pale basemap, which is close enough to the book's paper that one CSS
-   filter finishes the job. Tiles are © OpenStreetMap contributors, © CARTO;
-   the credit is printed in the corner and must stay there. */
-const TILES = (z: number, x: number, y: number) =>
-  `https://basemaps.cartocdn.com/light_all/${z}/${x}/${y}${devicePixelRatio > 1.4 ? '@2x' : ''}.png`
+/* OpenStreetMap's own tiles, which the book's paper filter (see journal.css)
+   turns into a sheet of the same stock. Carto's free basemap now stamps "API
+   KEY REQUIRED" over every tile, so it is not an option. The OSM tile server
+   asks for light use and a visible credit; the credit is printed in the corner
+   and must stay there, and a demo is well within "light". There is no @2x
+   tile, so retina screens get the standard one. */
+const TILES = (z: number, x: number, y: number) => `https://tile.openstreetmap.org/${z}/${x}/${y}.png`
 const TILE = 256
 const MIN_Z = 3, MAX_Z = 18
 
@@ -247,7 +249,7 @@ export default function MapSheet({ centre, pins, legs = [], onPick, onRemove, fo
 
       {onPick && <p className="om-hint">Click the ground to drop a pin</p>}
       {busy && <p className="om-busy"><span className="jr-busy" aria-hidden /> Finding {busy}…</p>}
-      <p className="om-credit">© OpenStreetMap contributors © CARTO</p>
+      <p className="om-credit">© OpenStreetMap contributors</p>
     </div>
   )
 }

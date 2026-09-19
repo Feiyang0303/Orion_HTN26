@@ -1,3 +1,4 @@
+import { report } from '../telemetry'
 import type { LatLon, Source } from '../types'
 import { metresBetween } from './geo'
 
@@ -50,16 +51,18 @@ async function overpass(query: string, signal?: AbortSignal): Promise<Element[]>
         headers: { 'content-type': 'application/x-www-form-urlencoded' },
         body: 'data=' + encodeURIComponent(query),
       })
-      if (!res.ok) continue
+      if (!res.ok) { report(new Error(`overpass ${new URL(url).hostname} answered ${res.status}`), 'osm.overpass', { level: 'warning' }); continue }
       const body = await res.json() as { elements?: Element[] }
       return body.elements ?? []
-    } catch {
+    } catch (e) {
+      if (!signal?.aborted) report(e, 'osm.overpass', { level: 'warning', extra: { mirror: new URL(url).hostname, timedOut: guard.signal.aborted } })
       /* next mirror */
     } finally {
       clearTimeout(timer)
       signal?.removeEventListener('abort', onAbort)
     }
   }
+  if (!signal?.aborted) report(new Error('every Overpass mirror failed'), 'osm.overpass.exhausted', { level: 'error' })
   return []
 }
 

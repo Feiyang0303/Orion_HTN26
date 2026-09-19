@@ -7,6 +7,7 @@ import Desk, { type DeskResult } from './plan/ui/Desk'
 import Home from './plan/ui/Home'
 import Studio from './plan/ui/Studio'
 import type { Day, LatLon } from './types'
+import { breadcrumb, tag } from './telemetry'
 import './plan/ui/journal.css'
 
 /* The shell. One canvas (tiles, owned by src/fly) sits behind one overlay
@@ -28,6 +29,8 @@ const LANDING: LatLon = { lat: 48.8584, lon: 2.2945 }
 
 export default function App() {
   const [phase, setPhase] = useState<Phase>('home')
+  // The trail an error will carry: which screen the person was on, and in which city.
+  useEffect(() => { tag('phase', phase); breadcrumb('nav', `phase → ${phase}`) }, [phase])
   const [origin, setOrigin] = useState<LatLon | null>(LANDING)
   const [desk, setDesk] = useState<DeskResult | null>(null)
   const [flying, setFlying] = useState<Day | null>(null)

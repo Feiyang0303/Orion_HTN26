@@ -1,3 +1,4 @@
+import { observeCrew, traced } from '../telemetry'
 import type { Day, Stay, Stop, Trip, Waypoint, Wish } from '../types'
 import { HHMM, MINS } from '../types'
 import type { Agent, CrewEvent } from './events'
@@ -48,10 +49,10 @@ const say = (s: Session, agent: Agent, kind: 'tool' | 'agent', state: 'working' 
   s.onEvent({ type: 'crew', agent, kind, state, detail })
 
 /** Stage 0: the city, and what Wikipedia knows around it. */
-export async function openSession(
+async function openSessionImpl(
   wish: Wish, mode: Mode, onEvent: (e: CrewEvent) => void, signal?: AbortSignal,
 ): Promise<Session> {
-  const s: Session = { wish, mode, origin: null as unknown as Place, catalogue: [], known: new Map(), offered: [], bed: null, written: new Map(), onEvent, signal }
+  const s: Session = { wish, mode, origin: null as unknown as Place, catalogue: [], known: new Map(), offered: [], bed: null, written: new Map(), onEvent: observeCrew(onEvent), signal }
   say(s, 'Geocode', 'tool', 'working', `Looking up ${wish.city}`)
   s.origin = await geocode(wish.city, signal)
   say(s, 'Geocode', 'tool', 'done', s.origin.name)
@@ -71,7 +72,7 @@ export async function openSession(
 /** Three ranked beds. Judged against the centre of the most-read places in the
     catalogue, since no day exists yet — which is the right centre anyway: it is
     where the days will be. */
-export async function stageBeds(s: Session): Promise<Stay[]> {
+async function stageBedsImpl(s: Session): Promise<Stay[]> {
   const top = s.catalogue.slice(0, 12)
   const centre = top.length
     ? { lat: top.reduce((a, p) => a + p.lat, 0) / top.length, lon: top.reduce((a, p) => a + p.lon, 0) / top.length }
@@ -91,7 +92,7 @@ export type DayDraft = { title: string; why: string; stops: Candidate[] }
 /** What the scout would do with the days: the places, already grouped. The
     count is sized to the hours, not fixed — a long day with a fast pace holds
     more than a short gentle one. */
-export async function stagePlaces(s: Session, bed: Stay | null): Promise<DayDraft[]> {
+async function stagePlacesImpl(s: Session, bed: Stay | null): Promise<DayDraft[]> {
   s.bed = bed
   const wish = s.wish
   const nDays = Math.max(1, Math.min(7, wish.days || 1))
@@ -136,7 +137,7 @@ export async function stagePlaces(s: Session, bed: Stay | null): Promise<DayDraf
 }
 
 /** More places, for a day someone emptied or a list they did not like. */
-export async function morePlaces(s: Session, avoid: Candidate[], count: number): Promise<Candidate[]> {
+async function morePlacesImpl(s: Session, avoid: Candidate[], count: number): Promise<Candidate[]> {
   const extra = await findStops({ catalogue: s.catalogue, wish: s.wish, mode: s.mode, fixed: avoid, count, onEvent: s.onEvent })
   for (const c of extra) s.known.set(c.id, c)
   return extra
@@ -181,7 +182,7 @@ async function buildDay(s: Session, draft: DayDraft, number: number, opts: Pipel
   return { ...plan, id: `${plan.id}-d${number}`, number, title: draft.title, tables }
 }
 
-export async function stagePlan(s: Session, drafts: DayDraft[], opts: PipelineOptions): Promise<Trip> {
+async function stagePlanImpl(s: Session, drafts: DayDraft[], opts: PipelineOptions): Promise<Trip> {
   const days: Day[] = []
   for (const d of drafts) {
     if (!d.stops.length) continue
@@ -272,7 +273,7 @@ function describeTrip(trip: Trip) {
   ].join('\n')
 }
 
-export async function revise(trip: Trip, message: string): Promise<Revision> {
+async function reviseImpl(trip: Trip, message: string): Promise<Revision> {
   const r = await askJson<{ reply: string; edits: unknown[] }>('critic', EDITOR_SYSTEM,
     `The plan:\n${describeTrip(trip)}\n\nThey said: "${message.trim()}"`, 1500)
   return { reply: String(r.reply ?? '').trim(), edits: (Array.isArray(r.edits) ? r.edits : []).flatMap(normaliseEdit) }
@@ -429,3 +430,12 @@ function candidateFrom(st: Stop): Candidate {
 }
 
 export { HHMM, MINS }
+
+/* Each stage is its own trace (see telemetry.traced), with the facts that make
+   a slow one explainable: how many days, which transport, how many places. */
+export const openSession = traced('plan.open', openSessionImpl, (w) => ({ city: w.city, days: w.days, transport: w.transport, party: w.party }))
+export const stageBeds = traced('plan.beds', stageBedsImpl, s => ({ city: s.origin.name }))
+export const stagePlaces = traced('plan.places', stagePlacesImpl, s => ({ city: s.origin.name, days: s.wish.days, transport: s.wish.transport, catalogue: s.catalogue.length }))
+export const morePlaces = traced('plan.more_places', morePlacesImpl, s => ({ city: s.origin.name }))
+export const stagePlan = traced('plan.build', stagePlanImpl, (s, drafts) => ({ city: s.origin.name, days: drafts.length, stops: drafts.reduce((n, d) => n + d.stops.length, 0), transport: s.wish.transport }))
+export const revise = traced('plan.revise', reviseImpl, (_t, message) => ({ chars: message.length }))
