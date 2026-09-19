@@ -1,10 +1,14 @@
-import type { Budget, Party, TransportWish, Wish } from '../types'
-import type { Article } from './wikipedia'
+import type { Budget, LatLon, Party, TransportWish, Wish } from '../types'
+import { locate } from './geocode'
+import { resolveTitles, type Article, type Rejected } from './wikipedia'
 import { askJson } from './json'
 import { metresBetween } from './geo'
 
-/* SCOUT (LLM). Chooses which places belong in the day, from the supplied
-   catalogue only. `kind` feeds the Timekeeper's visit-length table.
+/* SCOUT (LLM). Names the places worth flying to, from what the model knows,
+   and code verifies every one: a name is looked up on Wikipedia and only kept if
+   it is a real article with coordinates inside the area. The model supplies
+   names and nothing else; every fact the guide later says comes from the text
+   that lookup returned. `kind` feeds the Timekeeper's visit-length table.
 
    The brief is not a walking tour's. Orion's guide is a camera fifty-five
    metres up, moving: a place earns its slot by being legible from above and by
@@ -17,26 +21,38 @@ export type Kind = typeof KINDS[number]
 export type ScoutPick = { article: Article; why: string; kind: Kind; minutes?: number }
 
 const SYSTEM = `You are the scout for a flight over a real city. A camera will fly to each
-place you choose, hold above it while a guide speaks, then fly on to the next.
+place you name, hold above it while a guide speaks, then fly on to the next.
 You are choosing what is worth flying to.
+
+ONLY WELL-KNOWN PLACES — this rule outranks every other
+- Name only places a first-time visitor would already have heard of, or that sit
+  on the first page of any guidebook or any "things to see in the city" list:
+  the icons, the great landmarks, the famous squares, bridges, parks, cathedrals,
+  palaces, castles, markets, avenues and viewpoints.
+- Never name minor or obscure buildings, private mansions, embassies, ministries,
+  offices, schools, hospitals, hotels, restaurants, shops, railway stations,
+  individual statues or plaques nobody travels for, or a neighbourhood as such.
+  If you would have to explain why anyone has heard of it, leave it out.
+- Name a place only if you are certain it exists, and give the exact title of its
+  English Wikipedia article ("Sainte-Chapelle", "Pont Neuf", "Musée d'Orsay").
+  Every name is looked up, and one that cannot be found is thrown away, so a
+  wrong guess costs a slot. If you are unsure of the exact title, choose another place.
+- Fewer famous places beat a full list of obscure ones. List the most famous first.
 
 WHAT MAKES A GOOD STOP HERE
 - It reads from the air. A roofline, a dome, a tower, a bridge's span, the
   shape of a square, a park's edge against the streets, a river bend. If the
   only remarkable thing about a place is inside it, it is a weak stop no matter
-  how famous it is — say so by not choosing it.
+  how famous it is; do not name it.
 - It has surroundings. The guide can point the camera at things near a stop, so
-  a place standing among other named things beats an equally good place alone
-  in a suburb.
+  a place standing among other named things beats an equally good place alone.
 - It is different from its neighbours in the list. Three churches is one stop
   repeated three times, whatever their names are.
 
 HOW TO SPREAD THEM
-- The stops should be spread across the area, not strung along one street.
-  Every stop you add should be a noticeable distance from the ones already
-  chosen — as a rule, no two stops closer together than about 300 metres.
-- The order does not matter. A router settles that afterwards from real travel
-  times, so choose the best set and ignore the sequence.
+- Spread the stops across the area, not strung along one street: no two stops
+  closer together than about 300 metres.
+- The order does not matter. A router settles that afterwards from real travel times.
 
 THE DAY YOU ARE CHOOSING FOR
 You are given the hours, how the person is getting about, who is travelling,
@@ -47,26 +63,21 @@ what they said interests them, and what the day may cost. Use them:
   enough to be impressive; avoid places whose whole point is quiet reverence.
 - Taking it easy means fewer, closer, flatter, and near transport.
 - "Free things only" rules out anywhere whose sight is behind a ticket desk.
-- Short hours mean the set has to be small enough to be unhurried; you are not
-  told to fill the day.
+- Short hours mean the set has to be small enough to be unhurried.
 
 HOW LONG EACH TAKES
-For every pick, say how many minutes a visitor actually spends there on a real
-day: a cathedral is forty-five minutes to an hour, a big museum is two to
-three hours, a viewpoint is twenty minutes, a market is an hour with lunch.
-Be honest rather than generous — the day has to fit, and a plan that gives
-fifteen minutes to the Louvre is not a plan. Your estimates are checked
-against a table and clamped, so a wild number simply gets ignored.
+For every place, say how many minutes a visitor really spends there: a cathedral
+is forty-five minutes to an hour, a big museum two to three hours, a viewpoint
+twenty minutes, a market an hour with lunch. Be honest rather than generous.
+Your estimates are checked against a table and clamped.
 
-HONESTY
-- Choose only ids from the catalogue. Never invent a place, a name or an id.
-- The "why" must be specific to this place and drawn from what the catalogue
-  entry actually says — not a generic compliment. Twelve words at most.
-- If the area genuinely does not hold enough good places, choose fewer than
-  asked. A padded day is worse than a short one.
+WHY
+"why" says why this place suits THIS day: their interests, how it looks from
+above, what stands around it. Twelve words at most. State no facts about the
+place itself (dates, sizes, history): the guide will get those from a real source.
 
-Reply with a JSON object:
-{"picks":[{"id":"<catalogue id>","why":"<max 12 words, specific>","kind":"<one of: ${KINDS.join(', ')}>","minutes":<integer>}]}`
+Reply with a JSON object, most famous first:
+{"places":[{"title":"<exact English Wikipedia title>","why":"<max 12 words>","kind":"<one of: ${KINDS.join(', ')}>","minutes":<integer>}]}`
 
 /** The parts of the desk the scout is shown. Everything here changes what it
     should choose; nothing here is passed on for decoration. */
@@ -105,11 +116,16 @@ const MOVE: Record<TransportWish, string> = {
   auto: 'on foot where it is close, otherwise by whatever the budget allows',
 }
 
-export async function scout(catalogue: Article[], brief: ScoutBrief): Promise<ScoutPick[]> {
-  const { count, wish = {}, fixed = [], complaints = [], previous = [] } = brief
-  const byId = new Map(catalogue.map(a => [`c${a.pageId}`, a]))
-  const lines = catalogue.map(a =>
-    `c${a.pageId} | ${a.title} | ${Math.round(a.distM)} m from centre | ${a.extract.replace(/\s+/g, ' ').slice(0, 170)}`)
+const MIN_APART_M = 300
+const ROUNDS = 2
+
+export type ScoutResult = { picks: ScoutPick[]; rejected: Rejected[] }
+
+/** Ask for more names than needed (some will not verify), look them all up, keep
+    the first `count` that pass and stand apart, and ask once more for the
+    shortfall, saying what was thrown away and why. */
+export async function scout(brief: ScoutBrief & { city: string; origin: LatLon; radiusM: number }): Promise<ScoutResult> {
+  const { count, wish = {}, fixed = [], complaints = [], previous = [], city, origin, radiusM } = brief
 
   const day = [
     wish.startAt && wish.endAt ? `Hours: ${wish.startAt} to ${wish.endAt}.` : '',
@@ -120,39 +136,68 @@ export async function scout(catalogue: Article[], brief: ScoutBrief): Promise<Sc
     wish.interests?.length ? `Interests: ${wish.interests.join(', ')}.` : 'Interests: none given.',
   ].filter(Boolean).join('\n')
 
-  const user = `Choose ${count} stop${count === 1 ? '' : 's'}.\n\n${day}` +
-    (fixed.length
-      ? `\n\nAlready in the day, named by the person and fixed — choose things that sit well beside these, ` +
-        `and never choose the same place again under another name:\n` +
-        fixed.map(f => `- ${f.name}`).join('\n')
-      : '') +
-    `\n\nCatalogue:\n${lines.join('\n')}` +
-    (complaints.length
-      ? `\n\nYour previous set (${previous.join(', ')}) was rejected for:\n- ${complaints.join('\n- ')}\nFix these; keep what was not complained about.`
-      : '')
-
-  const { picks } = await askJson<{ picks: { id: string; why: string; kind: string; minutes?: number }[] }>('scout', SYSTEM, user, 4000)
-
-  /* The spread rule is checked here rather than trusted. A model asked not to
-     cluster will still cluster, and this is three lines of arithmetic. */
-  const MIN_APART_M = 300
   const keep: ScoutPick[] = []
+  const rejected: Rejected[] = []
+  const named = new Set<string>()      // names already tried in this call, so a second round does not repeat them
   const placed = [...fixed]
-  const seen = new Set<string>()
-  for (const p of picks ?? []) {
-    const article = byId.get(p.id)
-    if (!article || seen.has(p.id)) continue      // ids not in the catalogue are ignored, never trusted
-    if (placed.some(q => metresBetween(q, article) < MIN_APART_M)) continue
-    seen.add(p.id)
-    placed.push({ name: article.title, lat: article.lat, lon: article.lon })
-    keep.push({
-      article, why: String(p.why ?? '').trim(),
-      kind: (KINDS as readonly string[]).includes(p.kind) ? p.kind as Kind : 'other',
-      minutes: Number.isFinite(Number(p.minutes)) ? Number(p.minutes) : undefined,
-    })
+
+  for (let round = 0; round < ROUNDS && keep.length < count; round++) {
+    const need = count - keep.length
+    const ask = need + Math.max(3, Math.ceil(need * 0.6))     // some names will not survive the lookup
+    const user = `Name ${ask} places in ${city}, within about ${(radiusM / 1000).toFixed(0)} km of the centre. ` +
+      `At least ${need} must be famous enough to survive the rule above.\n\n${day}` +
+      (fixed.length
+        ? `\n\nAlready in the day, named by the person and fixed — name things that sit well beside these, ` +
+          `and never name the same place again under another title:\n${fixed.map(f => `- ${f.name}`).join('\n')}`
+        : '') +
+      (named.size ? `\n\nAlready named; do not repeat: ${[...named].join('; ')}` : '') +
+      (rejected.length ? `\n\nThese names could not be used: ${rejected.map(r => `${r.title} (${r.reason})`).join('; ')}.` : '') +
+      (complaints.length
+        ? `\n\nYour previous set${previous.length ? ` (${previous.join('; ')})` : ''} was rejected for:\n- ${complaints.join('\n- ')}\n` +
+          `Change only what is needed to fix this. Keep the famous places that were not the problem; if the day is too long, drop the ` +
+          `slowest or least essential rather than swapping icons for lesser places.`
+        : '')
+
+    const { places } = await askJson<{ places: { title: string; why: string; kind: string; minutes?: number }[] }>('scout', SYSTEM, user, 4000)
+    const asked = (places ?? []).filter(p => typeof p?.title === 'string' && p.title.trim() && !named.has(p.title.trim().toLowerCase()))
+    asked.forEach(p => named.add(p.title.trim().toLowerCase()))
+    if (!asked.length) break
+
+    const near = async (title: string) => (await locate(title, origin).catch(() => null))
+    const first = await resolveTitles(asked.map(p => p.title), origin, radiusM, near)
+    const found = first.found
+    let bad = first.rejected
+
+    /* "Sacré-Cœur" is a disambiguation page and "Notre-Dame" is a dozen churches;
+       the article is usually "Sacré-Cœur, Paris". Try the city on the end before giving up. */
+    const again = bad.filter(r => /no such|disambiguation/.test(r.reason))
+    if (again.length) {
+      const variant = new Map(again.map(r => [`${r.title}, ${city}`, r.title]))
+      const second = await resolveTitles([...variant.keys()], origin, radiusM, near)
+      for (const f of second.found) found.push({ asked: variant.get(f.asked)!, article: f.article })
+      const won = new Set(second.found.map(f => variant.get(f.asked)))
+      bad = bad.filter(r => !won.has(r.title))
+    }
+    rejected.push(...bad)
+    const meta = new Map(asked.map(p => [p.title.trim(), p]))
+    // In the model's order, which is most famous first.
+    for (const p of asked) {
+      const hit = found.find(f => f.asked === p.title.trim())
+      if (!hit || keep.length >= count) continue
+      const { article } = hit
+      if (keep.some(k => k.article.pageId === article.pageId)) continue
+      if (placed.some(q => metresBetween(q, article) < MIN_APART_M)) { rejected.push({ title: p.title, reason: 'too close to a stop already chosen' }); continue }
+      placed.push({ name: article.title, lat: article.lat, lon: article.lon })
+      const m = meta.get(p.title.trim())!
+      keep.push({
+        article, why: String(m.why ?? '').trim(),
+        kind: (KINDS as readonly string[]).includes(m.kind) ? m.kind as Kind : 'other',
+        minutes: Number.isFinite(Number(m.minutes)) ? Number(m.minutes) : undefined,
+      })
+    }
   }
-  if (!keep.length) throw new Error('The scout could not find enough good places nearby.')
-  return keep.slice(0, count)
+  if (!keep.length) throw new Error(`The scout could not name well-known places in ${city} that it could verify.`)
+  return { picks: keep, rejected }
 }
 
 /* ---------------------------------------------------------------- anchoring */

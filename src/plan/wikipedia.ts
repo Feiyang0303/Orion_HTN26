@@ -111,28 +111,18 @@ export async function photoFor(a: Article): Promise<Photo | null> {
 }
 
 
-/* ---- the wide catalogue ------------------------------------------------------
-   `notable` asks Wikipedia for the N *nearest* articles, so in a dense city
-   its radius is a fiction: the nearest 400 in central Paris are all within
-   about a kilometre, and the Louvre, the Eiffel Tower and Notre-Dame never make
-   the list. The wide catalogue asks Wikidata instead: everything with a
-   coordinate within the radius, ranked by how many language editions of
-   Wikipedia have an article about it. That is a far better notability signal
-   than pageviews, and it is one request, not thirty.
+/* ---- verifying names ---------------------------------------------------------
+   The Scout names places from what it knows; nothing it says is trusted until
+   it has been looked up. One batched request turns a list of English Wikipedia
+   titles into real articles with coordinates, or into a reason each one was
+   dropped: no such article, a disambiguation page, no coordinates, too far from
+   the city, no summary to draw on, or not somewhere to stand (a language, an
+   agency, a war). Whatever survives is exactly what a catalogue entry was, so
+   the rest of the crew cannot tell the difference. */
 
-   Wikidata takes ~30 s on a dense city, so this is cached per city, started the
-   moment the desk recognises the city (nobody fills the form in faster), kept on
-   disk by the proxy so a repeat city is instant, and backed by the cheap
-   geosearch-and-pageviews route if Wikidata is slow or refuses. */
-
-export const WIDE_RADIUS_M = 9500
-const WIDE_KEEP = 140
-const NOT_A_PLACE = /^(list of|timeline of|\d+(st|nd|rd|th) arrondissement|arrondissements? of|districts? of|quartiers? of)/i
-
-/** Wikidata holds things with coordinates that are not places to stand: a
-    language, an agency, a war. Wikipedia's first sentence says what a thing is
-    ("X is a Romance language"), which is cheaper and surer than walking the
-    class tree, so that is what is read. */
+/** Wikipedia's first sentence says what a thing is ("X is a Romance language"),
+    which is cheaper and surer than walking a class tree. Only the noun straight
+    after "is a/the" counts, so "a museum in the capital" is not "the capital". */
 export const NOT_A_DESTINATION = new RegExp(
   '\\b(?:is|was|are|were)\\s+(?:(?:a|an|the)\\s+(?:[\\w\\u00C0-\\u024F-]+\\s+){0,3}?|one of the\\s+(?:[\\w\\u00C0-\\u024F-]+\\s+){0,4}?)' +
   '(?:language|organi[sz]ation|agency|treaty|agreement|war|battle|massacre|attack|election|championship|tournament|' +
@@ -142,120 +132,47 @@ export const NOT_A_DESTINATION = new RegExp(
   'crisis|revolution|uprising|university|government|olympics|cup|shooting|bombing|riot|siege|affair|scandal|fire|disaster|' +
   'law|act|policy|group|band|state)s?\\b', 'i')
 
-function offset(p: LatLon, metres: number, bearingDeg: number): LatLon {
-  const R = 6371000, d = metres / R, b = bearingDeg * Math.PI / 180
-  const la = p.lat * Math.PI / 180, lo = p.lon * Math.PI / 180
-  const la2 = Math.asin(Math.sin(la) * Math.cos(d) + Math.cos(la) * Math.sin(d) * Math.cos(b))
-  const lo2 = lo + Math.atan2(Math.sin(b) * Math.sin(d) * Math.cos(la), Math.cos(d) - Math.sin(la) * Math.sin(la2))
-  return { lat: la2 * 180 / Math.PI, lon: lo2 * 180 / Math.PI }
+export type Rejected = { title: string; reason: string }
+
+type Resolved = Page & {
+  title: string
+  missing?: boolean
+  coordinates?: { lat: number; lon: number }[]
+  pageprops?: { disambiguation?: string }
 }
 
-const wideCache = new Map<string, Promise<Article[]>>()
-
-/** How long the notability route gets before the cheap route takes over. The
-    query itself keeps running in the proxy and caches its answer, so it is not
-    wasted: the next plan for this city is instant. Scripts that warm the cache
-    can afford to wait it out. */
-export const wideConfig = { sparqlMs: 22_000 }
-
-const cell = (v: number) => +(Math.round(v / 0.05) * 0.05).toFixed(2)   // ~5 km: geocoders disagree by less than that, and the radius is 9.5 km
-
-/** Cached per city cell. Failures are not cached, so a retry really retries. */
-export function wideCatalogue(origin: LatLon): Promise<Article[]> {
-  const centre = { lat: cell(origin.lat), lon: cell(origin.lon) }
-  const key = `${centre.lat},${centre.lon}`
-  let p = wideCache.get(key)
-  if (!p) { p = buildWide(centre, key).catch(e => { wideCache.delete(key); throw e }); wideCache.set(key, p) }
-  return p
-}
-
-async function buildWide(origin: LatLon, key: string): Promise<Article[]> {
-  const good = byNotability(origin).then(list => (list.length >= 12 ? list : Promise.reject(new Error('too few'))))
-  good.then(list => wideCache.set(key, Promise.resolve(list)), () => {})     // if it lands late, later callers get the better list
-  const late = new Promise<never>((_, no) => setTimeout(() => no(new Error('slow')), wideConfig.sparqlMs))
-  try { return await Promise.race([good, late]) }
-  catch { return byPageviews(origin) }                                        // Wikidata slow or refusing
-}
-
-const sparql = (c: LatLon, km: number) => `SELECT ?title ?lat ?lon ?links WHERE {
-  SERVICE wikibase:around { ?item wdt:P625 ?loc .
-    bd:serviceParam wikibase:center "Point(${c.lon} ${c.lat})"^^geo:wktLiteral .
-    bd:serviceParam wikibase:radius "${km}" . }
-  ?item wikibase:sitelinks ?links . FILTER(?links > 12)
-  ?article schema:about ?item ; schema:isPartOf <https://en.wikipedia.org/> ; schema:name ?title .
-  BIND(geof:latitude(?loc) AS ?lat) BIND(geof:longitude(?loc) AS ?lon)
-} ORDER BY DESC(?links) LIMIT 220`
-
-type Row = { title: { value: string }; lat: { value: string }; lon: { value: string }; links: { value: string } }
-
-export async function byNotability(origin: LatLon): Promise<Article[]> {
-  const url = 'https://query.wikidata.org/sparql?' + new URLSearchParams({ format: 'json', query: sparql(origin, WIDE_RADIUS_M / 1000) })
-  const res = await wikiGet<{ results: { bindings: Row[] } }>(url, AbortSignal.timeout(65_000))
-  return articlesFrom(origin, res.results.bindings)
-}
-
-/** Turn ranked Wikidata rows into articles with real intros, dropping what is
-    not somewhere to stand. Exported so it can be tested without the network. */
-export async function articlesFrom(origin: LatLon, rows: Row[], fetchIntros = introsByTitle): Promise<Article[]> {
-  const seen = new Set<string>()
-  const ranked = rows.flatMap(r => {
-    const title = r.title.value
-    if (seen.has(title) || NOT_A_PLACE.test(title)) return []
-    seen.add(title)
-    return [{ title, lat: +r.lat.value, lon: +r.lon.value }]
-  }).slice(0, 190)
-  const details = await fetchIntros(ranked.map(r => r.title))
-  const out: Article[] = []
-  for (const r of ranked) {
-    const d = details.get(r.title)
-    if (!d?.extract || d.extract.length < 80 || NOT_A_DESTINATION.test(d.extract.slice(0, 320))) continue
-    out.push({ pageId: d.pageId, title: r.title, lat: r.lat, lon: r.lon, distM: metresBetween(origin, r), extract: d.extract, url: d.url, image: d.image })
-  }
-  return out.slice(0, WIDE_KEEP)
-}
-
-type Intro = { pageId: number; extract: string; url: string; image: { file: string } | null }
-
-/** Intros for articles by title, as they are named in Wikidata (redirects and
-    normalisation followed, and mapped back to the title that was asked for). */
-async function introsByTitle(titles: string[]): Promise<Map<string, Intro>> {
-  const out = new Map<string, Intro>()
-  const chunks = Array.from({ length: Math.ceil(titles.length / 20) }, (_, i) => titles.slice(i * 20, i * 20 + 20))
+/** `locate` supplies a point when the article has none: a famous avenue or a garden
+    often has no coordinates on Wikipedia, and it is still somewhere to fly to. */
+export async function resolveTitles(
+  titles: string[], origin: LatLon, maxM: number, locate?: (title: string) => Promise<LatLon | null>,
+): Promise<{ found: { asked: string; article: Article }[]; rejected: Rejected[] }> {
+  const found: { asked: string; article: Article }[] = []
+  const rejected: Rejected[] = []
+  const unique = [...new Set(titles.map(t => t.trim()).filter(Boolean))]
+  const chunks = Array.from({ length: Math.ceil(unique.length / 20) }, (_, i) => unique.slice(i * 20, i * 20 + 20))   // extracts allow 20 per request
   await limited(chunks, 2, async chunk => {
-    const res = await wikiGet<{ query?: { normalized?: { from: string; to: string }[]; redirects?: { from: string; to: string }[]; pages: (Page & { title: string })[] } }>(api('en.wikipedia.org', {
+    const res = await wikiGet<{ query?: { normalized?: { from: string; to: string }[]; redirects?: { from: string; to: string }[]; pages: Resolved[] } }>(api('en.wikipedia.org', {
       action: 'query', titles: chunk.join('|'), redirects: '1',
-      prop: 'extracts|pageimages|info', inprop: 'url', exintro: '1', explaintext: '1', exsentences: '4', exlimit: 'max', piprop: 'name',
+      prop: 'extracts|pageimages|info|coordinates|pageprops', inprop: 'url', exintro: '1', explaintext: '1', exsentences: '4', exlimit: 'max',
+      piprop: 'name', colimit: 'max', coprimary: 'primary', ppprop: 'disambiguation',
     }))
     const q = res.query
     const hop = (t: string) => { const n = q?.normalized?.find(x => x.from === t)?.to ?? t; return q?.redirects?.find(x => x.from === n)?.to ?? n }
     const byTitle = new Map((q?.pages ?? []).map(p => [p.title, p]))
-    for (const t of chunk) {
-      const p = byTitle.get(hop(t))
-      if (p) out.set(t, { pageId: p.pageid, extract: (p.extract ?? '').trim(), url: p.fullurl, image: p.pageimage ? { file: p.pageimage } : null })
+    for (const asked of chunk) {
+      const p = byTitle.get(hop(asked))
+      const no = (reason: string) => rejected.push({ title: asked, reason })
+      if (!p || p.missing) { no('no such Wikipedia article'); continue }
+      if (p.pageprops && 'disambiguation' in p.pageprops) { no('a disambiguation page, not one place'); continue }
+      const at = p.coordinates?.[0] ?? (locate ? await locate(asked).catch(() => null) : null)
+      if (!at) { no('the article has no coordinates'); continue }
+      const distM = metresBetween(origin, at)
+      if (distM > maxM) { no(`${(distM / 1000).toFixed(1)} km from the centre, outside the area`); continue }
+      const extract = (p.extract ?? '').trim()
+      if (extract.length < 80) { no('too little written about it to draw on'); continue }
+      if (NOT_A_DESTINATION.test(extract.slice(0, 320))) { no('not a place to stand'); continue }
+      found.push({ asked, article: { pageId: p.pageid, title: p.title, lat: at.lat, lon: at.lon, distM, extract, url: p.fullurl, image: p.pageimage ? { file: p.pageimage } : null } })
     }
   })
-  return out
-}
-
-/** The fallback: seven overlapping circles, ranked by 30 days of pageviews. Slower and
-    shallower than the Wikidata route, but it needs nothing that can time out for a minute. */
-async function byPageviews(origin: LatLon): Promise<Article[]> {
-  const centres = [origin, ...[0, 60, 120, 180, 240, 300].map(b => offset(origin, WIDE_RADIUS_M * 0.6, b))]
-  const circle = Math.round(WIDE_RADIUS_M * 0.45)
-  const lists = await limited(centres, 3, async c => {
-    const geo = await wikiGet<{ query?: { geosearch: GeoHit[] } }>(api('en.wikipedia.org', {
-      action: 'query', list: 'geosearch', gscoord: `${c.lat}|${c.lon}`, gsradius: String(circle), gslimit: '200', gsnamespace: '0',
-    }))
-    return geo.query?.geosearch ?? []
-  })
-  const byId = new Map<number, GeoHit>()
-  for (const h of lists.flat()) if (!byId.has(h.pageid) && !NOT_A_PLACE.test(h.title)) byId.set(h.pageid, h)
-  const hits = [...byId.values()]
-  const views = await pageviews(hits.map(h => h.pageid))
-  const top = hits.sort((a, b) => (views.get(b.pageid) ?? 0) - (views.get(a.pageid) ?? 0)).slice(0, WIDE_KEEP)
-  const details = await intros(top.map(h => h.pageid))
-  return top.flatMap(h => {
-    const d = details.get(h.pageid)
-    return d?.extract && !NOT_A_DESTINATION.test(d.extract.slice(0, 320)) ? [{ pageId: h.pageid, title: h.title, lat: h.lat, lon: h.lon, distM: metresBetween(origin, h), ...d }] : []
-  })
+  return { found, rejected }
 }

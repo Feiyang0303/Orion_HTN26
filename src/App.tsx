@@ -6,7 +6,6 @@ import Flythrough from './fly/Flythrough'
 import Desk, { type DeskResult } from './plan/ui/Desk'
 import Home from './plan/ui/Home'
 import Studio from './plan/ui/Studio'
-import { wideCatalogue } from './plan/wikipedia'
 import type { Day, LatLon } from './types'
 import { breadcrumb, tag } from './telemetry'
 import './plan/ui/journal.css'
@@ -81,9 +80,7 @@ export default function App() {
             {phase === 'home' && <Home onStart={() => setPhase('ask')} />}
             {phase === 'ask' && (
               <Desk
-                // The city is known the moment it is typed, long before the form is filled in:
-                // start the slow part (what is worth seeing) now, so the crew finds it done.
-                onCity={p => { if (!p) return; setOrigin({ lat: p.lat, lon: p.lon }); void wideCatalogue(p).catch(() => {}) }}
+                onCity={p => p && setOrigin({ lat: p.lat, lon: p.lon })}
                 onPlan={r => { setDesk(r); setOrigin({ lat: r.origin.lat, lon: r.origin.lon }); setPhase('studio') }}
                 onHome={goHome}
               />

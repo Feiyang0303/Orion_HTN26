@@ -3,8 +3,7 @@ import type { Day, Stay, Stop, Trip, Waypoint, Wish } from '../types'
 import { HHMM, MINS } from '../types'
 import type { Agent, CrewEvent } from './events'
 import { geocode, locate, type Place } from './geocode'
-import type { Article } from './wikipedia'
-import { catalogueFor, findStops, matchWant, type Candidate } from './crew'
+import { findStops, matchWant, tripRadius, type Candidate } from './crew'
 import { chooseBeds, chooseTables, shapeDays } from './trip'
 import { bestOrder, legsFor } from './router'
 import { visitBudgetMin } from './timekeeper'
@@ -33,7 +32,6 @@ export type Session = {
   wish: Wish
   mode: Mode
   origin: Place
-  catalogue: Article[]
   /** Everything ever pinned or picked, by id, so a revision can find it. */
   known: Map<string, Candidate>
   /** Bed ids already shown, so a shuffle is a new batch. */
@@ -48,37 +46,28 @@ export type Session = {
 const say = (s: Session, agent: Agent, kind: 'tool' | 'agent', state: 'working' | 'done' | 'failed', detail: string) =>
   s.onEvent({ type: 'crew', agent, kind, state, detail })
 
-/** Stage 0: the city, and what Wikipedia knows around it. */
+/** Stage 0: the city. Nothing else has to be read first: the scout names places
+    from what it knows and each name is looked up when it is chosen, so the
+    session opens as fast as the geocoder answers. */
 async function openSessionImpl(
   wish: Wish, mode: Mode, onEvent: (e: CrewEvent) => void, signal?: AbortSignal,
 ): Promise<Session> {
-  const s: Session = { wish, mode, origin: null as unknown as Place, catalogue: [], known: new Map(), offered: [], bed: null, written: new Map(), onEvent: observeCrew(onEvent), signal }
+  const s: Session = { wish, mode, origin: null as unknown as Place, known: new Map(), offered: [], bed: null, written: new Map(), onEvent: observeCrew(onEvent), signal }
   say(s, 'Geocode', 'tool', 'working', `Looking up ${wish.city}`)
   s.origin = await geocode(wish.city, signal)
   say(s, 'Geocode', 'tool', 'done', s.origin.name)
-  say(s, 'Scout', 'agent', 'working', `Reading about places across ${s.origin.name}`)
-  /* A city's sights are not where its geocoder point is. Kyoto's are four to
-     eight kilometres from the city hall; so is Rome's Vatican from the Forum.
-     A trip reaches further than a day, and the pool is deeper too, because a
-     wider circle takes in more that is ordinary. */
-  const nDays = Math.max(1, Math.min(7, wish.days || 1))
-  s.catalogue = await catalogueFor(s.origin, Math.min(9500, 4000 + nDays * 1500), 40 + nDays * 10)
-  say(s, 'Scout', 'agent', 'done', `${s.catalogue.length} places worth knowing about, up to ${(Math.min(9500, 4000 + nDays * 1500) / 1000).toFixed(0)} km out`)
   return s
 }
 
 /* ---------------------------------------------------------------- 1. beds */
 
-/** Three ranked beds. Judged against the centre of the most-read places in the
-    catalogue, since no day exists yet — which is the right centre anyway: it is
-    where the days will be. */
+/** Three ranked beds, judged against the middle of the city: no day exists yet
+    to say where the days will be, and asking for the places first would make a
+    bed wait on the scout. */
 async function stageBedsImpl(s: Session): Promise<Stay[]> {
-  const top = s.catalogue.slice(0, 12)
-  const centre = top.length
-    ? { lat: top.reduce((a, p) => a + p.lat, 0) / top.length, lon: top.reduce((a, p) => a + p.lon, 0) / top.length }
-    : { lat: s.origin.lat, lon: s.origin.lon }
+  const centre = { lat: s.origin.lat, lon: s.origin.lon }
   say(s, 'Scout', 'agent', 'working', s.offered.length ? 'Looking for three different places to sleep' : 'Looking for somewhere to sleep, central to where the days will be')
-  const { stays, looked, down } = await chooseBeds(centre, s.wish, top.map(a => a.title), s.offered, s.signal)
+  const { stays, looked, down } = await chooseBeds(centre, s.wish, [s.origin.name], s.offered, s.signal)
   s.offered.push(...stays.map(b => b.id))
   say(s, 'Scout', 'agent', stays.length ? 'done' : 'failed',
     stays.length ? `${stays.map(b => b.name).join(' · ')}, from ${looked} OpenStreetMap lists`
@@ -107,10 +96,10 @@ async function stagePlacesImpl(s: Session, bed: Stay | null): Promise<DayDraft[]
   const fixed: Candidate[] = []
   for (const w of wish.wants.map(x => x.trim()).filter(Boolean)) {
     const hit = await locate(w, s.origin, s.signal)
-    if (hit) fixed.push(await matchWant(hit, s.catalogue, taken, wish, s.onEvent))
+    if (hit) fixed.push(await matchWant(hit, taken, wish, s.onEvent))
   }
   const extra = await findStops({
-    catalogue: s.catalogue, wish, mode: s.mode, fixed,
+    city: s.origin.name, origin: s.origin, radiusM: tripRadius(nDays), wish, mode: s.mode, fixed,
     count: Math.max(0, nDays * perDay - fixed.length), onEvent: s.onEvent,
   })
   const all = [...fixed, ...extra]
@@ -130,7 +119,7 @@ async function stagePlacesImpl(s: Session, bed: Stay | null): Promise<DayDraft[]
     if (minutesOf(d) >= budget * 0.6) continue
     const want = Math.max(1, Math.min(3, Math.round((budget * 0.8 - minutesOf(d)) / 50)))
     say(s, 'Scout', 'agent', 'working', `${d.title} is light — looking for ${want} more`)
-    const extra = await findStops({ catalogue: s.catalogue, wish, mode: s.mode, fixed: drafts.flatMap(x => x.stops), count: want, onEvent: () => {} }).catch(() => [])
+    const extra = await findStops({ city: s.origin.name, origin: s.origin, radiusM: tripRadius(nDays), wish, mode: s.mode, fixed: drafts.flatMap(x => x.stops), count: want, onEvent: () => {} }).catch(() => [])
     for (const c of extra) { s.known.set(c.id, c); d.stops.push(c) }
   }
   say(s, 'Scout', 'agent', 'done', drafts.map((d, i) => `${i + 1}. ${d.title} (${d.stops.length}, ${minutesOf(d)} min)`).join(' · '))
@@ -139,7 +128,7 @@ async function stagePlacesImpl(s: Session, bed: Stay | null): Promise<DayDraft[]
 
 /** More places, for a day someone emptied or a list they did not like. */
 async function morePlacesImpl(s: Session, avoid: Candidate[], count: number): Promise<Candidate[]> {
-  const extra = await findStops({ catalogue: s.catalogue, wish: s.wish, mode: s.mode, fixed: avoid, count, onEvent: s.onEvent })
+  const extra = await findStops({ city: s.origin.name, origin: s.origin, radiusM: tripRadius(s.wish.days || 1), wish: s.wish, mode: s.mode, fixed: avoid, count, onEvent: s.onEvent })
   for (const c of extra) s.known.set(c.id, c)
   return extra
 }
@@ -375,7 +364,7 @@ export async function applyEdits(
         const hit = await locate(e.query, s.origin, s.signal)
         if (!hit) { notes.push(`could not find “${e.query}”`); break }
         const taken = new Set(Array.from(s.known.values()).flatMap(c => c.article ? [c.article.pageId] : []))
-        const c = await matchWant(hit, s.catalogue, taken, s.wish, s.onEvent)
+        const c = await matchWant(hit, taken, s.wish, s.onEvent)
         s.known.set(c.id, c)
         drafts[to].stops.push(c)
         touched.add(to); notes.push(`added ${c.name} to day ${to + 1}`)
@@ -436,7 +425,7 @@ export { HHMM, MINS }
    a slow one explainable: how many days, which transport, how many places. */
 export const openSession = traced('plan.open', openSessionImpl, (w) => ({ city: w.city, days: w.days, transport: w.transport, party: w.party }))
 export const stageBeds = traced('plan.beds', stageBedsImpl, s => ({ city: s.origin.name }))
-export const stagePlaces = traced('plan.places', stagePlacesImpl, s => ({ city: s.origin.name, days: s.wish.days, transport: s.wish.transport, catalogue: s.catalogue.length }))
+export const stagePlaces = traced('plan.places', stagePlacesImpl, s => ({ city: s.origin.name, days: s.wish.days, transport: s.wish.transport }))
 export const morePlaces = traced('plan.more_places', morePlacesImpl, s => ({ city: s.origin.name }))
 export const stagePlan = traced('plan.build', stagePlanImpl, (s, drafts) => ({ city: s.origin.name, days: drafts.length, stops: drafts.reduce((n, d) => n + d.stops.length, 0), transport: s.wish.transport }))
 export const revise = traced('plan.revise', reviseImpl, (_t, message) => ({ chars: message.length }))

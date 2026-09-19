@@ -10,8 +10,7 @@
     "proxy": "node --import ./scripts/instrument.mjs scripts/proxy.mjs",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b",
-    "fixture": "tsx scripts/make-fixture.ts",
-    "warm": "tsx scripts/warm-city.ts"
+    "fixture": "tsx scripts/make-fixture.ts"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.6",

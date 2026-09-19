@@ -65,3 +65,17 @@ export function tally(beats: { claims?: Claim[] }[]) {
   const all = beats.flatMap(b => b.claims ?? []).filter(c => !c.framing)
   return { traced: all.filter(c => c.supported).length, total: all.length }
 }
+
+/** The statements of a set of beats that could not be traced. */
+export const unsupportedIn = (beats: { claims?: Claim[] }[]) =>
+  beats.flatMap(b => b.claims ?? []).filter(c => !c.supported).map(c => c.text)
+
+/** Take the untraceable sentences out of a beat before it is voiced. A beat with
+    nothing left is dropped. What remains is exactly what the sources support, in
+    the order it was said, with the trace kept. */
+export function repair<T extends { text: string; claims?: Claim[] }>(d: T): T | null {
+  if (!d.claims?.length || d.claims.every(c => c.supported)) return d
+  const kept = d.claims.filter(c => c.supported)
+  if (!kept.length) return null
+  return { ...d, text: kept.map(c => c.text).join(' '), claims: kept }
+}

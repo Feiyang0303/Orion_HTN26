@@ -1,4 +1,4 @@
-/* A polite, caching front for Wikipedia, Wikimedia Commons and Wikidata.
+/* A polite, caching front for Wikipedia and Wikimedia Commons.
  *
  * Those services rate-limit per IP, erratically: fine at one request a second,
  * then a run of 429s for a minute. Fifty requests fired from a browser tab trip
@@ -7,7 +7,7 @@
  *   - one request at a time per host, with a small gap between them
  *   - 429/503 waited out (Retry-After if given) and retried
  *   - every good answer cached on disk (.cache/wiki, 7 days), so a city that has
- *     been planned once is instant, and a demo city can be warmed beforehand
+ *     been planned once is instant
  *
  *   GET /api/wiki?u=<encoded upstream url>
  */
@@ -20,10 +20,8 @@ const TTL_MS = 7 * 24 * 3600 * 1000
 const UA = process.env.WIKI_USER_AGENT || 'Orion-hackathon/0.1 (https://github.com/Feiyang0303/Orion_HTN26)'
 const ALLOWED = [
   /^https:\/\/(en\.wikipedia\.org|commons\.wikimedia\.org)\/w\/api\.php\?/,
-  /^https:\/\/query\.wikidata\.org\/sparql\?/,
 ]
-const GAP_MS = { 'query.wikidata.org': 1000 }
-const DEFAULT_GAP_MS = 250
+const GAP_MS = 250
 
 mkdirSync(DIR, { recursive: true })
 const memory = new Map()
@@ -47,7 +45,7 @@ function cached(url) {
 
 function inLane(host, work) {
   const prev = lanes.get(host) ?? Promise.resolve()
-  const run = prev.then(async () => { const r = await work(); await sleep(GAP_MS[host] ?? DEFAULT_GAP_MS); return r })
+  const run = prev.then(async () => { const r = await work(); await sleep(GAP_MS); return r })
   lanes.set(host, run.catch(() => {}))
   return run
 }
@@ -58,7 +56,7 @@ function inLane(host, work) {
    was invisible until this. */
 async function fetchUpstream(url) {
   const host = new URL(url).hostname
-  const kind = url.includes('sparql') ? 'sparql' : (new URL(url).searchParams.get('prop') ?? new URL(url).searchParams.get('list') ?? 'query')
+  const kind = new URL(url).searchParams.get('prop') ?? new URL(url).searchParams.get('list') ?? 'query'
   for (let attempt = 0; ; attempt++) {
     const t0 = Date.now()
     let status = 0, told = null, bytes = 0, outcome = 'ok'
@@ -96,11 +94,11 @@ const note = (host, kind, attempt, status, ms, detail, outcome) => {
   Sentry.logger?.[outcome === 'ok' ? 'info' : 'warn']?.('wiki upstream', { host, kind, attempt: attempt + 1, status, outcome, ms, detail })
 }
 
-/** The cached body, or a paced fetch. Exposed so scripts can warm the cache. */
+/** The cached body, or a paced fetch. */
 export async function wikiFetch(url) {
   if (!ALLOWED.some(re => re.test(url))) { const e = new Error('that host is not allowed'); e.status = 400; throw e }
   const hit = cached(url)
-  if (hit) { console.log(`[wiki] cache hit ${new URL(url).hostname} ${url.includes('sparql') ? 'sparql' : ''}`.trim()); return { body: hit, hit: true } }
+  if (hit) { console.log(`[wiki] cache hit ${new URL(url).hostname}`); return { body: hit, hit: true } }
   const body = await inLane(new URL(url).hostname, () => cached(url) ?? fetchUpstream(url))
   JSON.parse(body)                       // never cache something that is not JSON
   const entry = { at: Date.now(), body }

@@ -102,6 +102,8 @@ const PARTY_NOTE: Record<Party, string> = {
 
 export async function narrate(
   stop: { name: string; extract: string }, targets: Target[], mode: Mode, ctx?: StopContext,
+  /** Statements a first draft made that the Auditor could not find in the text; the rewrite must not repeat them. */
+  unsupported: string[] = [],
 ): Promise<{ beats: Draft[]; problems: string[] }> {
   const { beats: n, words } = LIMITS[mode]
   const source = [stop.name, stop.extract, ...targets.flatMap(t => [t.name, t.summary])].join('\n')
@@ -123,6 +125,10 @@ export async function narrate(
     (where ? `${where}\n\n` : '') +
     `Nearby targets you may point at:\n` +
     (targets.length ? targets.map(t => `${t.id} | ${t.name} | ${t.summary.replace(/\s+/g, ' ').slice(0, 300)}`).join('\n') : '(none)') +
+    (unsupported.length
+      ? `\n\nA first draft said these things, and none of them is in the text above. Do not say them or anything like them; ` +
+        `say only what the text says:\n${unsupported.map(u => `- ${u}`).join('\n')}`
+      : '') +
     `\n\nWrite exactly ${n} beats, each at most ${words} words.`
 
   let last: ReturnType<typeof validate> = { beats: [], problems: [] }

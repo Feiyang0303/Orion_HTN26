@@ -5,11 +5,11 @@ import type { Agent, CrewEvent } from './events'
 import { geocode, locate } from './geocode'
 import { notable, photoFor, wikiSource, type Article } from './wikipedia'
 import { bestOrder, legsFor } from './router'
-import { schedule, visitBudgetMin, windowOf } from './timekeeper'
+import { schedule, windowOf } from './timekeeper'
 import { narrate, withAudio, writePreface, type Draft, type Mode, type StopContext } from './narrator'
 import { estimateSec, speak } from './tts'
-import { auditText, tally } from './auditor'
-import { catalogueFor, findStops, matchWant, roomFor, type Candidate, type Skeleton } from './crew'
+import { auditText, repair, tally, unsupportedIn } from './auditor'
+import { findStops, matchWant, roomFor, tripRadius, type Candidate, type Skeleton } from './crew'
 import { slug } from './geo'
 
 /* The second half of the crew: reading up on each place, writing what the
@@ -106,16 +106,29 @@ export async function writePages(skeleton: Skeleton, opts: PipelineOptions): Pro
       }
     }
 
-    // The Auditor: every sentence traced to the text the Narrator was given.
+    /* The Auditor: every sentence traced to the text the Narrator was given. A
+       model told to use only the text still adds a plausible detail now and then,
+       so a draft with sentences that cannot be traced is sent back once, told
+       exactly which; whatever still cannot be traced is taken out before it is
+       voiced. What reaches the listener is what the sources support. */
     const docs = [
       ...(a ? [{ text: a.extract, source: wikiSource(a) }] : []),
       ...targets.map(t => ({ text: t.summary, source: t.source })),
     ]
     const names = [c.name, ...targets.map(t => t.name)]
-    drafts = drafts.map(d => ({ ...d, claims: auditText(d.text, docs, names) }))
+    const audit = (list: Draft[]) => list.map(d => ({ ...d, claims: auditText(d.text, docs, names) }))
+    drafts = audit(drafts)
+    const first = tally(drafts)
+    const weak = unsupportedIn(drafts)
+    if (weak.length) {
+      say('Auditor', 'tool', 'failed', `${c.name}: ${weak.length} statement${weak.length === 1 ? '' : 's'} not in the source — sent back to the narrator`)
+      try { drafts = audit((await narrate({ name: c.name, extract: a?.extract ?? '' }, targets, mode, ctx, weak)).beats) } catch { /* keep the first draft; it is repaired below */ }
+    }
+    drafts = drafts.flatMap(d => repair(d) ?? [])
     const traced = tally(drafts)
-    if (traced.total) say('Auditor', 'tool', traced.traced === traced.total ? 'done' : 'failed',
-      `${c.name}: ${traced.traced} of ${traced.total} statements traced to a source${traced.traced === traced.total ? '' : ' — the rest are marked unverified'}`)
+    if (first.total) say('Auditor', 'tool', 'done',
+      `${c.name}: ${first.traced} of ${first.total} statements traced at first` +
+      (weak.length ? `, all ${traced.total} after the rewrite` : ''))
 
     const beats = await Promise.all(drafts.map((d, i) => voice(async () => {
       try {
@@ -194,14 +207,12 @@ export async function planTour(wish: Wish, opts: PipelineOptions & { mode?: Mode
   say('Geocode', 'tool', missing ? 'failed' : 'done',
     missing ? `${missing} of the places you named could not be found` : `${origin.name}${found.length ? `, and ${found.length} you named` : ''}`)
 
-  say('Scout', 'agent', 'working', `Reading about places near ${origin.name}`)
-  const catalogue = await catalogueFor(origin)
   const taken = new Set<number>()
   const fixed: Candidate[] = []
-  for (const w of found) fixed.push(await matchWant(w, catalogue, taken, wish))
+  for (const w of found) fixed.push(await matchWant(w, taken, wish))
 
   const extra = await findStops({
-    catalogue, wish, mode, fixed, count: roomFor(mode, fixed.length), onEvent,
+    city: origin.name, origin, radiusM: tripRadius(1), wish, mode, fixed, count: roomFor(mode, fixed.length), onEvent,
     legSecs: async all => (await legsFor(all.map(c => ({ id: c.id, lat: c.lat, lon: c.lon })), wish.transport, wish.budget)).map(l => l.durationSec),
   })
 
@@ -244,134 +255,3 @@ function epigraphFor(stops: Stop[], legs: Plan['legs'], approach: Plan['approach
 }
 
 export { MINS }
-
-/* ======================================================================
-   The trip.
-
-   A day was one route. A trip is several, plus the two things a day never
-   needed: a bed, and dinner. The shape of the code follows that exactly —
-   every day is built by the same writePages that built the single day, so a
-   day of a trip and a day on its own are the same object, and src/fly can fly
-   either without knowing which it has.
-   ====================================================================== */
-
-import type { Day, Stay, Trip } from '../types'
-import { chooseBeds, chooseTables, shapeDays } from './trip'
-
-/** How many places a day can hold before it stops being a day out. */
-const perDay = (mode: Mode) => (mode === 'short' ? 3 : 4)
-
-export type TripOptions = PipelineOptions & { mode?: Mode }
-
-export async function planTrip(wish: Wish, opts: TripOptions): Promise<Trip> {
-  const { mode = 'full', signal } = opts
-  const onEvent = observeCrew(opts.onEvent ?? (() => {}))
-  const say = (agent: Agent, kind: 'tool' | 'agent', state: 'working' | 'done' | 'failed', detail: string) =>
-    onEvent({ type: 'crew', agent, kind, state, detail })
-  const nDays = Math.max(1, Math.min(7, Math.round(wish.days || 1)))
-
-  /* ---- 1. the city, and anything they pinned themselves ------------------ */
-
-  say('Geocode', 'tool', 'working', `Looking up ${wish.city}`)
-  const origin = await geocode(wish.city, signal)
-  const wants = wish.wants.map(w => w.trim()).filter(Boolean)
-  const found = (await Promise.all(wants.map(w => locate(w, origin, signal))))
-    .filter(Boolean) as NonNullable<Awaited<ReturnType<typeof locate>>>[]
-  const from = wish.from.trim() ? await locate(wish.from.trim(), origin, signal) : null
-  say('Geocode', 'tool', 'done',
-    `${origin.name}${found.length ? `, and ${found.length} place${found.length === 1 ? '' : 's'} you named` : ''}`)
-
-  /* ---- 2. everything worth flying to, over the whole trip ---------------- */
-
-  say('Scout', 'agent', 'working', `Reading about places across ${origin.name}`)
-  // A trip reaches further than a day: more days means a wider area is fair.
-  const catalogue = await catalogueFor(origin, Math.min(6000, 2200 + nDays * 900))
-  const taken = new Set<number>()
-  const fixed: Candidate[] = []
-  for (const w of found) fixed.push(await matchWant(w, catalogue, taken, wish, onEvent))
-
-  const want = nDays * perDay(mode)
-  const extra = await findStops({
-    catalogue, wish, mode, fixed, count: Math.max(0, want - fixed.length), onEvent,
-  })
-  const all = [...fixed, ...extra]
-  if (!all.length) throw new Error('Nothing to plan: no places were found or chosen.')
-
-  /* ---- 3. which places belong to which day ------------------------------- */
-
-  say('Scout', 'agent', 'working', `Laying ${all.length} places out over ${nDays} day${nDays === 1 ? '' : 's'}`)
-  const shapes = await shapeDays(all, nDays, wish, visitBudgetMin(wish))
-  say('Scout', 'agent', 'done', shapes.map((d, i) => `${i + 1}. ${d.title} (${d.ids.length})`).join(' · '))
-
-  /* ---- 4. each day: route it, write it, feed it -------------------------- */
-
-  const byId = new Map(all.map(c => [c.id, c]))
-  const days: Day[] = []
-  for (const [i, shape] of shapes.entries()) {
-    const chosen = shape.ids.map(id => byId.get(id)!).filter(Boolean)
-    if (!chosen.length) continue
-
-    say('Router', 'tool', 'working', `Day ${i + 1}: measuring real ${wish.transport} times`)
-    // The bed is where each day starts and ends once it is known; on the first
-    // pass there is no bed yet, so a given starting point stands in.
-    const points = [...(from ? [from] : []), ...chosen]
-    const routed = await bestOrder(points, wish.transport, wish.budget, !!from)
-    const seq = routed.order.filter(k => !(from && k === 0)).map(k => from ? k - 1 : k)
-    const ordered = seq.map(k => chosen[k])
-    const chain = [...(from ? [{ id: 'from', lat: from.lat, lon: from.lon }] : []), ...ordered]
-    const allLegs = await legsFor(chain, wish.transport, wish.budget)
-    const approach = from ? allLegs[0] ?? null : null
-    const legs = from ? allLegs.slice(1) : allLegs
-    say('Router', 'tool', 'done',
-      `Day ${i + 1}: ${((legs.reduce((s, l) => s + l.distanceM, 0)) / 1000).toFixed(1)} km`)
-
-    const plan = await writePages({ wish, mode, origin, from, stops: ordered, legs, approach }, {
-      ...opts,
-      onEvent: e => onEvent(e.type === 'crew' ? { ...e, detail: `Day ${i + 1}: ${e.detail}` } : e),
-    })
-
-    say('Narrator', 'agent', 'working', `Day ${i + 1}: finding somewhere to eat`)
-    const tables = await chooseTables({
-      number: i + 1, title: shape.title,
-      stops: plan.stops.map(s => ({ id: s.id, name: s.name, lat: s.lat, lon: s.lon, arrival: s.arrival, visitMin: s.visitMin })),
-    }, wish, signal)
-    say('Narrator', 'agent', tables.length ? 'done' : 'failed',
-      tables.length
-        ? `Day ${i + 1}: ${tables.map(t => `${t.meal} at ${t.name}`).join(', ')}`
-        : `Day ${i + 1}: OpenStreetMap had nothing named near those stops`)
-
-    days.push({ ...plan, id: `${plan.id}-d${i + 1}`, number: i + 1, title: shape.title, tables })
-  }
-  if (!days.length) throw new Error('The trip came out empty.')
-
-  /* ---- 5. a bed, central to all of it ------------------------------------ */
-
-  const spread = days.flatMap(d => d.stops)
-  const centre = {
-    lat: spread.reduce((s, p) => s + p.lat, 0) / spread.length,
-    lon: spread.reduce((s, p) => s + p.lon, 0) / spread.length,
-  }
-  say('Scout', 'agent', 'working', 'Looking for somewhere to sleep, central to the whole trip')
-  const { stays, looked } = await chooseBeds(centre, wish, days.map(d => d.title), [], signal)
-  say('Scout', 'agent', stays.length ? 'done' : 'failed',
-    stays.length
-      ? `${stays[0].name}${stays.length > 1 ? ` and ${stays.length - 1} more` : ''}, from ${looked} OpenStreetMap knows of`
-      : 'OpenStreetMap lists nothing to sleep in near the middle of this trip')
-
-  const trip: Trip = {
-    id: `${slug(origin.name)}-${nDays}d-v${PLAN_VERSION}`,
-    city: origin.name, origin: { lat: origin.lat, lon: origin.lon },
-    wish, days, stays,
-    preface: days[0]?.preface ?? '',
-    generatedAt: new Date().toISOString(),
-    provenance: {
-      places: 'Wikipedia geosearch, chosen by a model', lodging: 'OpenStreetMap, chosen by a model',
-      food: 'OpenStreetMap, chosen by a model', router: 'Google Routes',
-      narrator: 'llm', tts: 'elevenlabs:mp3_44100_128',
-    },
-  }
-  onEvent({ type: 'trip', trip })
-  return trip
-}
-
-export type { Stay }
