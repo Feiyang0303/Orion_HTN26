@@ -1,5 +1,5 @@
 import type { LatLon, Meal, Stay, Table, Wish } from '../types'
-import { BUDGET_LABEL, LODGING_LABEL, MINS, PARTY_LABEL } from '../types'
+import { BUDGET_LABEL, MINS, PARTY_LABEL } from '../types'
 import { askJson } from './json'
 import { addressOf, beds, describe, OverpassDown, tables as osmTables, type OsmPlace } from './osm'
 import { metresBetween } from './geo'
@@ -96,52 +96,36 @@ export async function shapeDays(all: Candidate[], count: number, wish: Wish, bud
 
 /* -------------------------------------------------------------- the bedroom */
 
-const BED_SYSTEM = `You are choosing where someone sleeps on a trip. You are given a list of real
-places from OpenStreetMap — everything it knows within reach of the places they
-will be visiting — and, for each, its distance from the centre of those places
-and whatever tags it carries.
-
-Choose exactly three, ranked, best first. Judge only on what you are shown:
-- How central it is to the days they will actually be having. That is the one
-  thing you can measure and the one thing that matters most; say the distance.
-- The sort of bed they asked for, and who is travelling. A hostel for a family
-  with children needs a reason; an apartment for one night is odd.
-- What the budget says. "Free things only" is not about the bed, but a
-  self-declared five-star hotel is the wrong pick for someone who said the odd
-  ticket is fine.
-- Tags that genuinely bear on the choice: stars (self-declared), wheelchair
-  access, the street it stands on, whether it is a chain.
-
-Make the three genuinely different from one another — nearest, quietest,
-best-appointed, whatever the list supports — so the choice is a real one.
-
-HARD RULES
-- Choose only from the list. Never name a hotel that is not in it.
-- Say nothing about price, quality, breakfast, service, views or atmosphere.
-  You have not been told any of those and OpenStreetMap does not know them. A
-  self-declared star count may be mentioned as self-declared.
-- Each reason must cite something you were actually shown, and say in a few
-  words what makes this one different from the other two.
-
-Reply with a JSON object: {"picks":[{"id":"<id>","why":"<max 22 words>"}]}`
-
 /** `down` means OpenStreetMap did not answer, which is not the same as there being nothing to find. */
 export type BedChoice = { stays: Stay[]; looked: number; down?: boolean }
 
-/** Three beds, ranked, with reasons. `exclude` are ids already offered — the
-    shuffle — so a new batch is a genuinely new batch. */
+/* Where to sleep is not asked of the person and not decided by a model. Nobody
+   can say what kind of bed they want before they know where their days are, and
+   the only things that honestly bear on the choice are ones that can be
+   measured: how central it is to the places the trip actually visits, and what
+   OpenStreetMap has been told about it. So the list is ranked by arithmetic,
+   the reasons are written from the same numbers, and the best is chosen. */
+const score = (p: OsmPlace, wish: Wish) => {
+  const stars = Number(p.tags.stars) || 0
+  let s = p.distM
+  if (p.kind === 'hostel' && wish.party !== 'solo') s += 700          // a hostel for a couple or a family needs a reason
+  if (p.kind === 'hostel' && wish.budget === 'free') s -= 250
+  if (p.kind === 'apartment' && wish.days < 2) s += 500               // an apartment for one night is odd
+  if (wish.budget === 'any' && stars >= 4) s -= 350
+  if (wish.budget !== 'any' && stars >= 5) s += 450                   // a five-star is the wrong pick for "the odd ticket"
+  if (p.tags.website || p.tags['contact:website']) s -= 120           // a listing someone maintains
+  return s
+}
+
+/** The best beds around the middle of the trip, best first. `exclude` are ids
+    already offered, so asking again gives a genuinely different one. */
 export async function chooseBeds(
-  centre: LatLon, wish: Wish, context: string[], exclude: string[] = [], signal?: AbortSignal,
+  centre: LatLon, wish: Wish, exclude: string[] = [], signal?: AbortSignal,
 ): Promise<BedChoice> {
-  const kinds = wish.lodging === 'any'
-    ? ['hotel', 'hostel', 'guest_house', 'apartment']
-    : [wish.lodging === 'guesthouse' ? 'guest_house' : wish.lodging]
   // Both radii at once: the wider is only used when the near one is thin, but
-  // asking in sequence would spend a second full timeout finding that out.
-  const [near, far] = await Promise.allSettled([
-    beds(centre, 1800, kinds, signal),
-    beds(centre, 3200, ['hotel', 'hostel', 'guest_house', 'apartment'], signal),
-  ])
+  // asking in sequence would spend a second full wait finding that out.
+  const kinds = ['hotel', 'hostel', 'guest_house', 'apartment']
+  const [near, far] = await Promise.allSettled([beds(centre, 1800, kinds, signal), beds(centre, 3200, kinds, signal)])
   if (near.status === 'rejected' && far.status === 'rejected') {
     if (near.reason instanceof OverpassDown) return { stays: [], looked: 0, down: true }
     throw near.reason
@@ -149,34 +133,27 @@ export async function chooseBeds(
   const nearList = near.status === 'fulfilled' ? near.value : []
   const farList = far.status === 'fulfilled' ? far.value : []
   const found = nearList.length >= 6 ? nearList : farList.length > nearList.length ? farList : nearList
-  const fresh = found.filter(p => !exclude.includes(p.id))
-  if (!fresh.length) return { stays: [], looked: found.length }
+  const ranked = found.filter(p => !exclude.includes(p.id)).sort((a, b) => score(a, wish) - score(b, wish))
+  if (!ranked.length) return { stays: [], looked: found.length }
 
-  const shortlist = fresh.slice(0, 40)
-  const user = [
-    `They asked for: ${LODGING_LABEL[wish.lodging]}. Who: ${PARTY_LABEL[wish.party]}. Budget: ${BUDGET_LABEL[wish.budget]}.`,
-    `${wish.days} night${wish.days === 1 ? '' : 's'}. Distances are from the centre of the places they are likely to visit: ${context.slice(0, 8).join('; ')}.`,
-    exclude.length ? `They have already seen ${exclude.length} suggestions and asked for different ones.` : '',
-    '',
-    shortlist.map(describe).join('\n'),
-  ].filter(Boolean).join('\n')
-
-  const r = await askJson<{ picks: { id: string; why: string }[] }>('critic', BED_SYSTEM, user, 1800)
-    .catch(() => ({ picks: [] as { id: string; why: string }[] }))
-  const byId = new Map(shortlist.map(p => [p.id, p]))
-  const stays: Stay[] = (r.picks ?? []).flatMap(p => {
-    const hit = byId.get(p.id)
-    return hit ? [toStay(hit, String(p.why ?? '').trim())] : []
-  }).slice(0, 3)
-
-  // Fill to three from the nearest, honestly labelled, so the page is never
-  // a single card pretending to be a choice.
-  for (const p of shortlist) {
-    if (stays.length >= 3) break
-    if (stays.some(s => s.id === p.id)) continue
-    stays.push(toStay(p, `${Math.round(p.distM)} m from the middle of your days — the nearest the crew did not otherwise rank`))
+  // Three that are genuinely different: the best, then the best of another kind if there is one.
+  const picks = [ranked[0]]
+  for (const p of ranked.slice(1)) {
+    if (picks.length >= 3) break
+    if (picks.every(q => q.kind !== p.kind) || picks.length + (ranked.length - picks.length) <= 3) picks.push(p)
   }
-  return { stays, looked: found.length }
+  for (const p of ranked) { if (picks.length >= 3) break; if (!picks.includes(p)) picks.push(p) }
+
+  return { stays: picks.map(p => toStay(p, reasonFor(p))), looked: found.length }
+}
+
+const reasonFor = (p: OsmPlace) => {
+  const stars = Number(p.tags.stars)
+  return [
+    `${p.distM < 950 ? `${Math.round(p.distM)} m` : `${(p.distM / 1000).toFixed(1)} km`} from the middle of your places`,
+    Number.isFinite(stars) && stars > 0 ? `${stars} stars, self-declared` : '',
+    p.tags['addr:street'] ? `on ${p.tags['addr:street']}` : '',
+  ].filter(Boolean).join(' · ')
 }
 
 const toStay = (p: OsmPlace, why: string): Stay => ({

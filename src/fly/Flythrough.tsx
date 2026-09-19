@@ -11,6 +11,7 @@ import { activeBeat, buildTimeline, type Segment } from './timeline'
 import { resample, smootherstep } from './geo'
 import { startFlight, tag, log } from '../telemetry'
 import FlightHud, { type Control, type Hud } from './FlightHud'
+import MapRig, { type MapView } from './MapRig'
 import './fly.css'
 
 /* The flight. Tiles sit under everything from the first frame (so they load
@@ -54,6 +55,8 @@ function Rig({ plan, begin, onStopReached, onFinish, onHud, control, tiles, load
   const settled = useRef(0)
   const tl = useMemo(() => buildTimeline(plan), [plan])
 
+  // Full detail for the flight; the map views trade some away (see MapRig).
+  useEffect(() => { if (tiles.current) tiles.current.errorTarget = 16 }, [tiles, loadTick])
   useEffect(() => { ground.setAnchors(anchorsFor(plan)) }, [ground, plan])
   useEffect(() => { ground.requeue() }, [ground, loadTick])
 
@@ -296,7 +299,11 @@ function Rig({ plan, begin, onStopReached, onFinish, onHud, control, tiles, load
     } else if (!chasePose(seg, u, eye, look)) {
       dwellPose(seg.leg, null, undefined, 0, st.t, eye, look)
     }
-    if (!st.inited) { camera.position.copy(eye); st.look.copy(look); st.inited = true }
+    if (!st.inited) {
+      // The flight starts from wherever the map left the camera, and glides from there.
+      st.look.copy(camera.position).addScaledVector(camera.getWorldDirection(new THREE.Vector3()), 600)
+      st.inited = true
+    }
     const k = 1 - Math.exp(-dt * smooth)
     camera.position.lerp(eye, k); st.look.lerp(look, k)
     camera.lookAt(st.look)
@@ -362,15 +369,30 @@ function Rig({ plan, begin, onStopReached, onFinish, onHud, control, tiles, load
 
 const hudLeg = (sig: string) => { try { return Math.max(0, (JSON.parse(sig)[1] ?? 1) - 1) } catch { return 0 } }
 
-export default function Flythrough(props: FlyProps) {
-  const { plan, origin: preOrigin, begin, onExit } = props
+const NO_VIEW: MapView = { pins: [], routes: [] }
+
+export default function Flythrough(props: FlyProps & { map?: MapView }) {
+  const { plan, origin: preOrigin, begin, onExit, map = NO_VIEW } = props
   const origin = plan?.origin ?? preOrigin ?? null
   const [probe, setProbe] = useState<'checking' | 'ok' | { why: string }>('checking')
   const [loadTick, setLoadTick] = useState(0)
   const [hud, setHud] = useState<Hud | null>(null)
   const tiles = useRef<TilesHandle | null>(null)
   const control = useRef<Control>({ paused: false, skip: false, restart: false })
-  const onLoadEnd = useCallback(() => setLoadTick(t => t + 1), [])   // stable: the wrapper re-registers on identity change
+  // A new city is a new tileset, which takes seconds to arrive. Rather than a bare
+  // black gap the world dissolves out and, once real tiles are on screen, back in.
+  const [revealed, setRevealed] = useState(false)
+  const cityKey = origin ? `${origin.lat.toFixed(2)},${origin.lon.toFixed(2)}` : ''
+  useEffect(() => { setRevealed(false) }, [cityKey])
+  useEffect(() => {
+    if (revealed) return
+    const id = setInterval(() => { if ((tiles.current?.stats.visible ?? 0) > 8) setRevealed(true) }, 350)
+    return () => clearInterval(id)
+  }, [revealed, cityKey])
+  const onLoadEnd = useCallback(() => {                                   // stable: the wrapper re-registers on identity change
+    setLoadTick(t => t + 1)
+    if ((tiles.current?.stats.visible ?? 0) > 8) setRevealed(true)
+  }, [])
   const tilesRef = useCallback((t: TilesHandle | null) => { tiles.current = t }, [])
 
   const check = useCallback(() => {
@@ -389,14 +411,16 @@ export default function Flythrough(props: FlyProps) {
     )
   }
   return (
-    <div className="fly" data-ground="night">
+    <div className={`fly ${revealed ? 'is-revealed' : ''}`} data-ground="night">
       {origin && probe === 'ok' && (
-        <Canvas camera={{ fov: 50, near: 1, far: 20000, position: [0, 900, 700] }} gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping }}>
+        <Canvas dpr={[1, 1.5]} camera={{ fov: 50, near: 1, far: 20000, position: [0, 900, 700] }} gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping }}>
           <color attach="background" args={['#0a0806']} />
           <ambientLight intensity={1.6} />
           <directionalLight position={[300, 800, 400]} intensity={1.2} color="#ffe6b8" />
           <GoogleTiles lat={origin.lat} lon={origin.lon} onLoadEnd={onLoadEnd} tilesRef={tilesRef} />
-          {plan && <Rig {...props} plan={plan} onHud={setHud} control={control} tiles={tiles} loadTick={loadTick} />}
+          {plan
+            ? <Rig key={cityKey} {...props} plan={plan} onHud={setHud} control={control} tiles={tiles} loadTick={loadTick} />
+            : <MapRig key={cityKey} view={map} origin={origin} tiles={tiles} loadTick={loadTick} />}
         </Canvas>
       )}
       {probe === 'checking' && <div className="fly-status">Connecting to the map…</div>}

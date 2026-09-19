@@ -41,3 +41,7 @@
   text-shadow: 0 1px 6px rgba(0,0,0,.9);
 }
 @media (max-width: 700px) { .hud-caption p { font-size: 17px; } .hud-top b { font-size: 24px; } }
+
+/* the world dissolves in once a city's tiles are really on screen */
+.fly canvas { opacity: 0; transition: opacity 1.5s cubic-bezier(.4, 0, .2, 1); }
+.fly.is-revealed canvas { opacity: 1; }

@@ -35,7 +35,7 @@ globalThis.fetch = ((input: Parameters<typeof fetch>[0], init?: RequestInit) => 
 const t0 = Date.now()
 const plan = await planTour({
   city: query, wants: [], startAt: '10:00', endAt: '18:00', from: '', interests: [], pace: 'steady',
-  transport: 'walk', party: 'solo', budget: 'any', meals: [], days: 1, lodging: 'any', diet: '',
+  transport: 'walk', party: 'solo', budget: 'any', meals: [], days: 1, diet: '',
 }, {
   mode,
   onEvent: e => { if (e.type === 'crew') console.log(`${((Date.now() - t0) / 1000).toFixed(1)}s [${e.agent}${e.kind === 'tool' ? ' (tool)' : ''}] ${e.state}: ${e.detail}`) },

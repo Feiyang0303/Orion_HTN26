@@ -42,8 +42,10 @@ export type TilesHandle = {
   setCamera: (c: Camera) => boolean
   deleteCamera: (c: Camera) => boolean
   setResolution: (c: Camera, w: number, h: number) => boolean
-  stats: { queued: number; downloading: number; parsing: number; loaded: number }
+  stats: { queued: number; downloading: number; parsing: number; loaded: number; visible: number }
   lruCache: { cachedBytes: number }
+  /** Screen-space error in pixels a tile may have before it is refined: higher means fewer, coarser tiles. */
+  errorTarget: number
 }
 
 export default function GoogleTiles({ lat, lon, onLoadEnd, tilesRef, children }: {
@@ -67,7 +69,9 @@ export default function GoogleTiles({ lat, lon, onLoadEnd, tilesRef, children }:
   }, [tilesRef])
   if (!apiToken) return null
   return (
-    <TilesRenderer ref={setRef} onTilesLoadEnd={onLoadEnd}>
+    // Keyed on the city: the tileset is re-centred on the place once, as it loads, so
+    // a different city is a different renderer (and a fresh Google session), not an edit.
+    <TilesRenderer key={`${apiToken}:${lat.toFixed(2)},${lon.toFixed(2)}`} ref={setRef} onTilesLoadEnd={onLoadEnd}>
       <TilesPlugin plugin={GoogleCloudAuthPlugin} args={authArgs} />
       <TilesPlugin plugin={GLTFExtensionsPlugin} args={gltfArgs} />
       <TilesPlugin plugin={TileCompressionPlugin} />

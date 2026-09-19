@@ -1,6 +1,7 @@
 import { createRoot } from 'react-dom/client'
 import App from './App'
 import './theme.css'
+import './ui/orion.css'
 import { initTelemetry } from './telemetry'
 
 // No StrictMode: its dev double-mount opens two Google tile sessions on one

@@ -12,6 +12,7 @@ import { createServer } from 'node:http'
 import * as Sentry from '@sentry/node'
 import { loadEnv, scrub } from './shared.mjs'
 import { handleWiki } from './wiki.mjs'
+import { handleOverpass } from './overpass.mjs'
 
 loadEnv()   // also done by instrument.mjs when preloaded; harmless twice
 const env = name => process.env[name] || ''
@@ -164,6 +165,7 @@ const routes = {
     keys: { openai: !!env('OPENAI_API_KEY'), elevenlabs: !!env('ELEVENLABS_API_KEY') && !!env('ELEVENLABS_VOICE_ID'), routes: !!routesKey() },
   }),
   'GET /api/wiki': handleWiki,
+  'POST /api/overpass': (req, res) => handleOverpass(req, res, readJson),
   'POST /api/llm': llm,
   'POST /api/tts': tts,
   'POST /api/routes/matrix': routesMatrix,

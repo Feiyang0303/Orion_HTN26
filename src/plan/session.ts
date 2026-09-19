@@ -2,7 +2,7 @@ import { observeCrew, traced } from '../telemetry'
 import type { Day, Stay, Stop, Trip, Waypoint, Wish } from '../types'
 import { HHMM, MINS } from '../types'
 import type { Agent, CrewEvent } from './events'
-import { geocode, locate, type Place } from './geocode'
+import { locate, type Place } from './geocode'
 import { findStops, matchWant, tripRadius, type Candidate } from './crew'
 import { chooseBeds, chooseTables, shapeDays } from './trip'
 import { bestOrder, legsFor } from './router'
@@ -46,32 +46,34 @@ export type Session = {
 const say = (s: Session, agent: Agent, kind: 'tool' | 'agent', state: 'working' | 'done' | 'failed', detail: string) =>
   s.onEvent({ type: 'crew', agent, kind, state, detail })
 
-/** Stage 0: the city. Nothing else has to be read first: the scout names places
-    from what it knows and each name is looked up when it is chosen, so the
-    session opens as fast as the geocoder answers. */
-async function openSessionImpl(
-  wish: Wish, mode: Mode, onEvent: (e: CrewEvent) => void, signal?: AbortSignal,
+/** Stage 0: the city, which the kickoff has already resolved. Looking the name up
+    again could land somewhere else ("Kyoto" the prefecture), so it is not. The
+    scout names places from what it knows and each name is looked up when it is
+    chosen, so nothing else has to be read first. */
+function openSessionImpl(
+  wish: Wish, mode: Mode, origin: Place, onEvent: (e: CrewEvent) => void, signal?: AbortSignal,
 ): Promise<Session> {
-  const s: Session = { wish, mode, origin: null as unknown as Place, known: new Map(), offered: [], bed: null, written: new Map(), onEvent: observeCrew(onEvent), signal }
-  say(s, 'Geocode', 'tool', 'working', `Looking up ${wish.city}`)
-  s.origin = await geocode(wish.city, signal)
-  say(s, 'Geocode', 'tool', 'done', s.origin.name)
-  return s
+  const s: Session = { wish, mode, origin, known: new Map(), offered: [], bed: null, written: new Map(), onEvent: observeCrew(onEvent), signal }
+  say(s, 'Geocode', 'tool', 'done', origin.name)
+  return Promise.resolve(s)
 }
 
-/* ---------------------------------------------------------------- 1. beds */
+/* ---------------------------------------------------------------- 1. stay */
 
-/** Three ranked beds, judged against the middle of the city: no day exists yet
-    to say where the days will be, and asking for the places first would make a
-    bed wait on the scout. */
-async function stageBedsImpl(s: Session): Promise<Stay[]> {
-  const centre = { lat: s.origin.lat, lon: s.origin.lon }
-  say(s, 'Scout', 'agent', 'working', s.offered.length ? 'Looking for three different places to sleep' : 'Looking for somewhere to sleep, central to where the days will be')
-  const { stays, looked, down } = await chooseBeds(centre, s.wish, [s.origin.name], s.offered, s.signal)
+/** Where to sleep, chosen once the places are known: the middle of the trip's own
+    places is the centre that matters. Nothing here waits on the person; if
+    OpenStreetMap is down the trip simply starts from the city and says so. */
+async function stageStayImpl(s: Session, drafts: DayDraft[]): Promise<Stay[]> {
+  const all = drafts.flatMap(d => d.stops)
+  const centre = all.length
+    ? { lat: all.reduce((a, c) => a + c.lat, 0) / all.length, lon: all.reduce((a, c) => a + c.lon, 0) / all.length }
+    : { lat: s.origin.lat, lon: s.origin.lon }
+  say(s, 'Scout', 'agent', 'working', s.offered.length ? 'Finding a different place to sleep' : 'Finding somewhere to sleep, central to the places')
+  const { stays, down } = await chooseBeds(centre, s.wish, s.offered, s.signal)
   s.offered.push(...stays.map(b => b.id))
+  s.bed = stays[0] ?? null
   say(s, 'Scout', 'agent', stays.length ? 'done' : 'failed',
-    stays.length ? `${stays.map(b => b.name).join(' · ')}, from ${looked} OpenStreetMap lists`
-      : down ? 'OpenStreetMap did not answer in time; the days can carry on without a bed' : 'OpenStreetMap lists nothing to sleep in near here')
+    stays.length ? `${stays[0].name}: ${stays[0].why}` : down ? 'OpenStreetMap did not answer, so the days start from the city centre' : 'OpenStreetMap lists nothing to sleep in near here, so the days start from the city centre')
   return stays
 }
 
@@ -82,8 +84,7 @@ export type DayDraft = { title: string; why: string; stops: Candidate[] }
 /** What the scout would do with the days: the places, already grouped. The
     count is sized to the hours, not fixed — a long day with a fast pace holds
     more than a short gentle one. */
-async function stagePlacesImpl(s: Session, bed: Stay | null): Promise<DayDraft[]> {
-  s.bed = bed
+async function stagePlacesImpl(s: Session): Promise<DayDraft[]> {
   const wish = s.wish
   const nDays = Math.max(1, Math.min(7, wish.days || 1))
   const budget = visitBudgetMin(wish)
@@ -391,7 +392,7 @@ export async function applyEdits(
   }
 
   if (bedChanged) {
-    const [next] = await stageBeds(s)
+    const [next] = await stageStay(s, drafts)
     if (next) { s.bed = next; notes.push(`sleeping at ${next.name}`); drafts.forEach((_, i) => touched.add(i)) }
   }
   if (wishChanged) drafts.forEach((_, i) => touched.add(i))
@@ -424,7 +425,7 @@ export { HHMM, MINS }
 /* Each stage is its own trace (see telemetry.traced), with the facts that make
    a slow one explainable: how many days, which transport, how many places. */
 export const openSession = traced('plan.open', openSessionImpl, (w) => ({ city: w.city, days: w.days, transport: w.transport, party: w.party }))
-export const stageBeds = traced('plan.beds', stageBedsImpl, s => ({ city: s.origin.name }))
+export const stageStay = traced('plan.stay', stageStayImpl, (s, drafts) => ({ city: s.origin.name, stops: drafts.reduce((n, d) => n + d.stops.length, 0) }))
 export const stagePlaces = traced('plan.places', stagePlacesImpl, s => ({ city: s.origin.name, days: s.wish.days, transport: s.wish.transport }))
 export const morePlaces = traced('plan.more_places', morePlacesImpl, s => ({ city: s.origin.name }))
 export const stagePlan = traced('plan.build', stagePlanImpl, (s, drafts) => ({ city: s.origin.name, days: drafts.length, stops: drafts.reduce((n, d) => n + d.stops.length, 0), transport: s.wish.transport }))

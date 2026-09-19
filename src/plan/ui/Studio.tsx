@@ -1,141 +1,118 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Mark } from './Marks'
-import { markFor } from './decor'
-import MapSheet, { type MapLeg, type MapPin } from './MapSheet'
-import Storybook, { STOP_COLOURS } from './Storybook'
+import { AnimatePresence, motion } from 'motion/react'
+import CrewStage from './CrewStage'
+import TripView from './TripView'
+import Icon from '../../ui/Icon'
+import { dayColour } from '../../ui/palette'
+import type { MapView } from '../../fly/MapRig'
 import type { CrewEvent } from '../events'
 import {
-  applyEdits, morePlaces, openSession, revise, stageBeds, stagePlaces, stagePlan,
+  applyEdits, openSession, revise, stagePlaces, stagePlan, stageStay,
   type DayDraft, type Session,
 } from '../session'
 import type { Mode } from '../narrator'
 import type { Place } from '../geocode'
-import type { Day, Stay, Trip, Wish } from '../../types'
+import type { Day, LatLon, Stay, Trip, Wish } from '../../types'
 
-/* The studio: where the crew works with someone watching.
+/* The studio: where the crew works with someone watching, and where the result is read.
  *
- * Three rooms and a conversation. Each room ends in a decision the person
- * makes, and the crew does not go further until they have made it — a bed,
- * then the places, then the plan itself, and after that a chat where the
- * plan is changed by saying what is wrong with it. The crew's own messages
- * run down the side the whole time as a thread, because a plan you watched
- * being made is a plan you trust to have been made.
+ * It used to be three rooms, each ending in a decision the person had to make
+ * before the crew would go on (a bed, then the places, then the plan). That was
+ * the crew waiting for permission to do its job, and the person waiting for the
+ * crew. Now the crew simply does the work, start to finish, in front of them: the
+ * places appear on the real city as they are verified, the bed is chosen from the
+ * finished plan, the days are routed and written, and then the trip is there to be
+ * read and, in plain words, changed. Changing it is a conversation with the editor,
+ * which can only ask for things from a fixed menu, so it can never invent a place.
  */
-
-type Step = 'beds' | 'places' | 'plan'
-const STEPS: { key: Step; title: string; hint: string }[] = [
-  { key: 'beds', title: 'Sleep', hint: 'Three beds, ranked. Pick one, or ask for three more.' },
-  { key: 'places', title: 'Places', hint: 'What the scout chose, by day. Move them, drop them, or take the default.' },
-  { key: 'plan', title: 'The plan', hint: 'Routed, timed and fed. Tell the editor what to change.' },
-]
-const colourAt = (i: number) => STOP_COLOURS[i % STOP_COLOURS.length]
 
 type Line = { who: 'you' | 'editor'; text: string }
 
-export default function Studio({ wish, mode, origin, onFly, onHome, onBack, saveAudio }: {
+export default function Studio({ wish, mode, origin, onFly, onHome, onMap, saveAudio }: {
   wish: Wish
   mode: Mode
   origin: Place
   onFly: (day: Day) => void
   onHome: () => void
-  onBack: () => void
+  onMap: (view: MapView) => void
   saveAudio: (planId: string, name: string, bytes: ArrayBuffer) => Promise<string>
 }) {
-  const [step, setStep] = useState<Step>('beds')
   const [events, setEvents] = useState<CrewEvent[]>([])
-  const [busy, setBusy] = useState<string | null>(null)
-  // Finding a bed runs in the background: a slow OpenStreetMap must never hold the rest of the trip hostage.
-  const [bedsBusy, setBedsBusy] = useState(false)
-  const step_ = useRef<Step>('beds')
-  const [error, setError] = useState('')
-  const [beds, setBeds] = useState<Stay[]>([])
-  const [bed, setBed] = useState<Stay | null>(null)
   const [drafts, setDrafts] = useState<DayDraft[]>([])
+  const [stay, setStay] = useState<Stay | null>(null)
+  const [partial, setPartial] = useState<Day[]>([])
   const [trip, setTrip] = useState<Trip | null>(null)
+  const [error, setError] = useState('')
+  const [attempt, setAttempt] = useState(0)
+  const [dayIx, setDayIx] = useState<number | 'all'>('all')
+  const [focus, setFocus] = useState<LatLon | null>(null)
   const [chat, setChat] = useState<Line[]>([])
   const [draftMsg, setDraftMsg] = useState('')
+  const [editing, setEditing] = useState(false)
+  const [asking, setAsking] = useState(false)
   const session = useRef<Session | null>(null)
-  const abort = useRef(new AbortController())
 
   const onEvent = useCallback((e: CrewEvent) => {
     setEvents(list => [...list, e])
-    if (e.type === 'plan') setTrip(t => t ? { ...t, days: [...t.days, { ...e.plan, number: t.days.length + 1, title: `Day ${t.days.length + 1}`, tables: [] }] } : t)
+    if (e.type === 'plan') setPartial(p => [...p.filter(d => d.number !== (e.plan as Day).number), e.plan as Day])
     if (e.type === 'trip') setTrip(e.trip)
   }, [])
 
-  /* ------------------------------------------------------------- stage 1 */
+  /* ------------------------------------------------------ the whole run -- */
 
-  const runBeds = useCallback(async () => {
-    setBedsBusy(true); setError('')
-    try {
-      if (!session.current) session.current = await openSession(wish, mode, onEvent, abort.current.signal)
-      const found = await stageBeds(session.current)
-      if (step_.current !== 'beds') return           // they carried on without one; do not change their mind for them
-      setBeds(found); setBed(found[0] ?? null)
-    } catch (e) { if (step_.current === 'beds') setError(e instanceof Error ? e.message : String(e)) }
-    finally { setBedsBusy(false) }
-  }, [wish, mode, onEvent])
+  useEffect(() => {
+    const ctl = new AbortController()
+    setEvents([]); setDrafts([]); setStay(null); setPartial([]); setTrip(null); setError('')
+    void (async () => {
+      try {
+        const s = await openSession(wish, mode, origin, onEvent, ctl.signal)
+        session.current = s
+        const found = await stagePlaces(s)
+        if (ctl.signal.aborted) return
+        setDrafts(found)
+        // Where to sleep depends on where the days are, so it waits for the places, and nothing else does.
+        const stays = await stageStay(s, found)
+        if (ctl.signal.aborted) return
+        setStay(stays[0] ?? null)
+        const made = await stagePlan(s, found, { saveAudio, onEvent, signal: ctl.signal })
+        if (!ctl.signal.aborted) setTrip(made)
+      } catch (e) {
+        if (!ctl.signal.aborted) setError(e instanceof Error ? e.message : String(e))
+      }
+    })()
+    return () => ctl.abort()
+  }, [wish, mode, origin, attempt, saveAudio, onEvent])
 
-  useEffect(() => { void runBeds(); return () => abort.current.abort() }, [])   // eslint-disable-line react-hooks/exhaustive-deps
+  /* ------------------------------------------------------------- the map -- */
 
-  /* ------------------------------------------------------------- stage 2 */
+  const stage = trip ? 'trip' : 'crew'
+  useEffect(() => {
+    const days = trip?.days ?? partial
+    const pins: MapView['pins'] = []
+    const routes: MapView['routes'] = []
+    if (stay) pins.push({ id: 'stay', lat: stay.lat, lon: stay.lon, label: '⌂', name: stay.name, colour: '#ffffff', home: true })
+    if (days.length) {
+      days.forEach((d, di) => {
+        const c = dayColour((d.number ?? di + 1) - 1)
+        const dim = dayIx !== 'all' && dayIx !== d.number
+        d.stops.forEach((s, k) => pins.push({ id: `${d.number}:${s.id}`, lat: s.lat, lon: s.lon, label: String(k + 1), name: dim ? undefined : s.name, colour: c }))
+        d.legs.forEach((l, k) => routes.push({ id: `${d.number}:${k}`, points: l.polyline, colour: c, dim }))
+        if (d.approach) routes.push({ id: `${d.number}:approach`, points: d.approach.polyline, colour: c, dim })
+      })
+    } else {
+      drafts.forEach((d, di) => d.stops.forEach((c, k) => pins.push({ id: `${di}:${c.id}`, lat: c.lat, lon: c.lon, label: String(k + 1), name: c.name, colour: dayColour(di), fresh: true })))
+    }
+    onMap({ pins, routes, focus, distance: trip ? 0.85 : 1 })
+  }, [drafts, partial, trip, stay, dayIx, focus, onMap])
 
-  const runPlaces = useCallback(async () => {
-    if (!session.current) return
-    setBusy('the places'); setError('')
-    try {
-      step_.current = 'places'
-      setDrafts(await stagePlaces(session.current, bed))
-      setStep('places')
-    } catch (e) { setError(e instanceof Error ? e.message : String(e)) }
-    finally { setBusy(null) }
-  }, [bed])
-
-  const move = (di: number, k: number, dir: -1 | 1) => setDrafts(ds => {
-    const next = ds.map(d => ({ ...d, stops: [...d.stops] }))
-    const j = k + dir
-    const day = next[di]
-    if (j >= 0 && j < day.stops.length) { [day.stops[k], day.stops[j]] = [day.stops[j], day.stops[k]]; return next }
-    // Past the end of a day: on to the next one, or back to the previous.
-    const to = di + dir
-    if (to < 0 || to >= next.length) return ds
-    const [c] = day.stops.splice(k, 1)
-    if (dir > 0) next[to].stops.unshift(c); else next[to].stops.push(c)
-    return next
-  })
-  const drop = (di: number, k: number) => setDrafts(ds => ds.map((d, i) => i === di ? { ...d, stops: d.stops.filter((_, x) => x !== k) } : d))
-
-  const refill = useCallback(async (di: number) => {
-    if (!session.current) return
-    setBusy('more places'); setError('')
-    try {
-      const avoid = drafts.flatMap(d => d.stops)
-      const want = Math.max(1, Math.round(drafts.reduce((n, d) => n + d.stops.length, 0) / drafts.length) - drafts[di].stops.length)
-      const extra = await morePlaces(session.current, avoid, want)
-      setDrafts(ds => ds.map((d, i) => i === di ? { ...d, stops: [...d.stops, ...extra] } : d))
-    } catch (e) { setError(e instanceof Error ? e.message : String(e)) }
-    finally { setBusy(null) }
-  }, [drafts])
-
-  /* ------------------------------------------------------------- stage 3 */
-
-  const runPlan = useCallback(async () => {
-    if (!session.current) return
-    setBusy('the plan'); setError(''); setTrip(null); setStep('plan')
-    try {
-      setTrip(await stagePlan(session.current, drafts, { saveAudio, onEvent }))
-    } catch (e) { setError(e instanceof Error ? e.message : String(e)) }
-    finally { setBusy(null) }
-  }, [drafts, saveAudio, onEvent])
-
-  /* ------------------------------------------------------------- stage 4 */
+  /* ------------------------------------------------------------ the editor -- */
 
   const send = useCallback(async () => {
     const text = draftMsg.trim()
-    if (!text || !trip || !session.current || busy) return
-    setDraftMsg('')
+    if (!text || !trip || !session.current || asking) return
+    setDraftMsg(''); setEditing(true)
     setChat(c => [...c, { who: 'you', text }])
-    setBusy('the editor')
+    setAsking(true)
     try {
       const r = await revise(trip, text)
       setChat(c => [...c, { who: 'editor', text: r.reply || 'Done.' }])
@@ -146,160 +123,40 @@ export default function Studio({ wish, mode, origin, onFly, onHome, onBack, save
         if (notes.length) setChat(c => [...c, { who: 'editor', text: `${notes.join('; ')}.${rebuilt.length ? ` Day${rebuilt.length === 1 ? '' : 's'} ${rebuilt.join(', ')} redone.` : ''}` }])
       }
     } catch (e) { setChat(c => [...c, { who: 'editor', text: `That did not work: ${e instanceof Error ? e.message : String(e)}` }]) }
-    finally { setBusy(null) }
-  }, [draftMsg, trip, busy, saveAudio, onEvent])
+    finally { setAsking(false) }
+  }, [draftMsg, trip, asking, saveAudio, onEvent])
 
-  /* ----------------------------------------------------------------- map */
+  const last = useMemo(() => events.filter(e => e.type === 'crew').at(-1) as Extract<CrewEvent, { type: 'crew' }> | undefined, [events])
 
-  const pins = useMemo<MapPin[]>(() => {
-    if (step === 'beds') return beds.map((b, i) => ({ id: b.id, lat: b.lat, lon: b.lon, label: String(i + 1), name: b.name, colour: bed?.id === b.id ? '#9a6b3f' : '#b49b6c', start: true }))
-    const out: MapPin[] = bed ? [{ id: bed.id, lat: bed.lat, lon: bed.lon, label: '·', name: bed.name, colour: '#6d5a3c', start: true }] : []
-    drafts.forEach((d, di) => d.stops.forEach((c, k) => out.push({ id: c.id, lat: c.lat, lon: c.lon, label: `${di + 1}.${k + 1}`, name: c.name, colour: colourAt(di) })))
-    return out
-  }, [step, beds, bed, drafts])
-
-  const legs = useMemo<MapLeg[]>(() => {
-    if (step === 'beds') return []
-    return drafts.flatMap((d, di) => d.stops.slice(1).map((b, k) => ({
-      points: [{ lat: d.stops[k].lat, lon: d.stops[k].lon }, { lat: b.lat, lon: b.lon }], colour: colourAt(di), draft: true,
-    })))
-  }, [step, drafts])
-
-  const stepIndex = STEPS.findIndex(x => x.key === step)
-  const crew = events.filter(e => e.type === 'crew') as Extract<CrewEvent, { type: 'crew' }>[]
-
-  /* ---------------------------------------------------------------- plan */
-
-  if (step === 'plan') {
-    return (
-      <div className="jr-studio-plan">
-        <div className="jr-studio-book">
-          {trip
-            ? <Storybook trip={trip} events={events} planning={busy === 'the plan'} onFly={onFly} onHome={onHome}
-                onClose={() => setStep('places')} />
-            : <div className="jr-desk orion-waiting">
-                <p className="jr-kicker">Orion · three</p>
-                <h1 className="jr-cover-title" style={{ fontSize: 30, margin: '4px 0 10px' }}>Building the plan</h1>
-                <Thread crew={crew.slice(-6)} />
-                {error && <p className="jr-error">{error}</p>}
-              </div>}
-        </div>
-        <aside className="jr-editor">
-          <header>
-            <p className="jr-kicker">The editor</p>
-            <p className="jr-caption">Say what is wrong and it becomes an edit: drop a place, move it to another day, stay longer, add somewhere, change the hours or the bed. Only the days touched are redone.</p>
-          </header>
-          <ol className="jr-editor-log">
-            {chat.map((l, i) => <li key={i} className={`is-${l.who}`}><span>{l.text}</span></li>)}
-            {busy === 'the editor' && <li className="is-editor is-busy"><span>Reading the plan…</span></li>}
-            {busy && busy !== 'the editor' && crew.at(-1) && <li className="is-crew"><span>{crew.at(-1)!.agent}: {crew.at(-1)!.detail}</span></li>}
-          </ol>
-          <form className="jr-editor-ask" onSubmit={e => { e.preventDefault(); void send() }}>
-            <input value={draftMsg} onChange={e => setDraftMsg(e.target.value)} disabled={!trip || !!busy}
-              placeholder={trip ? 'Swap day 2 for something quieter, and skip the museum' : 'The plan is still being built'} />
-            <button type="submit" className="jr-btn primary" disabled={!trip || !!busy || !draftMsg.trim()}>Send</button>
-          </form>
-        </aside>
-      </div>
-    )
+  if (stage === 'crew') {
+    return <CrewStage city={origin.name} events={events} drafts={drafts} error={error} onRetry={() => setAttempt(a => a + 1)} onBack={onHome} />
   }
 
-  /* ------------------------------------------------------------ the desk */
-
   return (
-    <div className="jr-planner">
-      <aside className="jr-planner-side">
-        <header className="jr-planner-head">
-          <button type="button" className="jr-kicker jr-home-link" onClick={onHome}>← Orion</button>
-          <h1>{origin.name}, {wish.days} day{wish.days === 1 ? '' : 's'}</h1>
-        </header>
-
-        <ol className="jr-steps" aria-label="Steps">
-          {STEPS.map((x, i) => (
-            <li key={x.key} className={i === stepIndex ? 'is-on' : i < stepIndex ? 'is-done' : ''}><b>{i + 1}</b><span>{x.title}</span></li>
-          ))}
-        </ol>
-        <p className="jr-step-hint">{STEPS[stepIndex].hint}</p>
-
-        {step === 'beds' && (
-          <section className="jr-step">
-            <ol className="jr-beds">
-              {beds.map((b, i) => (
-                <li key={b.id} className={bed?.id === b.id ? 'is-on' : ''}>
-                  <button type="button" onClick={() => setBed(b)}>
-                    <span className="jr-disc">{i + 1}</span>
-                    <span className="jr-bed-body">
-                      <b>{b.name}</b>
-                      <em>{b.kind.replace('_', ' ')}{b.stars != null ? ` · ${b.stars} stars, self-declared` : ''}{b.address ? ` · ${b.address}` : ''}</em>
-                      <span>{b.why}</span>
-                    </span>
-                  </button>
-                </li>
-              ))}
-              {bedsBusy && <li className="jr-empty is-busy">Asking OpenStreetMap for somewhere to sleep… you do not have to wait for it.</li>}
-              {!beds.length && !bedsBusy && <li className="jr-empty">Couldn't get a list of places to sleep just now. You can carry on without a bed; the days will start from the city centre.</li>}
-            </ol>
-            <p className="jr-caption">Ranked on distance from where the days will be, the sort of bed you asked for, and the tags OpenStreetMap has. Nothing here knows prices or availability.</p>
-            <div className="jr-order-moves">
-              <button type="button" className="jr-btn tiny ghost" disabled={!!busy || bedsBusy} onClick={() => void runBeds()}>Three different ones</button>
-            </div>
-          </section>
-        )}
-
-        {step === 'places' && (
-          <section className="jr-step">
-            {drafts.map((d, di) => (
-              <div key={di} className="jr-draft-day" style={{ '--c': colourAt(di) } as React.CSSProperties}>
-                <h3><span className="jr-disc">{di + 1}</span>{d.title}<em>{d.stops.reduce((n, c) => n + c.visitMin, 0)} min of visiting</em></h3>
-                <ol className="jr-order">
-                  {d.stops.map((c, k) => (
-                    <li key={c.id} style={{ '--c': colourAt(di) } as React.CSSProperties}>
-                      <Mark name={markFor(c.name, k)} size={15} />
-                      <b>{c.name}{c.asked ? '' : ' ·'}</b>
-                      <em>{c.visitMin}′</em>
-                      <span className="jr-order-moves">
-                        <button type="button" className="jr-btn tiny" onClick={() => move(di, k, -1)} disabled={di === 0 && k === 0} aria-label="Earlier">↑</button>
-                        <button type="button" className="jr-btn tiny" onClick={() => move(di, k, 1)} disabled={di === drafts.length - 1 && k === d.stops.length - 1} aria-label="Later">↓</button>
-                        <button type="button" className="jr-x" onClick={() => drop(di, k)} aria-label={`Drop ${c.name}`}>×</button>
-                      </span>
-                    </li>
-                  ))}
-                  {!d.stops.length && <li className="jr-empty">Empty — this day will be skipped.</li>}
-                </ol>
-                <button type="button" className="jr-btn tiny ghost" disabled={!!busy} onClick={() => void refill(di)}>Find more for this day</button>
-              </div>
-            ))}
-            <p className="jr-caption">A dot marks the scout's choices; the rest are yours. Moving a place past the end of its day carries it to the next. The router settles the order within each day; this is only which day it belongs to.</p>
-          </section>
-        )}
-
-        {busy && <Thread crew={crew.slice(-4)} />}
-        {error && <p className="jr-error">{error}</p>}
-
-        <footer className="jr-planner-foot">
-          <button type="button" className="jr-btn ghost" disabled={!!busy} onClick={() => { if (step === 'beds') return onBack(); step_.current = 'beds'; setStep('beds') }}>Back</button>
-          <span style={{ flex: 1 }} />
-          {step === 'beds' && <button type="button" className="jr-btn primary" disabled={!!busy || !session.current} onClick={() => void runPlaces()}>{busy === 'the places' ? 'The scout is choosing…' : bed ? `Sleep at ${short(bed.name)} →` : bedsBusy ? 'Skip the bed for now →' : 'Carry on without a bed →'}</button>}
-          {step === 'places' && <button type="button" className="jr-btn primary big" disabled={!!busy || !drafts.some(d => d.stops.length)} onClick={() => void runPlan()}><Mark name="key" size={16} /> Build the plan</button>}
-        </footer>
-      </aside>
-
-      <div className="jr-planner-map has-city">
-        <MapSheet centre={bed ?? origin} pins={pins} legs={legs} busy={busy} />
+    <div className="tv">
+      <div className="tv-bar">
+        <button className="o-btn quiet small" onClick={onHome}>← New trip</button>
       </div>
+      <TripView trip={trip!} day={dayIx} onDay={setDayIx} onFly={onFly} onFocus={setFocus} planning={asking} />
+
+      <motion.section className="ed o-glass" initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: .6, duration: .7, ease: [.22, .9, .24, 1] }}>
+        <AnimatePresence initial={false}>
+          {(editing || chat.length > 0) && (
+            <motion.div key="log" className="ed-log" initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}>
+              <ol>
+                {chat.map((l, i) => <li key={i} className={`is-${l.who}`}><span>{l.text}</span></li>)}
+                {asking && <li className="is-editor is-busy"><span>{last ? `${last.agent}: ${last.detail}` : 'Reading the plan…'}</span></li>}
+              </ol>
+            </motion.div>
+          )}
+        </AnimatePresence>
+        <form onSubmit={e => { e.preventDefault(); void send() }}>
+          <Icon name="spark" size={17} className="ed-spark" />
+          <input value={draftMsg} onChange={e => setDraftMsg(e.target.value)} disabled={asking} onFocus={() => setEditing(true)}
+            placeholder="Ask the editor to change something: “make day 2 quieter”, “skip the museum”…" aria-label="Ask the editor" />
+          <button type="submit" className="o-btn primary small" disabled={asking || !draftMsg.trim()} aria-label="Send"><Icon name="send" size={15} /></button>
+        </form>
+      </motion.section>
     </div>
-  )
-}
-
-const short = (s: string) => s.length > 22 ? `${s.slice(0, 21)}…` : s
-
-/** The crew, as a thread: who said what, most recent last. */
-function Thread({ crew }: { crew: Extract<CrewEvent, { type: 'crew' }>[] }) {
-  return (
-    <ol className="jr-thread" aria-live="polite">
-      {crew.map((c, i) => (
-        <li key={i} className={`is-${c.state}`}><b>{c.agent}</b><span>{c.detail}</span></li>
-      ))}
-    </ol>
   )
 }

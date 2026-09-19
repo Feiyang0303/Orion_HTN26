@@ -1,4 +1,5 @@
 import { report } from '../telemetry'
+import { postJson } from './net'
 import type { LatLon, Source } from '../types'
 import { metresBetween } from './geo'
 
@@ -15,19 +16,8 @@ import { metresBetween } from './geo'
  * book would rather print nothing than a number nobody measured.
  */
 
-// Public mirrors come and go, and any one of them can hang for a minute, so all
-// of them are asked at once and the first good answer wins.
-const MIRRORS = [
-  'https://overpass-api.de/api/interpreter',
-  'https://overpass.openstreetmap.fr/api/interpreter',
-  'https://overpass.private.coffee/api/interpreter',
-  'https://overpass.kumi.systems/api/interpreter',
-]
-const BUDGET_MS = 12_000
-
-/** Every mirror failed or ran out of time. Different from "there is nothing
-    here": callers must not tell someone a city has no hotels because a server
-    was slow. */
+/** OpenStreetMap did not answer. Different from "there is nothing here": callers
+    must not tell someone a city has no hotels because a server was slow. */
 export class OverpassDown extends Error {
   constructor() { super('OpenStreetMap did not answer in time') }
 }
@@ -50,36 +40,19 @@ type Element = {
   tags?: Record<string, string>
 }
 
+/* Through the proxy (scripts/overpass.mjs): it asks every public mirror at once,
+   retries, and keeps good answers on disk, which the browser cannot do. */
 async function overpass(query: string, signal?: AbortSignal): Promise<Element[]> {
-  const guard = new AbortController()
-  const timer = setTimeout(() => guard.abort(), BUDGET_MS)
-  const onAbort = () => guard.abort()
-  signal?.addEventListener('abort', onAbort)
   try {
-    return await Promise.any(MIRRORS.map(async url => {
-      const mirror = new URL(url).hostname
-      try {
-        const res = await fetch(url, {
-          method: 'POST', signal: guard.signal,
-          headers: { 'content-type': 'application/x-www-form-urlencoded' },
-          body: 'data=' + encodeURIComponent(query),
-        })
-        if (!res.ok) throw new Error(`${mirror} answered ${res.status}`)
-        return ((await res.json()) as { elements?: Element[] }).elements ?? []
-      } catch (e) {
-        // A mirror that loses the race is aborted on purpose; that is not a fault.
-        if (!signal?.aborted) report(e, 'osm.overpass', { level: 'warning', extra: { mirror, timedOut: guard.signal.aborted } })   // report() ignores the AbortError of a mirror that simply lost
-        throw e
-      }
-    }))
+    const r = await Promise.race([
+      postJson<{ elements?: Element[] }>('overpass', { query }),
+      new Promise<never>((_, no) => setTimeout(() => no(new Error('timeout')), 45_000)),
+    ])
+    return r.elements ?? []
   } catch (e) {
     if (signal?.aborted) throw e
-    report(new Error('every Overpass mirror failed'), 'osm.overpass.exhausted', { level: 'error' })
+    report(e, 'osm.overpass', { level: 'error' })
     throw new OverpassDown()
-  } finally {
-    clearTimeout(timer)
-    signal?.removeEventListener('abort', onAbort)
-    guard.abort()                      // cancel the mirrors that lost
   }
 }
 

@@ -58,17 +58,7 @@ export const BUDGET_LABEL: Record<Budget, string> = {
 }
 export type Meal = 'lunch' | 'dinner'
 
-/** Where to sleep, and where to eat. Neither is in Wikipedia, so both come
-    from OpenStreetMap: real places with real coordinates, and never a name a
-    model remembered. OSM has no ratings or prices, so this carries none —
-    an invented star rating would be the one dishonest thing in the book. */
-export type Lodging = 'hotel' | 'hostel' | 'guesthouse' | 'apartment' | 'any'
-export const LODGING_LABEL: Record<Lodging, string> = {
-  hotel: 'A hotel', hostel: 'A hostel', guesthouse: 'A guesthouse',
-  apartment: 'An apartment', any: 'Anywhere with a bed',
-}
-
-/** The desk, as data. Everything on it changes the plan; nothing on it is
+/** The kickoff, as data. Everything on it changes the plan; nothing on it is
     decoration. `wants` are places named by the person and are never dropped. */
 export type Wish = {
   city: string
@@ -86,11 +76,9 @@ export type Wish = {
   meals: Meal[]
   /** How many days the trip runs. One is the old behaviour exactly. */
   days: number
-  /** What sort of bed, and anything the kitchen needs to know. Both steer a
-      choice made from OSM's own list, never a recommendation from memory. */
-  lodging: Lodging
   /** Free text: "vegetarian", "no pork", "we like noodles". Passed to the
-      table-setter verbatim. */
+      table-setter verbatim. Where to sleep is not asked: the crew picks a bed
+      that suits the finished plan. */
   diet: string
 }
 
