@@ -471,3 +471,21 @@ input[type='time'].o-input { color-scheme: dark; padding: .7em .9em; }
   font: 500 11.5px var(--sans, 'DM Sans', system-ui, sans-serif); color: #f4e7c6; background: color-mix(in srgb, #0c0a08 82%, transparent);
   border: 1px solid color-mix(in srgb, var(--c) 55%, transparent); backdrop-filter: blur(6px); animation: pin-in .6s var(--ease) both; }
 .route-pill svg { color: var(--c); }
+
+/* whether the trip is kept */
+.tv-keep { align-self: center; font: 500 12px var(--sans, 'DM Sans', system-ui, sans-serif); color: #9a8763; letter-spacing: .02em; }
+.tv-keep.is-saved { color: #8fd6a4; }
+.tv-keep.is-failed { color: #ff8fa3; }
+
+/* your trips */
+.st { position: fixed; right: 22px; top: 16px; z-index: 5; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+.st .o-btn b { margin-left: 4px; color: var(--o-amber, #f0b45e); }
+.st-list { list-style: none; margin: 0; padding: 6px; width: min(320px, calc(100vw - 44px)); max-height: 50vh; overflow-y: auto; }
+.st-list li { display: flex; align-items: center; border-radius: 10px; }
+.st-list li:hover { background: rgba(255, 255, 255, .05); }
+.st-open { flex: 1; text-align: left; background: none; border: 0; color: inherit; padding: 9px 12px; cursor: pointer; font: inherit; }
+.st-open b { display: block; font: 400 18px var(--display, 'IM Fell English', serif); color: #f4e7c6; }
+.st-open span { font-size: 12px; color: #9a8763; }
+.st-del { background: none; border: 0; color: #9a8763; font-size: 20px; padding: 6px 12px; cursor: pointer; }
+.st-del:hover { color: #ff8fa3; }
+.st-note { padding: 8px 12px; font-size: 11.5px; color: #9a8763; }
