@@ -361,4 +361,25 @@ export async function handle(req, res) {
 }
 
 // On Vercel the platform does the listening and api/index.js hands each request to handle().
-if (!process.env.VERCEL) createServer(handle).listen(PORT, '127.0.0.1', () => console.log(`orion proxy on :${PORT}`))
+/* A proxy that cannot take the port used to print a raw error object and exit 1,
+   which `concurrently` then answered by killing Vite — so the visible symptom
+   was the whole dev server dying, and the invisible one was that the *older*
+   proxy was still up and still serving the app. That one has the environment
+   it started with: a key added to .env since, or a route added to this file
+   since, is simply not in it, and every clue points at the code instead.
+   It has cost this project an afternoon more than once. It says so now. */
+if (!process.env.VERCEL) {
+  const server = createServer(handle)
+  server.on('error', err => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`\n[proxy] Port ${PORT} is already taken: an older proxy is still running, and it is the one`)
+      console.error('[proxy] the app is talking to. It only knows the environment it started with, so anything')
+      console.error('[proxy] added to .env or to scripts/ since will be missing from it. Stop it and start again:')
+      console.error(`[proxy]\n[proxy]     lsof -ti:${PORT} | xargs kill\n`)
+    } else {
+      console.error(`[proxy] could not start: ${err.message}`)
+    }
+    process.exit(1)
+  })
+  server.listen(PORT, '127.0.0.1', () => console.log(`orion proxy on :${PORT}`))
+}
