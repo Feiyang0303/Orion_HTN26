@@ -13,6 +13,7 @@ using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
 using UnityEngine.XR.Management;
 using UnityEngine.XR.OpenXR;
+using UnityEngine.XR.OpenXR.Features;
 using UnityEngine.XR.OpenXR.Features.Interactions;
 using UnityEngine.XR.OpenXR.Features.MetaQuestSupport;
 
@@ -124,12 +125,12 @@ namespace Orion.Editor
         static void Headset()
         {
             const BuildTargetGroup group = BuildTargetGroup.Android;
-            if (!EditorBuildSettings.TryGetConfigObject(XRGeneralSettings.k_SettingsKey, out XRGeneralSettingsPerBuildTarget perTarget))
+            if (!EditorBuildSettings.TryGetConfigObject(XRGeneralSettings.settingsKey, out XRGeneralSettingsPerBuildTarget perTarget))
             {
                 Directory.CreateDirectory("Assets/XR");
                 perTarget = ScriptableObject.CreateInstance<XRGeneralSettingsPerBuildTarget>();
                 AssetDatabase.CreateAsset(perTarget, "Assets/XR/XRGeneralSettingsPerBuildTarget.asset");
-                EditorBuildSettings.AddConfigObject(XRGeneralSettings.k_SettingsKey, perTarget, true);
+                EditorBuildSettings.AddConfigObject(XRGeneralSettings.settingsKey, perTarget, true);
             }
             if (!perTarget.HasSettingsForBuildTarget(group)) perTarget.CreateDefaultSettingsForBuildTarget(group);
             if (!perTarget.HasManagerSettingsForBuildTarget(group)) perTarget.CreateDefaultManagerSettingsForBuildTarget(group);
@@ -142,7 +143,7 @@ namespace Orion.Editor
             var openxr = OpenXRSettings.GetSettingsForBuildTargetGroup(group);
             openxr.renderMode = OpenXRSettings.RenderMode.SinglePassInstanced;
             foreach (var feature in openxr.GetFeatures())
-                if (feature is MetaQuestFeature || feature is OculusTouchControllerProfile || feature.GetType().Name == "FoveatedRenderingFeature") feature.enabled = true;
+                if (feature is MetaQuestFeature || feature is OculusTouchControllerProfile || feature is FoveatedRenderingFeature) feature.enabled = true;
             if (!openxr.GetFeatures().Any(f => f is MetaQuestFeature && f.enabled)) throw new Exception("OpenXR's Meta Quest Support feature was not found.");
             EditorUtility.SetDirty(openxr);
         }
