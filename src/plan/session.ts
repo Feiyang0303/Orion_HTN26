@@ -5,9 +5,10 @@ import type { Agent, CrewEvent } from './events'
 import { locate, type Place } from './geocode'
 import { findStops, matchWant, tripRadius, type Candidate } from './crew'
 import { chooseBeds, chooseTables, shapeDays } from './trip'
-import { bestOrder, legsFor } from './router'
-import { visitBudgetMin } from './timekeeper'
+import { bestOrder, legsFor, travelSecs } from './router'
+import { schedule, visitBudgetMin, windowOf } from './timekeeper'
 import { writePages, type PipelineOptions } from './pipeline'
+import { warmStopSources } from './wikipedia'
 import { askJson } from './json'
 import type { Mode } from './narrator'
 import { slug } from './geo'
@@ -45,6 +46,18 @@ export type Session = {
 
 const say = (s: Session, agent: Agent, kind: 'tool' | 'agent', state: 'working' | 'done' | 'failed', detail: string) =>
   s.onEvent({ type: 'crew', agent, kind, state, detail })
+
+/** A few days at once, not every day at once: enough overlap to cut the wait,
+    not so many that the models and the voice start failing each other. */
+const DAY_CONCURRENCY = 3
+async function mapLimited<T, R>(items: T[], n: number, fn: (item: T, i: number) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length)
+  let next = 0
+  await Promise.all(Array.from({ length: Math.min(n, items.length) }, async () => {
+    while (next < items.length) { const i = next++; out[i] = await fn(items[i], i) }
+  }))
+  return out
+}
 
 /** Stage 0: the city, which the kickoff has already resolved. Looking the name up
     again could land somewhere else ("Kyoto" the prefecture), so it is not. The
@@ -100,17 +113,22 @@ async function stagePlacesImpl(s: Session): Promise<DayDraft[]> {
 
   const taken = new Set<number>()
   const fixed: Candidate[] = []
-  for (const w of wish.wants.map(x => x.trim()).filter(Boolean)) {
-    const hit = await locate(w, s.origin, s.signal)
+  const named = wish.wants.map(x => x.trim()).filter(Boolean)
+  const hits = await Promise.all(named.map(w => locate(w, s.origin, s.signal)))
+  for (const hit of hits) {
     if (hit) fixed.push(await matchWant(hit, taken, wish, s.onEvent))
   }
   const extra = await findStops({
     city: s.origin.name, origin: s.origin, radiusM: tripRadius(nDays), wish, mode: s.mode, fixed,
     count: Math.max(0, nDays * perDay - fixed.length), onEvent: s.onEvent,
+    legSecs: all => travelSecs(all, wish),
   })
   const all = [...fixed, ...extra]
   for (const c of all) s.known.set(c.id, c)
   if (!all.length) throw new Error('Nothing to plan: no places were found or chosen.')
+
+  // Read-ahead: Wikipedia for these places while the day-shaper thinks.
+  void warmStopSources(all)
 
   say(s, 'Scout', 'agent', 'working', `Laying ${all.length} places out over ${nDays} day${nDays === 1 ? '' : 's'}`)
   const shapes = await shapeDays(all, nDays, wish, budget)
@@ -125,8 +143,9 @@ async function stagePlacesImpl(s: Session): Promise<DayDraft[]> {
     if (minutesOf(d) >= budget * 0.6) continue
     const want = Math.max(1, Math.min(3, Math.round((budget * 0.8 - minutesOf(d)) / 50)))
     say(s, 'Scout', 'agent', 'working', `${d.title} is light — looking for ${want} more`)
-    const extra = await findStops({ city: s.origin.name, origin: s.origin, radiusM: tripRadius(nDays), wish, mode: s.mode, fixed: drafts.flatMap(x => x.stops), count: want, onEvent: () => {} }).catch(() => [])
+    const extra = await findStops({ city: s.origin.name, origin: s.origin, radiusM: tripRadius(nDays), wish, mode: s.mode, fixed: drafts.flatMap(x => x.stops), count: want, onEvent: () => {}, legSecs: all => travelSecs(all, wish) }).catch(() => [])
     for (const c of extra) { s.known.set(c.id, c); d.stops.push(c) }
+    if (extra.length) void warmStopSources(extra)
   }
   say(s, 'Scout', 'agent', 'done', drafts.map((d, i) => `${i + 1}. ${d.title} (${d.stops.length}, ${minutesOf(d)} min)`).join(' · '))
   return drafts
@@ -134,8 +153,9 @@ async function stagePlacesImpl(s: Session): Promise<DayDraft[]> {
 
 /** More places, for a day someone emptied or a list they did not like. */
 async function morePlacesImpl(s: Session, avoid: Candidate[], count: number): Promise<Candidate[]> {
-  const extra = await findStops({ city: s.origin.name, origin: s.origin, radiusM: tripRadius(s.wish.days || 1), wish: s.wish, mode: s.mode, fixed: avoid, count, onEvent: s.onEvent })
+  const extra = await findStops({ city: s.origin.name, origin: s.origin, radiusM: tripRadius(s.wish.days || 1), wish: s.wish, mode: s.mode, fixed: avoid, count, onEvent: s.onEvent, legSecs: all => travelSecs(all, s.wish) })
   for (const c of extra) s.known.set(c.id, c)
+  void warmStopSources(extra)
   return extra
 }
 
@@ -154,17 +174,22 @@ async function buildDay(s: Session, draft: DayDraft, number: number, opts: Pipel
   const routed = await bestOrder(points, wish.transport, wish.budget, !!from)
   const seq = routed.order.filter(k => !(from && k === 0)).map(k => from ? k - 1 : k)
   const ordered = seq.map(k => draft.stops[k])
-  const chain = [...(from ? [{ id: 'bed', lat: from.lat, lon: from.lon }] : []), ...ordered]
+  const bedPt = from ? { id: 'bed', lat: from.lat, lon: from.lon } : null
+  const chain = [...(bedPt ? [bedPt] : []), ...ordered, ...(bedPt ? [bedPt] : [])]
   const allLegs = await legsFor(chain, wish.transport, wish.budget)
-  const approach = from ? allLegs[0] ?? null : null
-  const legs = from ? allLegs.slice(1) : allLegs
-  // And home again: a day is a loop from the bed, not a line that ends in the street.
-  const lastStop = ordered[ordered.length - 1]
-  const back = from && lastStop
-    ? (await legsFor([{ id: lastStop.id, lat: lastStop.lat, lon: lastStop.lon }, { id: 'bed', lat: from.lat, lon: from.lon }], wish.transport, wish.budget))[0] ?? null
-    : null
+  const approach = bedPt ? allLegs[0] ?? null : null
+  const back = bedPt ? allLegs[allLegs.length - 1] ?? null : null
+  const legs = bedPt ? allLegs.slice(1, -1) : allLegs
   say(s, 'Router', 'tool', 'done',
     `Day ${number}: ${(legs.reduce((a, l) => a + l.distanceM, 0) / 1000).toFixed(1)} km, ${[...new Set(legs.map(l => l.transport))].join(' and ')}`)
+
+  const clock = schedule(ordered.map(c => c.visitMin), legs.map(l => l.durationSec), windowOf(wish), approach?.durationSec ?? 0, wish.meals)
+  say(s, 'Narrator', 'agent', 'working', `Day ${number}: finding somewhere to eat`)
+  const tablesP = chooseTables({
+    number, title: draft.title,
+    stops: ordered.map((c, i) => ({ id: c.id, name: c.name, lat: c.lat, lon: c.lon, arrival: clock.arrivals[i], visitMin: c.visitMin })),
+    bed: s.bed ? { id: s.bed.id, name: s.bed.name, lat: s.bed.lat, lon: s.bed.lon } : null,
+  }, wish, s.signal)
 
   const plan = await writePages({ wish, mode: s.mode, origin: s.origin, from, stops: ordered, legs, approach, back }, {
     ...opts, written: s.written, signal: s.signal,
@@ -172,12 +197,7 @@ async function buildDay(s: Session, draft: DayDraft, number: number, opts: Pipel
   })
   for (const st of plan.stops) s.written.set(st.id, st)
 
-  say(s, 'Narrator', 'agent', 'working', `Day ${number}: finding somewhere to eat`)
-  const tables = await chooseTables({
-    number, title: draft.title,
-    stops: plan.stops.map(st => ({ id: st.id, name: st.name, lat: st.lat, lon: st.lon, arrival: st.arrival, visitMin: st.visitMin })),
-    bed: s.bed ? { id: s.bed.id, name: s.bed.name, lat: s.bed.lat, lon: s.bed.lon } : null,
-  }, wish, s.signal)
+  const tables = await tablesP
   say(s, 'Narrator', 'agent', tables.length ? 'done' : 'failed',
     tables.length ? `Day ${number}: ${tables.map(t => `${t.meal} at ${t.name}`).join(', ')}` : `Day ${number}: OpenStreetMap had nothing named near those stops`)
 
@@ -185,12 +205,12 @@ async function buildDay(s: Session, draft: DayDraft, number: number, opts: Pipel
 }
 
 async function stagePlanImpl(s: Session, drafts: DayDraft[], opts: PipelineOptions): Promise<Trip> {
-  const days: Day[] = []
-  for (const d of drafts) {
-    if (!d.stops.length) continue
-    days.push(await buildDay(s, d, days.length + 1, opts))
-    s.onEvent({ type: 'plan', plan: days[days.length - 1] })
-  }
+  const work = drafts.filter(d => d.stops.length)
+  const days = (await mapLimited(work, DAY_CONCURRENCY, async (d, i) => {
+    const day = await buildDay(s, d, i + 1, opts)
+    s.onEvent({ type: 'plan', plan: day })
+    return day
+  })).sort((a, b) => a.number - b.number)
   if (!days.length) throw new Error('The trip came out empty.')
   const trip = assemble(s, days)
   s.onEvent({ type: 'trip', trip })
@@ -408,15 +428,11 @@ async function applyEditsImpl(
   }
   if (wishChanged) drafts.forEach((_, i) => touched.add(i))
 
-  const days: Day[] = []
-  for (const [i, d] of drafts.entries()) {
-    if (!d.stops.length) continue
-    if (touched.has(i)) {
-      days.push(await buildDay(s, d, days.length + 1, opts))
-    } else {
-      days.push({ ...trip.days[i], number: days.length + 1 })
-    }
-  }
+  const work = drafts.map((d, i) => ({ d, i })).filter(x => x.d.stops.length)
+  const days = (await mapLimited(work, DAY_CONCURRENCY, async ({ d, i }, n) => {
+    const number = n + 1
+    return touched.has(i) ? buildDay(s, d, number, opts) : { ...trip.days[i], number }
+  })).sort((a, b) => a.number - b.number)
   const next = assemble(s, days)
   s.onEvent({ type: 'trip', trip: next })
   return { trip: next, rebuilt: [...touched].map(i => i + 1).sort(), notes }

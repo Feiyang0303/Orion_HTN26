@@ -1,5 +1,5 @@
 import { breadcrumb } from '../telemetry'
-import type { Budget, LatLon, Leg, Transport, TransportWish } from '../types'
+import type { Budget, LatLon, Leg, Transport, TransportWish, Wish } from '../types'
 import { postJson } from './net'
 import { decodePolyline, metresBetween } from './geo'
 
@@ -129,3 +129,21 @@ export async function legsFor(
 }
 
 export const walkingLegs = legsFor
+
+/** Real (or estimated) travel seconds for a set of places, as the Timekeeper
+    sees a trip: one compact day-cluster at a time, in the order that costs
+    least. A single zigzag of every place would invent journeys nobody takes. */
+export async function travelSecs(
+  points: LatLon[], wish: Pick<Wish, 'transport' | 'budget' | 'days'>,
+): Promise<number[]> {
+  if (points.length < 2) return []
+  const days = Math.max(1, wish.days || 1)
+  const { order, minutes } = await bestOrder(points, wish.transport, wish.budget, false)
+  const perDay = Math.ceil(order.length / days)
+  const secs: number[] = []
+  for (let d = 0; d < days; d++) {
+    const chunk = order.slice(d * perDay, (d + 1) * perDay)
+    for (let i = 1; i < chunk.length; i++) secs.push(minutes[chunk[i - 1]][chunk[i]] * 60)
+  }
+  return secs
+}

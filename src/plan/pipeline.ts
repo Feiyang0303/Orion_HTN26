@@ -4,8 +4,8 @@ import { HHMM, MINS } from '../types'
 import type { Agent, CrewEvent } from './events'
 import { verdict } from './events'
 import { geocode, locate } from './geocode'
-import { notable, photoFor, wikiSource, type Article } from './wikipedia'
-import { bestOrder, legsFor } from './router'
+import { notable, photoFor, warmStopSources, wikiSource, type Article } from './wikipedia'
+import { bestOrder, legsFor, travelSecs } from './router'
 import { schedule, windowOf } from './timekeeper'
 import { narrate, withAudio, writePreface, type Draft, type Mode, type StopContext } from './narrator'
 import { estimateSec, speak } from './tts'
@@ -24,7 +24,7 @@ import { slug } from './geo'
 
 const TARGET_RADIUS_M = 300  // what a guide can point at from a stop
 const PLAN_VERSION = 3
-const MAX_TTS_CONCURRENT = 3
+const MAX_TTS_CONCURRENT = 6
 
 export type PipelineOptions = {
   onEvent?: (e: CrewEvent) => void
@@ -47,6 +47,8 @@ function limiter(max: number) {
   }
 }
 
+const voiceQueue = limiter(MAX_TTS_CONCURRENT)
+
 /** The book. Targets, narration and voice per stop, in parallel, plus the
     photo — then the clock over the finished set. */
 export async function writePages(skeleton: Skeleton, opts: PipelineOptions): Promise<Plan> {
@@ -64,12 +66,45 @@ export async function writePages(skeleton: Skeleton, opts: PipelineOptions): Pro
       clock.breaks.map(b => `${b.minutes} min kept clear for ${b.label} after ${chosen[b.after]?.name}`).join('; '))
   }
 
-  const voice = limiter(MAX_TTS_CONCURRENT)
   say('Narrator', 'agent', 'working', `Writing ${chosen.length} pages`)
   let voiceFailed = false
 
-  const stops: Stop[] = await Promise.all(chosen.map(async (c, index): Promise<Stop> => {
+  /* Wikipedia first: the opening note needs article/target counts, not the
+     spoken draft, so it can start as soon as the sources are in. */
+  const pages = await Promise.all(chosen.map(async (c, index) => {
     const before = opts.written?.get(c.id)
+    if (before) return { c, index, before, targets: before.targets, photo: before.photo }
+    const a = c.article
+    const [near, photo] = await Promise.all([
+      notable({ lat: c.lat, lon: c.lon }, TARGET_RADIUS_M, 10, 60).catch(() => []),
+      a ? photoFor(a).catch(() => null) : Promise.resolve(null),
+    ])
+    const targets: Target[] = near
+      .filter(n => n.pageId !== a?.pageId && n.extract.length > 60)
+      .slice(0, 6).map(toTarget)
+    return { c, index, before: null as Stop | null, targets, photo }
+  }))
+
+  const totalKm = (legs.reduce((s, l) => s + l.distanceM, 0) + (approach?.distanceM ?? 0)) / 1000
+  say('Narrator', 'agent', 'working', 'Writing the opening note')
+  const prefaceP = writePreface({
+    city: origin.name, startAt: wish.startAt, endsAt: clock.endsAt, windowEnd: wish.endAt,
+    party: wish.party, pace: wish.pace, budget: wish.budget,
+    transport: [...new Set([...(approach ? [approach] : []), ...legs, ...(back ? [back] : [])].map(l => l.transport))].join(' and ') || wish.transport,
+    interests: wish.interests, from: from?.name, approachMin: approach ? approach.durationSec / 60 : undefined,
+    meals: clock.breaks.map(b => ({ label: b.label, minutes: b.minutes, after: chosen[b.after]?.name ?? '' })),
+    totalKm,
+    stops: pages.map(({ c, index, before, targets }) => ({
+      name: c.name, arrival: clock.arrivals[index], stayMin: c.visitMin, why: before?.fits ?? c.why,
+      asked: c.asked, askedAs: c.askedAs, movedM: c.movedM,
+      hasArticle: !!(before?.sources.length || c.article),
+      targets: targets.length,
+      legMinToNext: legs[index] ? legs[index].durationSec / 60 : undefined,
+      legEstimated: legs[index]?.estimated,
+    })),
+  })
+
+  const stops: Stop[] = await Promise.all(pages.map(async ({ c, index, before, targets, photo }): Promise<Stop> => {
     if (before) {
       const brk = clock.breaks.find(b => b.after === index)
       const stop: Stop = { ...before, visitMin: c.visitMin, arrival: clock.arrivals[index], ...(brk ? { breakMin: brk.minutes } : { breakMin: undefined }) }
@@ -77,21 +112,11 @@ export async function writePages(skeleton: Skeleton, opts: PipelineOptions): Pro
       return stop
     }
     const a = c.article
-    const here = { lat: c.lat, lon: c.lon }
-    const [near, photo] = await Promise.all([
-      notable(here, TARGET_RADIUS_M, 10, 60).catch(() => []),
-      a ? photoFor(a).catch(() => null) : Promise.resolve(null),
-    ])
-    const targets: Target[] = near
-      .filter(n => n.pageId !== a?.pageId && n.extract.length > 60)
-      .slice(0, 6).map(toTarget)
-
     const ctx: StopContext = {
       city: origin.name, index, total: chosen.length,
       arrival: clock.arrivals[index], visitMin: c.visitMin,
       previous: index ? chosen[index - 1].name : from?.name,
       legMin: index ? legs[index - 1]?.durationSec / 60 : approach ? approach.durationSec / 60 : undefined,
-      // The narrator is told how they actually arrived, not what the desk asked for.
       transport: index ? legs[index - 1]?.transport : approach?.transport,
       party: wish.party, interests: wish.interests,
       last: index === chosen.length - 1,
@@ -136,7 +161,7 @@ export async function writePages(skeleton: Skeleton, opts: PipelineOptions): Pro
         (weak.length ? `, ${traced.traced} of ${traced.total} after the rewrite` : ''))
     }
 
-    const beats = await Promise.all(drafts.map((d, i) => voice(async () => {
+    const beats = await Promise.all(drafts.map((d, i) => voiceQueue(async () => {
       try {
         const { bytes, durationSec } = await speak(d.text)
         return withAudio(d, await saveAudio(planId, `${c.id}-${i}.mp3`, bytes), durationSec)
@@ -160,25 +185,7 @@ export async function writePages(skeleton: Skeleton, opts: PipelineOptions): Pro
   }))
   say('Narrator', 'agent', 'done', `${stops.length} pages written`)
 
-  /* The opening note. It comes last because it is about the finished day, and
-     it is allowed to fail: the book prints the counted epigraph either way. */
-  say('Narrator', 'agent', 'working', 'Writing the opening note')
-  const totalKm = (legs.reduce((s, l) => s + l.distanceM, 0) + (approach?.distanceM ?? 0)) / 1000
-  const preface = await writePreface({
-    city: origin.name, startAt: wish.startAt, endsAt: clock.endsAt, windowEnd: wish.endAt,
-    party: wish.party, pace: wish.pace, budget: wish.budget,
-    transport: [...new Set([...(approach ? [approach] : []), ...legs, ...(back ? [back] : [])].map(l => l.transport))].join(' and ') || wish.transport,
-    interests: wish.interests, from: from?.name, approachMin: approach ? approach.durationSec / 60 : undefined,
-    meals: clock.breaks.map(b => ({ label: b.label, minutes: b.minutes, after: stops[b.after]?.name ?? '' })),
-    totalKm,
-    stops: stops.map((s, i) => ({
-      name: s.name, arrival: s.arrival, stayMin: s.visitMin, why: s.fits,
-      asked: s.asked, askedAs: s.askedAs, movedM: s.movedM,
-      hasArticle: !!s.sources.length, targets: s.targets.length,
-      legMinToNext: legs[i] ? legs[i].durationSec / 60 : undefined,
-      legEstimated: legs[i]?.estimated,
-    })),
-  })
+  const preface = await prefaceP
   say('Narrator', 'agent', preface ? 'done' : 'failed', preface ? 'The opening note is written' : 'No opening note — the counted line stands alone')
 
   const plan: Plan = {
@@ -220,11 +227,12 @@ export async function planTour(wish: Wish, opts: PipelineOptions & { mode?: Mode
 
   const extra = await findStops({
     city: origin.name, origin, radiusM: tripRadius(1), wish, mode, fixed, count: roomFor(mode, fixed.length), onEvent,
-    legSecs: async all => (await legsFor(all.map(c => ({ id: c.id, lat: c.lat, lon: c.lon })), wish.transport, wish.budget)).map(l => l.durationSec),
+    legSecs: all => travelSecs(all, wish),
   })
 
   const all = [...fixed, ...extra]
   if (!all.length) throw new Error('Nothing to plan: no places were found or chosen.')
+  void warmStopSources(all)
 
   say('Router', 'tool', 'working', `Measuring real ${wish.transport} times`)
   const points = [...(from ? [from] : []), ...all]

@@ -3,7 +3,7 @@ import { Food, Sketch, TransportGlyph, foodFor, sketchFor } from './Sketches'
 import { paletteFor } from './decor'
 import { weatherLine, type DayWeather } from '../weather'
 import { fallbackMemo, type Note } from '../memo'
-import { HHMM, MINS, TRANSPORT_LABEL, type Day, type LatLon, type Trip } from '../../types'
+import { HHMM, MINS, TRANSPORT_LABEL, type Day, type LatLon, type Transport, type Trip } from '../../types'
 
 /* One day, as a page of a hand-drawn travel journal.
  *
@@ -98,13 +98,20 @@ export default function JournalPage({ day, trip, open, onFly, weather, notes }: 
     const route = legs.map(l => wobble(l.polyline.map(P), r, 1.2))
     /* A way-glyph per leg that has room for one: beside the path's middle,
        a step off it so it does not sit on the stones or the pins. */
-    const glyphs = legs.flatMap(l => {
+    const glyphs: { x: number; y: number; mode: Transport; min: number }[] = []
+    for (const l of legs) {
       const a = P(l.polyline[0]), b = P(l.polyline[l.polyline.length - 1]), m = P(mid(l.polyline))
       const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy)
-      if (len < 70) return []
+      if (len < 70) continue
       const nx = -dy / len, ny = dx / len
-      return [{ x: m.x + nx * 18, y: m.y + ny * 18, mode: l.transport, min: Math.round(l.durationSec / 60) }]
-    })
+      const g = { x: m.x + nx * 18, y: m.y + ny * 18, mode: l.transport, min: Math.round(l.durationSec / 60) }
+      /* Two legs that double back on each other have their middles in nearly
+         the same place, and two badges printed on top of one another say less
+         than one does. The minutes are in the schedule either way, so the
+         second is simply not drawn. */
+      if (glyphs.some(o => Math.abs(o.x - g.x) < 78 && Math.abs(o.y - g.y) < 44)) continue
+      glyphs.push(g)
+    }
     const stops = day.stops.map((s, i) => ({ ...P(s), s, i, sketch: sketchFor(s.name, i) }))
     const home = bed ? { ...P(bed), name: bed.name } : null
     const tables = day.tables.map(t => ({ ...P(t), t }))
@@ -142,66 +149,161 @@ export default function JournalPage({ day, trip, open, onFly, weather, notes }: 
       river = pts.map((p, i) => `${i ? 'L' : 'M'}${p.x.toFixed(0)} ${p.y.toFixed(0)}`).join(' ')
     }
 
-    /* Where each sketch stands: beside its pin if it can, else the nearest
-       clear spot, and never over the schedule, the title, or anything already
-       drawn on the map.
+    /* Where each drawing stands.
 
-       This used to reserve only the other sketches, which is why the page came
-       out with names written across each other's pictures. Three things were
-       invisible to it. The numbered pins and the meal marks are drawn at the
-       stops themselves and were never reserved, so a caption could land on
-       one. The little way-glyphs — the footprints and the minutes between two
-       places — sit on the path and were not reserved either. And the box kept
-       for a sketch was the height of the drawing alone, when what stands there
-       is the drawing *and* its name and hours underneath, which for
-       "Notre-Dame de Paris" is two more lines of it. */
+       Greedy placement alone could not do this. It puts each sketch in the
+       first clear spot it finds near its own pin, which works while the map is
+       half empty and then, on a seven-stop day, runs out of clear spots and
+       drops the rest wherever they fell — which is how the page ended up with
+       names written across each other's pictures. So there are two passes: the
+       greedy one to get everything roughly where it belongs, and then a
+       relaxation that pushes whatever still overlaps apart, a little at a
+       time, until it does not. The second pass is what makes a crowded day
+       readable, because it can move something that was already placed.
+
+       Fixed things — the columns either side, the title and memo bands, the
+       numbered pins, the meal marks, the little way-glyphs on the path — push
+       the drawings but are never pushed themselves. They are where they are
+       because that is where the day is. */
     type Box = { x: number; y: number; w: number; h: number }
     const at = (p: Pt, w: number, h: number): Box => ({ x: p.x - w / 2, y: p.y - h / 2, w, h })
-    const placed: Box[] = [
-      { x: 0, y: 0, w: MAP.x0 - 6, h: H },                    // the schedule's column
-      { x: MAP.x1 + 6, y: 0, w: W - MAP.x1, h: H },           // the table's column
-      { x: 0, y: 0, w: W, h: MAP.y0 - 10 },                   // the title's band
+    const fixed: Box[] = [
+      { x: -W, y: 0, w: MAP.x0 - 6 + W, h: H },               // the schedule's column
+      { x: MAP.x1 + 6, y: 0, w: W, h: H },                    // the table's column
+      { x: 0, y: -H, w: W, h: MAP.y0 - 10 + H },              // the title's band
       { x: 0, y: MAP.y1 + 16, w: W, h: H },                   // the memo's band
       ...stops.map(st => at(st, 46, 46)),                     // the numbered pins
       ...tables.map(t => at(t, 36, 36)),                      // the meal marks
       ...(home ? [at(home, 40, 40)] : []),
-      ...glyphs.map(g => at(g, 84, 40)),                      // footprints and minutes
+      ...glyphs.map(g => at(g, 70, 40)),                      // footprints and minutes
     ]
-    /* The drawing is 104 across; the box is what the drawing and its two
-       lines of writing take together, with a little air around them. */
-    const SW = 152, SH = 176
+    /* Measured, not guessed: reserving less than a thing occupies is the same
+       as not reserving it. The figure and its two lines of caption come to
+       128 by 158 of these units, and the box is that plus air.
+
+       The drawings had to come down in size to get here. At their old width,
+       eight of them wanted 55% of the map band, and rectangles that big in a
+       space that small cannot be arranged without touching — no amount of
+       shoving solves a packing problem that has no solution. Smaller, they
+       want about a third of it, which leaves the relaxation somewhere to put
+       them. */
+    const SW = 138, SH = 168
+    const overlap = (a: Box, b: Box) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y
     const offsets: [number, number][] = [
-      [104, -92], [-104, -92], [0, -136], [118, 52], [-118, 52], [0, 112],
-      [162, -24], [-162, -24], [70, -158], [-70, -158], [150, 96], [-150, 96],
+      [92, -80], [-92, -80], [0, -118], [104, 46], [-104, 46], [0, 98],
+      [142, -20], [-142, -20], [62, -138], [-62, -138], [132, 84], [-132, 84],
     ]
-    const clear = (b: Box) => b.x >= MAP.x0 - 20 && b.x + b.w <= MAP.x1 + 20 && b.y >= MAP.y0 - 20 && b.y + b.h <= MAP.y1 + 16 &&
-      !placed.some(o => b.x < o.x + o.w && b.x + b.w > o.x && b.y < o.y + o.h && b.y + b.h > o.y)
+    const inBand = (b: Box) =>
+      b.x >= MAP.x0 - 16 && b.x + b.w <= MAP.x1 + 16 && b.y >= MAP.y0 - 16 && b.y + b.h <= MAP.y1 + 12
+    const clamp = (b: Box) => {
+      b.x = Math.max(MAP.x0 - 16, Math.min(MAP.x1 + 16 - b.w, b.x))
+      b.y = Math.max(MAP.y0 - 16, Math.min(MAP.y1 + 12 - b.h, b.y))
+      return b
+    }
+
+    /* Pass one: the first clear spot near the pin, or failing that, beside it. */
+    const loose: Box[] = []
     const put = (x: number, y: number, w = SW, h = SH) => {
+      const free = (b: Box) => inBand(b) && !fixed.some(o => overlap(b, o)) && !loose.some(o => overlap(b, o))
       for (const [dx, dy] of offsets) {
         const b = { x: x + dx - w / 2, y: y + dy - h / 2, w, h }
-        if (clear(b)) { placed.push(b); return { bx: b.x + w / 2, by: b.y + h / 2 } }
+        if (free(b)) { loose.push(b); return b }
       }
-      for (let ring = 150; ring <= 460; ring += 26) {
+      for (let ring = 130; ring <= 440; ring += 24) {
         for (let k = 0; k < 24; k++) {
           const a = (k / 24) * Math.PI * 2 - Math.PI / 2
           const b = { x: x + Math.cos(a) * ring - w / 2, y: y + Math.sin(a) * ring - h / 2, w, h }
-          if (clear(b)) { placed.push(b); return { bx: b.x + w / 2, by: b.y + h / 2 } }
+          if (free(b)) { loose.push(b); return b }
         }
       }
-      /* Nothing was clear, so it goes as near its pin as the band allows and
-         overlaps something. It must still be clamped into the band: the
-         columns either side hold the schedule and the table, and a sketch
-         that lands on top of the day's lunch is worse than two sketches
-         sharing a corner of the map. */
-      const b = {
-        x: Math.max(MAP.x0, Math.min(MAP.x1 - w, x - w / 2)),
-        y: Math.max(MAP.y0, Math.min(MAP.y1 - h, y - 120)),
-        w, h,
-      }
-      placed.push(b); return { bx: b.x + w / 2, by: b.y + h / 2 }
+      const b = clamp({ x: x - w / 2, y: y - h / 2 - 104, w, h })
+      loose.push(b); return b
     }
-    const homeAt = home ? put(home.x, home.y, 128, 132) : null
-    const sketchAt = stops.map(st => put(st.x, st.y))
+    const homeBox = home ? put(home.x, home.y, 140, 124) : null
+    const stopBoxes = stops.map(st => put(st.x, st.y))
+
+    /* Pass two: unpick whatever is still on top of something.
+
+       Each overlapping pair is pushed apart along whichever axis needs least
+       movement, so a drawing slides off a neighbour rather than leaping across
+       the map, and the fixed things push without being pushed. Two details
+       matter. The push is a little more than the overlap, because settling
+       exactly edge-to-edge leaves the next pass with nothing to do and the
+       pair still touching. And each drawing is drawn gently back towards its
+       own pin every pass, which is what stops them all migrating into the
+       corners: without it the relaxation is happy to put the Louvre anywhere
+       at all so long as nothing else is there. */
+    const anchors = loose.map(b => ({ x: b.x, y: b.y }))
+    const nudge = (b: Box, o: Box, share: number) => {
+      const bx = b.x + b.w / 2, by = b.y + b.h / 2
+      const ox = o.x + o.w / 2, oy = o.y + o.h / 2
+      const px = (b.w + o.w) / 2 - Math.abs(bx - ox)     // how far in, horizontally
+      const py = (b.h + o.h) / 2 - Math.abs(by - oy)     // and vertically
+      if (px <= 0 || py <= 0) return
+      if (px < py) b.x += (bx < ox ? -px - 1 : px + 1) * share
+      else b.y += (by < oy ? -py - 1 : py + 1) * share
+      clamp(b)
+    }
+    const movable = [...loose]
+    for (let pass = 0; pass < 400; pass++) {
+      let calm = true
+      movable.forEach((b, i) => {
+        let pushed = false
+        for (const o of fixed) if (overlap(b, o)) { nudge(b, o, 1); pushed = true }
+        for (const o of movable) {
+          if (o === b || !overlap(b, o)) continue
+          nudge(b, o, 0.5); pushed = true
+        }
+        if (pushed) { calm = false; return }
+        /* Only once it stands clear does a drawing drift back towards its own
+           pin. Doing this unconditionally, as it first did, is what kept the
+           page overlapped: a box far from its anchor was pulled home harder
+           than the separation could push it out, so the two forces settled at
+           an equilibrium that was an overlap. Separation is not negotiable;
+           coming home is. */
+        b.x += (anchors[i].x - b.x) * 0.05
+        b.y += (anchors[i].y - b.y) * 0.05
+        clamp(b)
+      })
+      if (calm) break
+    }
+
+    /* Pass three: whatever is still overlapping gets moved outright.
+       Relaxation is a local method — it shoves a drawing off its neighbour by
+       the depth of the overlap and no further — so a box wedged between two
+       pins oscillates in place while there is open paper elsewhere on the map
+       it cannot walk to. This looks at the whole band: it scores every
+       position on a coarse grid by how much it would overlap, and takes the
+       cleanest, breaking ties by which is nearest where the drawing wanted to
+       be. It runs only for boxes the first two passes failed, so a page that
+       already reads well is left exactly as it was. */
+    const clash = (b: Box, skip: Box) => {
+      let area = 0
+      for (const o of [...fixed, ...movable]) {
+        if (o === skip) continue
+        const px = Math.min(b.x + b.w, o.x + o.w) - Math.max(b.x, o.x)
+        const py = Math.min(b.y + b.h, o.y + o.h) - Math.max(b.y, o.y)
+        if (px > 0 && py > 0) area += px * py
+      }
+      return area
+    }
+    movable.forEach((b, i) => {
+      if (clash(b, b) === 0) return
+      const want = anchors[i]
+      let best = { x: b.x, y: b.y, score: Infinity }
+      for (let x = MAP.x0 - 16; x <= MAP.x1 + 16 - b.w; x += 18) {
+        for (let y = MAP.y0 - 16; y <= MAP.y1 + 12 - b.h; y += 18) {
+          const area = clash({ x, y, w: b.w, h: b.h }, b)
+          // a hundred square units of paper is worth about a unit of walking
+          const score = area + Math.hypot(x - want.x, y - want.y) * 26
+          if (score < best.score) best = { x, y, score }
+        }
+      }
+      b.x = best.x; b.y = best.y
+    })
+
+    const homeAt = homeBox ? { bx: homeBox.x + homeBox.w / 2, by: homeBox.y + homeBox.h / 2 } : null
+    const sketchAt = stopBoxes.map(b => ({ bx: b.x + b.w / 2, by: b.y + b.h / 2 }))
 
     return { route, glyphs, stops, home, homeAt, sketchAt, tables, streets, blocks, trees, river }
   }, [day, trip.city, bed])
@@ -315,7 +417,7 @@ export default function JournalPage({ day, trip, open, onFly, weather, notes }: 
           return (
             <figure key={s.id} className="jp-sk"
               style={{ left: `${(at.bx / W) * 100}%`, top: `${(at.by / H) * 100}%`, ['--i' as string]: i }}>
-              <Sketch name={sketch} size={104} wash={tones[i % 3]} wash2={tones[(i + 1) % 3]} ink={pal.ink} />
+              <Sketch name={sketch} size={72} wash={tones[i % 3]} wash2={tones[(i + 1) % 3]} ink={pal.ink} />
               <figcaption><b>{i + 1}</b> {s.name.split(',')[0]}<em>{s.arrival}–{leaving(i)}</em></figcaption>
             </figure>
           )

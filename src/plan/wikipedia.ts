@@ -96,6 +96,15 @@ async function intros(ids: number[]) {
 const stripHtml = (s?: string) => (s ?? '').replace(/<[^>]*>/g, '').replace(/&amp;/g, '&').trim()
 
 /** The article's lead image with author and licence from Commons. Null if it has none. */
+/** Warm the Wikipedia cache for every stop so later narration is a cache hit.
+    Failures are ignored: writePages still fetches what it needs. */
+export function warmStopSources(stops: { lat: number; lon: number; article?: Article | null }[]) {
+  return Promise.all(stops.map(c => Promise.all([
+    notable({ lat: c.lat, lon: c.lon }, 300, 10, 60).catch(() => []),
+    c.article ? photoFor(c.article).catch(() => null) : Promise.resolve(null),
+  ])))
+}
+
 export async function photoFor(a: Article): Promise<Photo | null> {
   if (!a.image) return null
   const res = await wikiGet<{ query?: { pages: { imageinfo?: { thumburl?: string; descriptionurl: string; extmetadata?: Record<string, { value: string }> }[] }[] } }>(
