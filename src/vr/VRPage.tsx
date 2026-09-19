@@ -7,7 +7,7 @@ import type { Day } from '../types'
 import { probeTiles } from '../fly/GoogleTiles'
 import { loadDays } from './share'
 import { store } from './store'
-import Scene from './Scene'
+import Scene, { FAR } from './Scene'
 import './vr.css'
 
 /* The page a headset opens: /?vr=<id>. Before the session it is a door (the city, the
@@ -42,7 +42,7 @@ export default function VRPage({ id }: { id: string }) {
     <div className="vr">
       {/* Near and far are handed to the headset's runtime, which measures them in the person's own metres: the scale is 1, so they are the city's too. */}
       {trip && (
-        <Canvas className="vr-canvas" dpr={[1, 1.5]} camera={{ fov: 50, near: .3, far: 20000, position: [0, 1800, 2400] }}
+        <Canvas className="vr-canvas" dpr={[1, 1.5]} camera={{ fov: 50, near: .3, far: FAR, position: [0, 1800, 2400] }}
           gl={{ antialias: true, toneMapping: THREE.NeutralToneMapping }}>
           <XR store={store}>
             <Scene days={trip.days} store={store} onReady={onReady} />

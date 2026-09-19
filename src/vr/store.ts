@@ -6,8 +6,8 @@ export const store = createXRStore({
   controller: { teleportPointer: false },
   hand: { teleportPointer: false },
   emulate: false,
-  foveation: 0,
-  // Sharpness over smoothness: 90 Hz instead of 120 leaves the GPU room to draw more pixels than the default buffer has.
-  frameRate: 'mid',
-  frameBufferScaling: max => Math.min(max, 1.25),
+  // A headset's GPU is a phone's. The edges of each lens are drawn coarser (they are blurred by the lens anyway),
+  // and the session runs at 72 Hz, because a steady 72 is far kinder to a person than a 90 that keeps missing.
+  foveation: 1,
+  frameRate: 'low',
 })

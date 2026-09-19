@@ -38,6 +38,10 @@ import Veil, { type VeilState } from './Veil'
 
 const UNIT = 900
 const GUIDE_UNIT = 250
+/** How far the city is drawn, and fetched. Beyond it is haze: a headset cannot afford the tiles all the way to the horizon,
+    every one of which is drawn twice, and the ones it does not fetch leave the queue free for the ones nearby. */
+export const FAR = 4500
+const HAZE = new THREE.Color(.30, .17, .08)          // the sky's colour at the horizon (see Deck), so the city fades into it
 const HEAD = 1.6                                     // where a head is taken to be above the floor of the person's space
 const PRELOAD_AHEAD_SEC = 12, PRELOAD_MOST = 2
 const FOVEA_FOV = 70, FOVEA_PX = 1300                // 930 px per unit of tan (a Quest's lenses), across 2·tan(35°)
@@ -88,9 +92,9 @@ export default function Scene({ days, store: xr, onReady }: { days: Day[]; store
   // sharp. So the sharpness is spent where they are looking: `fovea` has the headset's own pixels and
   // covers what the shot is of; `eye` is the rest of the view ahead, four times coarser; and two
   // coarser still cover the circle behind, so there is a city there if they turn round.
-  const fovea = useMemo(() => new THREE.PerspectiveCamera(FOVEA_FOV, 1, .3, 20000), [])
-  const eye = useMemo(() => new THREE.PerspectiveCamera(120, 1, .3, 20000), [])
-  const behind = useMemo(() => [1, -1].map(() => new THREE.PerspectiveCamera(120, 1, .3, 20000)), [])
+  const fovea = useMemo(() => new THREE.PerspectiveCamera(FOVEA_FOV, 1, .3, FAR), [])
+  const eye = useMemo(() => new THREE.PerspectiveCamera(120, 1, .3, FAR), [])
+  const behind = useMemo(() => [1, -1].map(() => new THREE.PerspectiveCamera(120, 1, .3, FAR)), [])
   useEffect(() => {
     const t = tiles.current
     if (!t) return
@@ -233,7 +237,7 @@ export default function Scene({ days, store: xr, onReady }: { days: Day[]; store
         P.sweep = 0
         if (STATS) { const st = tiles.current.stats; setStats(`waiting ${st.queued + st.downloading + st.parsing}  ·  shown ${st.visible}  ·  held ${Math.round(tiles.current.lruCache.cachedBytes / 1e6)} MB  ·  ${Math.round(1 / Math.max(rawDt, .001))} fps`) }
         if (P.built !== version) { P.shots = comingShots(tl, shots, g.trails, g.rides); P.built = version }
-        P.loader.sweep(tiles.current, P.shots, p.t, PRELOAD_AHEAD_SEC, () => new THREE.PerspectiveCamera(FOVEA_FOV, 1, .3, 20000), 700, 700, PRELOAD_MOST)
+        P.loader.sweep(tiles.current, P.shots, p.t, PRELOAD_AHEAD_SEC, () => new THREE.PerspectiveCamera(FOVEA_FOV, 1, .3, FAR), 700, 700, PRELOAD_MOST)
       }
 
       /* on a screen, the flight is seen from where the head would be; dragging looks around */
@@ -291,9 +295,8 @@ export default function Scene({ days, store: xr, onReady }: { days: Day[]; store
   return (
     <>
       <color attach="background" args={['#07060a']} />
-      <ambientLight intensity={1.7} />
-      <directionalLight position={[300, 800, 400]} intensity={1.3} color="#ffe6b8" />
-      <GoogleTiles lat={day.origin.lat} lon={day.origin.lon} onLoadEnd={onLoadEnd} tilesRef={tilesRef} />
+      <fog attach="fog" args={[HAZE, FAR * .4, FAR]} />
+      <GoogleTiles lat={day.origin.lat} lon={day.origin.lon} onLoadEnd={onLoadEnd} tilesRef={tilesRef} plain />
 
       {/* what is drawn on the city */}
       {geo.legs.map((p, i) => p.pts.length > 1 && <Route key={`${day.number}:${i}`} path={p} colour={c} played={hud.stop > i} transport={day.legs[i].transport} estimated={day.legs[i].estimated} />)}
@@ -419,7 +422,6 @@ function Guide({ orb, beam, colour }: { orb: MutableRefObject<THREE.Group | null
       <group ref={orb} visible={false}>
         <mesh raycast={noHit}><sphereGeometry args={[.011 * ou, 24, 16]} /><meshBasicMaterial color="#fff3d6" toneMapped={false} /></mesh>
         <mesh raycast={noHit}><sphereGeometry args={[.026 * ou, 24, 16]} /><meshBasicMaterial color={AMBER} transparent opacity={.22} depthWrite={false} toneMapped={false} /></mesh>
-        <pointLight color={AMBER} intensity={3} distance={.3 * ou} decay={2} />
       </group>
       <group ref={beam} visible={false}>
         <mesh position={[0, shaft / 2, 0]} raycast={noHit}><cylinderGeometry args={[.0012 * UNIT, .0035 * UNIT, shaft, 10, 1, true]} /><meshBasicMaterial color={AMBER} transparent opacity={.35} depthWrite={false} side={THREE.DoubleSide} toneMapped={false} /></mesh>
@@ -451,7 +453,7 @@ function Deck() {
   }), [])
   return (
     <group>
-      <mesh material={sky} renderOrder={-1000} frustumCulled={false} raycast={noHit}><sphereGeometry args={[15000, 32, 16]} /></mesh>
+      <mesh material={sky} renderOrder={-1000} frustumCulled={false} raycast={noHit}><sphereGeometry args={[FAR * .9, 32, 16]} /></mesh>
       <mesh rotation={[-Math.PI / 2, 0, 0]} raycast={noHit}>
         <circleGeometry args={[.9, 64]} /><meshBasicMaterial color="#0d0a08" transparent opacity={.5} depthWrite={false} />
       </mesh>

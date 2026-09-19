@@ -3,6 +3,7 @@ import { useCallback, useMemo, type ReactNode } from 'react'
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js'
 import { TilesRenderer, TilesPlugin, TilesAttributionOverlay } from '3d-tiles-renderer/r3f'
 import { GoogleCloudAuthPlugin, GLTFExtensionsPlugin, ReorientationPlugin, TileCompressionPlugin, TilesFadePlugin } from '3d-tiles-renderer/plugins'
+import { MeshBasicMaterial } from 'three'
 import type { Camera, Intersection, Mesh, MeshStandardMaterial, Object3D, Raycaster, Vector3 } from 'three'
 import type * as THREE from 'three'
 import { useThree } from '@react-three/fiber'
@@ -50,9 +51,12 @@ export type TilesHandle = {
   errorTarget: number
 }
 
-export default function GoogleTiles({ lat, lon, onLoadEnd, tilesRef, children }: {
+export default function GoogleTiles({ lat, lon, onLoadEnd, tilesRef, plain = false, children }: {
   lat: number; lon: number; onLoadEnd: () => void          // onLoadEnd must be a stable (useCallback) function
   tilesRef: (t: TilesHandle | null) => void; children?: ReactNode
+  /** For a headset, where every pixel is shaded twice on a phone's GPU: the tiles are drawn unlit (photogrammetry has its
+      light baked in already) and swap between levels of detail without the cross-fade, which draws both at once. */
+  plain?: boolean
 }) {
   const apiToken = tilesKey()
   const { gl } = useThree()
@@ -76,10 +80,11 @@ export default function GoogleTiles({ lat, lon, onLoadEnd, tilesRef, children }:
       e.scene.traverse(o => {
         const m = (o as Mesh).material as MeshStandardMaterial | undefined
         if (m?.map) m.map.anisotropy = aniso
+        if (m && plain) { (o as Mesh).material = new MeshBasicMaterial({ map: m.map, side: m.side }); m.dispose() }
       })
     }) as never)
     tilesRef(handle)
-  }, [tilesRef, gl])
+  }, [tilesRef, gl, plain])
   if (!apiToken) return null
   return (
     // Keyed on the city: the tileset is re-centred on the place once, as it loads, so
@@ -88,7 +93,7 @@ export default function GoogleTiles({ lat, lon, onLoadEnd, tilesRef, children }:
       <TilesPlugin plugin={GoogleCloudAuthPlugin} args={authArgs} />
       <TilesPlugin plugin={GLTFExtensionsPlugin} args={gltfArgs} />
       <TilesPlugin plugin={TileCompressionPlugin} />
-      <TilesPlugin plugin={TilesFadePlugin} />
+      {!plain && <TilesPlugin plugin={TilesFadePlugin} />}
       <TilesPlugin plugin={ReorientationPlugin} args={orientArgs} />
       <TilesAttributionOverlay style={{ color: '#cdbfa6', fontSize: 11, right: 10, bottom: 6, left: 'auto' }} />
       {children}
