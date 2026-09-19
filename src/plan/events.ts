@@ -4,7 +4,7 @@ import type { Stop } from '../types'
     (Geocode, Router, Timekeeper), `agent` = an LLM call. The UI labels them
     that way, because a person deserves to know which sentences on the page
     were written by a model and which were counted by a machine. */
-export type Agent = 'Geocode' | 'Scout' | 'Router' | 'Timekeeper' | 'Critic' | 'Narrator' | 'Voice'
+export type Agent = 'Geocode' | 'Scout' | 'Router' | 'Timekeeper' | 'Critic' | 'Narrator' | 'Auditor' | 'Voice'
 
 export type CrewEvent =
   | { type: 'crew'; agent: Agent; kind: 'tool' | 'agent'

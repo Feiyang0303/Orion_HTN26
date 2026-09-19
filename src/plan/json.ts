@@ -1,14 +1,20 @@
+import { agentCall, report } from '../telemetry'
 import { postJson } from './net'
 
 export type Role = 'scout' | 'critic' | 'narrator'
 
 /** One LLM call that must return a JSON object. Roles map to models in the proxy's env. */
 export async function askJson<T>(role: Role, system: string, user: string, maxTokens = 2000): Promise<T> {
-  const { text } = await postJson<{ text: string }>('llm', { role, system, user, maxTokens })
+  const { text } = await agentCall(
+    role, [{ role: 'system', content: system }, { role: 'user', content: user }],
+    () => postJson<{ text: string }>('llm', { role, system, user, maxTokens }), r => r.text,
+  )
   try {
     const body = text.match(/```(?:json)?\s*([\s\S]*?)```/)?.[1] ?? text
     return JSON.parse(body.slice(body.indexOf('{'), body.lastIndexOf('}') + 1)) as T
   } catch {
-    throw new Error(`${role}: model did not return valid JSON`)
+    const err = new Error(`${role}: model did not return valid JSON`)
+    report(err, `llm.${role}.json`, { level: 'warning', extra: { chars: text.length, head: text.slice(0, 120) } })
+    throw err
   }
 }

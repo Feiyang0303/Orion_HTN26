@@ -1,3 +1,5 @@
+import { report } from '../telemetry'
+
 /* Where requests go. In the browser the defaults are right (Vite forwards
  * /api to the proxy, and Wikipedia/Nominatim are CORS-open). The fixture
  * script runs in Node, so it points `apiBase` at the proxy and sets a
@@ -9,7 +11,12 @@ export const net = {
 
 export async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
   const res = await fetch(url, { headers: net.headers, signal })
-  if (!res.ok) throw new Error(`${new URL(url, 'http://x').hostname} answered ${res.status}`)
+  if (!res.ok) {
+    const host = new URL(url, 'http://x').hostname
+    const err = new Error(`${host} answered ${res.status}`)
+    report(err, `http.${host}`, { level: 'warning', extra: { status: res.status } })
+    throw err
+  }
   return res.json() as Promise<T>
 }
 
@@ -19,7 +26,9 @@ async function postProxy(path: string, body: unknown): Promise<Response> {
   })
   if (!res.ok) {
     const msg = ((await res.json().catch(() => ({}))) as { error?: string }).error
-    throw new Error(`/api/${path}: ${msg || res.status}`)
+    const err = new Error(`/api/${path}: ${msg || res.status}`)
+    if (res.status !== 501) report(err, `api.${path}`, { level: 'warning', extra: { status: res.status } })   // 501 = a key is not configured, which is setup, not a fault
+    throw err
   }
   return res
 }

@@ -1,4 +1,4 @@
-import type { Leg, Waypoint, Wish } from '../types'
+import type { LatLon, Leg, Waypoint, Wish } from '../types'
 import type { Agent, CrewEvent } from './events'
 import { notable, type Article } from './wikipedia'
 import { nearestWorthIt, scout, type Kind, type NearChoice, type ScoutPick } from './scout'
@@ -15,7 +15,8 @@ import { metresBetween, slug } from './geo'
  * fixture script runs, called in smaller pieces.
  */
 
-export const RADIUS_M = 2500        // the compact area a day is drawn from
+/** How far from the centre a trip may reach: a day stays compact, a longer trip goes further. */
+export const tripRadius = (days: number) => Math.min(9500, 4000 + Math.max(1, days) * 1500)
 const WANT_MATCH_M = 260            // how near an article must sit to be *this* place
 const WANT_LOOK_M = 750             // how far to look around a pin that landed on nothing
 
@@ -55,30 +56,6 @@ const KIND_RULES: [RegExp, Kind][] = [
 ]
 export const guessKind = (name: string): Kind => KIND_RULES.find(([r]) => r.test(name))?.[1] ?? 'other'
 
-/** What Wikipedia knows about the area, most-read first. The one network call
-    the whole planning page shares. */
-/* Wikipedia's geosearch returns everything with coordinates, and a city's
-   most-read geotagged articles include the city itself, its geography, its
-   arrondissements, its stations and its universities — none of which is a
-   place you fly to. A model told to pick sights will still pick "Paris" if
-   "Paris" is the most-read thing on the list, so the list is cleaned first. */
-const NOT_A_SIGHT = [
-  /^(geography|history|culture|economy|demographics|timeline|list|outline|climate|transport|architecture|tourism|administration|politics) (of|in) /i,
-  /^\d+(st|nd|rd|th) arrondissement/i, /\b(arrondissement|district|borough|ward|quarter|neighbourhood|neighborhood|suburb|commune)\b/i,
-  /\b(station|métro|metro|gare|railway|tram stop|bus station|airport|terminal)\b/i,
-  /\b(university|université|college|collège|école|school|lycée|institute|academy|académie|faculty|campus)\b/i,
-  /\b(hospital|hôpital|clinic|prefecture|préfecture|ministry|ministère|embassy|headquarters|company|bank|stock exchange|bourse)\b/i,
-  /\b(street|rue|avenue|boulevard)\b.*\b(paris|kyoto)\b/i,
-]
-export async function catalogueFor(origin: { lat: number; lon: number }, radiusM = RADIUS_M, keep = 40) {
-  const all = await notable(origin, radiusM, Math.round(keep * 1.5), 400)
-  return all
-    .filter(a => a.extract.length > 80)
-    .filter(a => !NOT_A_SIGHT.some(r => r.test(a.title)))
-    // the city's own article, and any town or region that happens to be nearby
-    .filter(a => !/\b(is|was) (the|a|an) ([\w-]+ )?(capital|city|town|commune|municipality|region|department|département|prefecture|province)\b/i.test(a.extract.slice(0, 220)))
-    .slice(0, keep)
-}
 
 /** A place the person pinned, resolved to something the day can actually fly
     to. Three ways that goes:
@@ -95,13 +72,14 @@ export async function catalogueFor(origin: { lat: number; lon: number }, radiusM
  *                 that too.
  */
 export async function matchWant(
-  w: Waypoint, catalogue: Article[], taken: Set<number>, wish: Wish,
+  w: Waypoint, taken: Set<number>, wish: Wish,
   onEvent?: (e: CrewEvent) => void,
 ): Promise<Candidate> {
   const say = (state: 'working' | 'done' | 'failed', detail: string) =>
     onEvent?.({ type: 'crew', agent: 'Scout', kind: 'agent', state, detail })
 
-  const onTheNose = catalogue.find(a => !taken.has(a.pageId) && metresBetween(a, w) < WANT_MATCH_M) ?? null
+  const here = await notable(w, WANT_MATCH_M, 6, 40).catch(() => [])
+  const onTheNose = here.find(a => !taken.has(a.pageId) && a.extract.length > 80) ?? null
   if (onTheNose) {
     taken.add(onTheNose.pageId)
     const kind = guessKind(onTheNose.title)
@@ -159,7 +137,9 @@ export const roomFor = (mode: 'full' | 'short', pinned: number) =>
     found places; the pinned ones are passed in as fixed and come back
     untouched. */
 export async function findStops(opts: {
-  catalogue: Article[]
+  city: string
+  origin: LatLon
+  radiusM: number
   wish: Wish
   mode: 'full' | 'short'
   fixed: Candidate[]
@@ -169,34 +149,39 @@ export async function findStops(opts: {
       complain about a day that does not fit before the Critic is asked. */
   legSecs?: (all: Candidate[]) => Promise<number[]>
 }): Promise<Candidate[]> {
-  const { catalogue, wish, fixed, count, onEvent = () => {}, legSecs } = opts
+  const { city, origin, radiusM, wish, fixed, count, onEvent = () => {}, legSecs } = opts
   const say = (agent: Agent, kind: 'tool' | 'agent', state: 'working' | 'done' | 'reworking' | 'failed', detail: string) =>
     onEvent({ type: 'crew', agent, kind, state, detail })
 
   if (!count) { say('Scout', 'agent', 'done', 'The day is the places you named.'); return [] }
 
-  const pool = catalogue.filter(a => !fixed.some(f => metresBetween(f, a) < WANT_MATCH_M))
-  if (pool.length < 2) throw new Error('Wikipedia knows too little about this area to add anything to the day.')
-
-  const window = windowOf(wish)
+  // These places are the whole trip's, not one day's: a three-day trip has three
+  // days of hours and three days of meals to fit them into.
+  const days = Math.max(1, wish.days || 1)
+  const day = windowOf(wish)
+  const window = { startMin: day.startMin, endMin: day.startMin + (day.endMin - day.startMin) * days }
+  const meals = Array.from({ length: days }).flatMap(() => wish.meals)
   let picks: ScoutPick[] = []
   let complaints: string[] = []
 
   for (let attempt = 0; attempt < 2; attempt++) {
     say('Scout', 'agent', attempt ? 'reworking' : 'working',
-      attempt ? 'Choosing again to fix: ' + complaints.join('; ')
-              : `Choosing ${count} from the ${pool.length} most-read places nearby`)
-    picks = await scout(pool, {
-      count, wish,
+      attempt ? 'Choosing again to fix: ' + complaints.join('; ') : `Naming ${count} well-known place${count === 1 ? '' : 's'} in ${city}`)
+    const chosen = await scout({
+      count, wish, city, origin, radiusM,
       fixed: fixed.map(f => ({ name: f.name, lat: f.lat, lon: f.lon })),
       complaints, previous: picks.map(p => p.article.title),
     })
+    picks = chosen.picks
+    if (chosen.rejected.length) say('Scout', 'agent', 'working',
+      `${chosen.rejected.length} suggestion${chosen.rejected.length === 1 ? '' : 's'} could not be verified and ${chosen.rejected.length === 1 ? 'was' : 'were'} dropped: ` +
+      chosen.rejected.slice(0, 4).map(r => `${r.title} (${r.reason})`).join('; '))
     say('Scout', 'agent', 'done', picks.map(p => p.article.title).join(' · '))
     if (attempt) break
 
     const all = [...fixed, ...picks.map(p => fromPick(p, wish))]
     const secs = legSecs ? await legSecs(all).catch(() => []) : []
-    const t = audit(all.map(c => c.visitMin), secs, window, wish.transport === 'auto' ? 'transit' : wish.transport, wish.meals)
+    const t = audit(all.map(c => c.visitMin), secs, window, wish.transport === 'auto' ? 'transit' : wish.transport, meals)
     say('Timekeeper', 'tool', t.complaints.length ? 'failed' : 'done',
       t.complaints.join('; ') ||
       `${Math.round(t.totalMin)} min in all${t.mealMin ? `, ${t.mealMin} of them at the table` : ''}, inside ${wish.startAt}–${wish.endAt}`)

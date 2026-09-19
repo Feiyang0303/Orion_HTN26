@@ -1,9 +1,9 @@
+import { observeCrew, traced } from '../telemetry'
 import type { Day, Stay, Stop, Trip, Waypoint, Wish } from '../types'
 import { HHMM, MINS } from '../types'
 import type { Agent, CrewEvent } from './events'
-import { geocode, locate, type Place } from './geocode'
-import type { Article } from './wikipedia'
-import { catalogueFor, findStops, matchWant, type Candidate } from './crew'
+import { locate, type Place } from './geocode'
+import { findStops, matchWant, tripRadius, type Candidate } from './crew'
 import { chooseBeds, chooseTables, shapeDays } from './trip'
 import { bestOrder, legsFor } from './router'
 import { visitBudgetMin } from './timekeeper'
@@ -32,7 +32,6 @@ export type Session = {
   wish: Wish
   mode: Mode
   origin: Place
-  catalogue: Article[]
   /** Everything ever pinned or picked, by id, so a revision can find it. */
   known: Map<string, Candidate>
   /** Bed ids already shown, so a shuffle is a new batch. */
@@ -47,40 +46,34 @@ export type Session = {
 const say = (s: Session, agent: Agent, kind: 'tool' | 'agent', state: 'working' | 'done' | 'failed', detail: string) =>
   s.onEvent({ type: 'crew', agent, kind, state, detail })
 
-/** Stage 0: the city, and what Wikipedia knows around it. */
-export async function openSession(
-  wish: Wish, mode: Mode, onEvent: (e: CrewEvent) => void, signal?: AbortSignal,
+/** Stage 0: the city, which the kickoff has already resolved. Looking the name up
+    again could land somewhere else ("Kyoto" the prefecture), so it is not. The
+    scout names places from what it knows and each name is looked up when it is
+    chosen, so nothing else has to be read first. */
+function openSessionImpl(
+  wish: Wish, mode: Mode, origin: Place, onEvent: (e: CrewEvent) => void, signal?: AbortSignal,
 ): Promise<Session> {
-  const s: Session = { wish, mode, origin: null as unknown as Place, catalogue: [], known: new Map(), offered: [], bed: null, written: new Map(), onEvent, signal }
-  say(s, 'Geocode', 'tool', 'working', `Looking up ${wish.city}`)
-  s.origin = await geocode(wish.city, signal)
-  say(s, 'Geocode', 'tool', 'done', s.origin.name)
-  say(s, 'Scout', 'agent', 'working', `Reading about places across ${s.origin.name}`)
-  /* A city's sights are not where its geocoder point is. Kyoto's are four to
-     eight kilometres from the city hall; so is Rome's Vatican from the Forum.
-     A trip reaches further than a day, and the pool is deeper too, because a
-     wider circle takes in more that is ordinary. */
-  const nDays = Math.max(1, Math.min(7, wish.days || 1))
-  s.catalogue = await catalogueFor(s.origin, Math.min(9500, 4000 + nDays * 1500), 40 + nDays * 10)
-  say(s, 'Scout', 'agent', 'done', `${s.catalogue.length} places worth knowing about, up to ${(Math.min(9500, 4000 + nDays * 1500) / 1000).toFixed(0)} km out`)
-  return s
+  const s: Session = { wish, mode, origin, known: new Map(), offered: [], bed: null, written: new Map(), onEvent: observeCrew(onEvent), signal }
+  say(s, 'Geocode', 'tool', 'done', origin.name)
+  return Promise.resolve(s)
 }
 
-/* ---------------------------------------------------------------- 1. beds */
+/* ---------------------------------------------------------------- 1. stay */
 
-/** Three ranked beds. Judged against the centre of the most-read places in the
-    catalogue, since no day exists yet — which is the right centre anyway: it is
-    where the days will be. */
-export async function stageBeds(s: Session): Promise<Stay[]> {
-  const top = s.catalogue.slice(0, 12)
-  const centre = top.length
-    ? { lat: top.reduce((a, p) => a + p.lat, 0) / top.length, lon: top.reduce((a, p) => a + p.lon, 0) / top.length }
+/** Where to sleep, chosen once the places are known: the middle of the trip's own
+    places is the centre that matters. Nothing here waits on the person; if
+    OpenStreetMap is down the trip simply starts from the city and says so. */
+async function stageStayImpl(s: Session, drafts: DayDraft[]): Promise<Stay[]> {
+  const all = drafts.flatMap(d => d.stops)
+  const centre = all.length
+    ? { lat: all.reduce((a, c) => a + c.lat, 0) / all.length, lon: all.reduce((a, c) => a + c.lon, 0) / all.length }
     : { lat: s.origin.lat, lon: s.origin.lon }
-  say(s, 'Scout', 'agent', 'working', s.offered.length ? 'Looking for three different places to sleep' : 'Looking for somewhere to sleep, central to where the days will be')
-  const { stays, looked } = await chooseBeds(centre, s.wish, top.map(a => a.title), s.offered, s.signal)
+  say(s, 'Scout', 'agent', 'working', s.offered.length ? 'Finding a different place to sleep' : 'Finding somewhere to sleep, central to the places')
+  const { stays, down } = await chooseBeds(centre, s.wish, s.offered, s.signal)
   s.offered.push(...stays.map(b => b.id))
+  s.bed = stays[0] ?? null
   say(s, 'Scout', 'agent', stays.length ? 'done' : 'failed',
-    stays.length ? `${stays.map(b => b.name).join(' · ')}, from ${looked} OpenStreetMap lists` : 'OpenStreetMap lists nothing to sleep in near here')
+    stays.length ? `${stays[0].name}: ${stays[0].why}` : down ? 'OpenStreetMap did not answer, so the days start from the city centre' : 'OpenStreetMap lists nothing to sleep in near here, so the days start from the city centre')
   return stays
 }
 
@@ -91,24 +84,23 @@ export type DayDraft = { title: string; why: string; stops: Candidate[] }
 /** What the scout would do with the days: the places, already grouped. The
     count is sized to the hours, not fixed — a long day with a fast pace holds
     more than a short gentle one. */
-export async function stagePlaces(s: Session, bed: Stay | null): Promise<DayDraft[]> {
-  s.bed = bed
+async function stagePlacesImpl(s: Session): Promise<DayDraft[]> {
   const wish = s.wish
   const nDays = Math.max(1, Math.min(7, wish.days || 1))
   const budget = visitBudgetMin(wish)
   // Sized to the hours, with a little over: the day-shaper is told the budget
   // and will leave the surplus aside, and a scout asked for too few cannot be
   // asked for the rest without a second round of API calls.
-  const perDay = Math.max(2, Math.min(8, Math.round(budget / 45) + 1))
+  const perDay = Math.max(2, Math.min(7, Math.round(budget / 50) + 1))
 
   const taken = new Set<number>()
   const fixed: Candidate[] = []
   for (const w of wish.wants.map(x => x.trim()).filter(Boolean)) {
     const hit = await locate(w, s.origin, s.signal)
-    if (hit) fixed.push(await matchWant(hit, s.catalogue, taken, wish, s.onEvent))
+    if (hit) fixed.push(await matchWant(hit, taken, wish, s.onEvent))
   }
   const extra = await findStops({
-    catalogue: s.catalogue, wish, mode: s.mode, fixed,
+    city: s.origin.name, origin: s.origin, radiusM: tripRadius(nDays), wish, mode: s.mode, fixed,
     count: Math.max(0, nDays * perDay - fixed.length), onEvent: s.onEvent,
   })
   const all = [...fixed, ...extra]
@@ -120,28 +112,24 @@ export async function stagePlaces(s: Session, bed: Stay | null): Promise<DayDraf
   const byId = new Map(all.map(c => [c.id, c]))
   const drafts: DayDraft[] = shapes.map(d => ({ title: d.title, why: d.why, stops: d.ids.map(id => byId.get(id)!).filter(Boolean) }))
 
-  /* Nine to six means nine to six. A day the shaper left thin is topped up
-     from what the scout did not choose the first time, until its visiting
-     minutes come within an hour of the budget — the budget already having
-     meals and a travel allowance taken out. Two rounds at most, and never
-     past the point where the catalogue has nothing left worth adding. */
+  /* A day the shaper left thin is topped up, once, from what the scout did
+     not choose the first time. Thin means well under the budget after travel
+     is allowed for; a day that is merely not full is left alone. */
   const minutesOf = (d: DayDraft) => d.stops.reduce((n, c) => n + c.visitMin, 0)
   for (const d of drafts) {
-    for (let round = 0; round < 2 && minutesOf(d) < budget - 60; round++) {
-      const want = Math.max(1, Math.min(3, Math.round((budget - minutesOf(d)) / 50)))
-      say(s, 'Scout', 'agent', 'working', `${d.title}: ${minutesOf(d)} of ${budget} minutes filled — looking for ${want} more`)
-      const extra = await findStops({ catalogue: s.catalogue, wish, mode: s.mode, fixed: drafts.flatMap(x => x.stops), count: want, onEvent: () => {} }).catch(() => [])
-      if (!extra.length) break
-      for (const c of extra) { s.known.set(c.id, c); d.stops.push(c) }
-    }
+    if (minutesOf(d) >= budget * 0.6) continue
+    const want = Math.max(1, Math.min(3, Math.round((budget * 0.8 - minutesOf(d)) / 50)))
+    say(s, 'Scout', 'agent', 'working', `${d.title} is light — looking for ${want} more`)
+    const extra = await findStops({ city: s.origin.name, origin: s.origin, radiusM: tripRadius(nDays), wish, mode: s.mode, fixed: drafts.flatMap(x => x.stops), count: want, onEvent: () => {} }).catch(() => [])
+    for (const c of extra) { s.known.set(c.id, c); d.stops.push(c) }
   }
   say(s, 'Scout', 'agent', 'done', drafts.map((d, i) => `${i + 1}. ${d.title} (${d.stops.length}, ${minutesOf(d)} min)`).join(' · '))
   return drafts
 }
 
 /** More places, for a day someone emptied or a list they did not like. */
-export async function morePlaces(s: Session, avoid: Candidate[], count: number): Promise<Candidate[]> {
-  const extra = await findStops({ catalogue: s.catalogue, wish: s.wish, mode: s.mode, fixed: avoid, count, onEvent: s.onEvent })
+async function morePlacesImpl(s: Session, avoid: Candidate[], count: number): Promise<Candidate[]> {
+  const extra = await findStops({ city: s.origin.name, origin: s.origin, radiusM: tripRadius(s.wish.days || 1), wish: s.wish, mode: s.mode, fixed: avoid, count, onEvent: s.onEvent })
   for (const c of extra) s.known.set(c.id, c)
   return extra
 }
@@ -166,12 +154,12 @@ async function buildDay(s: Session, draft: DayDraft, number: number, opts: Pipel
   const approach = from ? allLegs[0] ?? null : null
   const legs = from ? allLegs.slice(1) : allLegs
   // And home again: a day is a loop from the bed, not a line that ends in the street.
-  const last = ordered[ordered.length - 1]
-  const back = from && last
-    ? (await legsFor([{ id: last.id, lat: last.lat, lon: last.lon }, { id: 'bed', lat: from.lat, lon: from.lon }], wish.transport, wish.budget))[0] ?? null
+  const lastStop = ordered[ordered.length - 1]
+  const back = from && lastStop
+    ? (await legsFor([{ id: lastStop.id, lat: lastStop.lat, lon: lastStop.lon }, { id: 'bed', lat: from.lat, lon: from.lon }], wish.transport, wish.budget))[0] ?? null
     : null
   say(s, 'Router', 'tool', 'done',
-    `Day ${number}: ${((legs.reduce((a, l) => a + l.distanceM, 0) + (approach?.distanceM ?? 0) + (back?.distanceM ?? 0)) / 1000).toFixed(1)} km door to door, ${[...new Set([...legs, ...(approach ? [approach] : []), ...(back ? [back] : [])].map(l => l.transport))].join(' and ')}`)
+    `Day ${number}: ${(legs.reduce((a, l) => a + l.distanceM, 0) / 1000).toFixed(1)} km, ${[...new Set(legs.map(l => l.transport))].join(' and ')}`)
 
   const plan = await writePages({ wish, mode: s.mode, origin: s.origin, from, stops: ordered, legs, approach, back }, {
     ...opts, written: s.written, signal: s.signal,
@@ -191,7 +179,7 @@ async function buildDay(s: Session, draft: DayDraft, number: number, opts: Pipel
   return { ...plan, id: `${plan.id}-d${number}`, number, title: draft.title, tables }
 }
 
-export async function stagePlan(s: Session, drafts: DayDraft[], opts: PipelineOptions): Promise<Trip> {
+async function stagePlanImpl(s: Session, drafts: DayDraft[], opts: PipelineOptions): Promise<Trip> {
   const days: Day[] = []
   for (const d of drafts) {
     if (!d.stops.length) continue
@@ -282,7 +270,7 @@ function describeTrip(trip: Trip) {
   ].join('\n')
 }
 
-export async function revise(trip: Trip, message: string): Promise<Revision> {
+async function reviseImpl(trip: Trip, message: string): Promise<Revision> {
   const r = await askJson<{ reply: string; edits: unknown[] }>('critic', EDITOR_SYSTEM,
     `The plan:\n${describeTrip(trip)}\n\nThey said: "${message.trim()}"`, 1500)
   return { reply: String(r.reply ?? '').trim(), edits: (Array.isArray(r.edits) ? r.edits : []).flatMap(normaliseEdit) }
@@ -383,7 +371,7 @@ export async function applyEdits(
         const hit = await locate(e.query, s.origin, s.signal)
         if (!hit) { notes.push(`could not find “${e.query}”`); break }
         const taken = new Set(Array.from(s.known.values()).flatMap(c => c.article ? [c.article.pageId] : []))
-        const c = await matchWant(hit, s.catalogue, taken, s.wish, s.onEvent)
+        const c = await matchWant(hit, taken, s.wish, s.onEvent)
         s.known.set(c.id, c)
         drafts[to].stops.push(c)
         touched.add(to); notes.push(`added ${c.name} to day ${to + 1}`)
@@ -410,7 +398,7 @@ export async function applyEdits(
   }
 
   if (bedChanged) {
-    const [next] = await stageBeds(s)
+    const [next] = await stageStay(s, drafts)
     if (next) { s.bed = next; notes.push(`sleeping at ${next.name}`); drafts.forEach((_, i) => touched.add(i)) }
   }
   if (wishChanged) drafts.forEach((_, i) => touched.add(i))
@@ -439,3 +427,12 @@ function candidateFrom(st: Stop): Candidate {
 }
 
 export { HHMM, MINS }
+
+/* Each stage is its own trace (see telemetry.traced), with the facts that make
+   a slow one explainable: how many days, which transport, how many places. */
+export const openSession = traced('plan.open', openSessionImpl, (w) => ({ city: w.city, days: w.days, transport: w.transport, party: w.party }))
+export const stageStay = traced('plan.stay', stageStayImpl, (s, drafts) => ({ city: s.origin.name, stops: drafts.reduce((n, d) => n + d.stops.length, 0) }))
+export const stagePlaces = traced('plan.places', stagePlacesImpl, s => ({ city: s.origin.name, days: s.wish.days, transport: s.wish.transport }))
+export const morePlaces = traced('plan.more_places', morePlacesImpl, s => ({ city: s.origin.name }))
+export const stagePlan = traced('plan.build', stagePlanImpl, (s, drafts) => ({ city: s.origin.name, days: drafts.length, stops: drafts.reduce((n, d) => n + d.stops.length, 0), transport: s.wish.transport }))
+export const revise = traced('plan.revise', reviseImpl, (_t, message) => ({ chars: message.length }))

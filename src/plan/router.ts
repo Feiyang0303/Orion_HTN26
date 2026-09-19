@@ -1,3 +1,4 @@
+import { breadcrumb } from '../telemetry'
 import type { Budget, LatLon, Leg, Transport, TransportWish } from '../types'
 import { postJson } from './net'
 import { decodePolyline, metresBetween } from './geo'
@@ -53,7 +54,7 @@ export async function bestOrder(
   const transport = modeFor(wish, budget, far / 2)
 
   let m: Matrix | null = null
-  try { m = await postJson<Matrix>('routes/matrix', { points, transport }) } catch { m = null }
+  try { m = await postJson<Matrix>('routes/matrix', { points, transport }) } catch { m = null; breadcrumb('router', 'matrix unavailable; using estimated times', { transport }) }
   const sec = (i: number, j: number) => m?.durationSec[i]?.[j] ?? guessSec(points[i], points[j], transport)
 
   const movable = points.map((_, i) => i).filter(i => !(fixedFirst && i === 0))
@@ -115,6 +116,7 @@ export async function legsFor(
         distanceM: r.distanceM, durationSec: r.durationSec, transport, estimated: false,
       }
     } catch {
+      breadcrumb('router', 'leg fell back to a straight-line estimate', { from: from.id, to: to.id, transport })
       return {
         fromStopId: from.id, toStopId: to.id,
         polyline: [{ lat: from.lat, lon: from.lon }, { lat: to.lat, lon: to.lon }],

@@ -9,15 +9,12 @@
  *   POST /api/routes/walk     { from: LatLon, to: LatLon, transport? } -> { encodedPolyline, distanceM, durationSec }
  */
 import { createServer } from 'node:http'
-import { readFileSync, existsSync } from 'node:fs'
+import * as Sentry from '@sentry/node'
+import { loadEnv, scrub } from './shared.mjs'
+import { handleWiki } from './wiki.mjs'
+import { handleOverpass } from './overpass.mjs'
 
-if (existsSync('.env')) {
-  for (const line of readFileSync('.env', 'utf8').split('\n')) {
-    const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/)
-    if (m && !line.trimStart().startsWith('#') && !(m[1] in process.env)) process.env[m[1]] = m[2]
-  }
-}
-
+loadEnv()   // also done by instrument.mjs when preloaded; harmless twice
 const env = name => process.env[name] || ''
 const PORT = Number(env('PORT') || 8787)
 const DEFAULT_MODELS = { scout: 'gpt-4o', critic: 'gpt-4o', narrator: 'gpt-4o' }
@@ -42,21 +39,52 @@ async function llm(req, res) {
   if (!model) throw new HttpError(501, `LLM_MODEL_${String(role).toUpperCase()} is not set on the proxy.`)
   // Reasoning models only: gpt-4o rejects reasoning_effort. Narrator stays low on those models.
   const effort = env(`LLM_EFFORT_${String(role).toUpperCase()}`) || (role === 'narrator' && /(?:^o\d|gpt-5)/i.test(model) ? 'low' : '')
-  const upstream = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
-    body: JSON.stringify({
-      model, max_completion_tokens: maxTokens,
-      response_format: { type: 'json_object' },
-      ...(effort ? { reasoning_effort: effort } : {}),
-      messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
-    }),
+  // One model call, in Sentry's AI conventions, with what it cost: this is what
+  // the AI Agents view and the token dashboards read.
+  // The response is sent after the span ends: the request's own transaction closes
+  // when the response goes out, and a span still open by then is dropped.
+  const out = await Sentry.startSpan({
+    name: `chat ${model}`, op: 'gen_ai.chat',
+    attributes: { 'gen_ai.operation.name': 'chat', 'gen_ai.system': 'openai', 'gen_ai.request.model': model, 'gen_ai.agent.name': String(role), 'gen_ai.request.max_tokens': maxTokens },
+  }, async span => {
+    const t0 = Date.now()
+    /* Reasoning models spend the completion budget on thinking first, so a budget
+       that suits a plain model can run out before a single word of the answer.
+       That used to fail the whole stage; now it gets one retry with three times
+       the room, which the trace records, so how often it happens is visible. */
+    const ask = async budget => {
+      const r = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
+        body: JSON.stringify({
+          model, max_completion_tokens: budget,
+          response_format: { type: 'json_object' },
+          ...(effort ? { reasoning_effort: effort } : {}),
+          messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
+        }),
+      })
+      return { upstream: r, data: await r.json() }
+    }
+    let { upstream, data } = await ask(maxTokens)
+    const retried = upstream.ok && data.choices?.[0]?.finish_reason === 'length'
+    if (retried) ({ upstream, data } = await ask(Math.min(16000, maxTokens * 3)))
+    span.setAttribute('gen_ai.retried_with_larger_budget', retried)
+    const usage = data.usage ?? {}
+    span.setAttributes({
+      'gen_ai.response.model': data.model ?? model,
+      'gen_ai.usage.input_tokens': usage.prompt_tokens ?? 0,
+      'gen_ai.usage.output_tokens': usage.completion_tokens ?? 0,
+      'gen_ai.usage.total_tokens': usage.total_tokens ?? 0,
+      'gen_ai.usage.output_tokens.reasoning': usage.completion_tokens_details?.reasoning_tokens ?? 0,
+      'gen_ai.response.finish_reason': data.choices?.[0]?.finish_reason ?? 'error',
+    })
+    Sentry.logger.info('llm call', { role: String(role), model, ms: Date.now() - t0, status: upstream.status, input_tokens: usage.prompt_tokens ?? 0, output_tokens: usage.completion_tokens ?? 0, reasoning_tokens: usage.completion_tokens_details?.reasoning_tokens ?? 0, finish: data.choices?.[0]?.finish_reason ?? 'error', retried })
+    if (!upstream.ok) throw new HttpError(502, data?.error?.message ?? `openai ${upstream.status}`)
+    const choice = data.choices?.[0]
+    if (choice?.finish_reason === 'length') throw new HttpError(502, 'model ran out of output tokens even with three times the budget')
+    return { text: choice?.message?.content ?? '', usage, model: data.model ?? model }
   })
-  const data = await upstream.json()
-  if (!upstream.ok) throw new HttpError(502, data?.error?.message ?? `openai ${upstream.status}`)
-  const choice = data.choices?.[0]
-  if (choice?.finish_reason === 'length') throw new HttpError(502, 'model ran out of output tokens (raise maxTokens)')
-  json(res, 200, { text: choice?.message?.content ?? '' })
+  json(res, 200, out)
 }
 
 /* ---- TTS ---------------------------------------------------------------- */
@@ -136,6 +164,8 @@ const routes = {
     ok: true,
     keys: { openai: !!env('OPENAI_API_KEY'), elevenlabs: !!env('ELEVENLABS_API_KEY') && !!env('ELEVENLABS_VOICE_ID'), routes: !!routesKey() },
   }),
+  'GET /api/wiki': handleWiki,
+  'POST /api/overpass': (req, res) => handleOverpass(req, res, readJson),
   'POST /api/llm': llm,
   'POST /api/tts': tts,
   'POST /api/routes/matrix': routesMatrix,
@@ -146,5 +176,12 @@ createServer(async (req, res) => {
   const { pathname } = new URL(req.url, 'http://localhost')
   const handler = routes[`${req.method} ${pathname}`]
   if (!handler) return json(res, 404, { error: 'no such route' })
-  try { await handler(req, res) } catch (e) { json(res, e.status ?? 500, { error: String(e?.message ?? e) }) }
+  try { await handler(req, res) } catch (e) {
+    const status = e.status ?? 500
+    // 4xx is the caller's fault and 501 is a key that is not configured: setup, not a fault.
+    if (status >= 500 && status !== 501) {
+      Sentry.withScope(scope => { scope.setTag('route', pathname); scope.setTag('status', String(status)); scope.setLevel(status === 502 ? 'warning' : 'error'); Sentry.captureException(e) })
+    }
+    json(res, status, { error: scrub(e?.message ?? e) })
+  }
 }).listen(PORT, '127.0.0.1', () => console.log(`orion proxy on :${PORT}`))

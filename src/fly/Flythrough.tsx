@@ -6,9 +6,13 @@ import type { FlyProps, Plan } from '../types'
 import GoogleTiles, { probeTiles, type TilesHandle } from './GoogleTiles'
 import { GroundPlacer, type Anchor } from './ground'
 import { Path } from './routePath'
+import { frameFor } from './director'
+import { Governor, type Shot } from './quality'
 import { activeBeat, buildTimeline, type Segment } from './timeline'
 import { resample, smootherstep } from './geo'
+import { startFlight, tag, log } from '../telemetry'
 import FlightHud, { type Control, type Hud } from './FlightHud'
+import MapRig, { type MapView } from './MapRig'
 import './fly.css'
 
 /* The flight. Tiles sit under everything from the first frame (so they load
@@ -24,8 +28,9 @@ import './fly.css'
  */
 
 const CHASE_UP = 55, CHASE_BACK = 110, CHASE_LOOK = 60
-const PAN_UP = 90, PAN_DIST = 170, WIDE_UP = 140, WIDE_DIST = 250
 const SAMPLE_STEP_M = 30
+const PRELOAD_AHEAD_SEC = 30       // tiles for shots this far ahead are fetched at full detail in advance
+const PRELOAD_ON = new URLSearchParams(location.search).get('preload') !== '0'
 const noHit = () => null
 
 const keyStop = (i: number) => `s${i}`
@@ -51,6 +56,13 @@ function Rig({ plan, begin, onStopReached, onFinish, onHud, control, tiles, load
   const settled = useRef(0)
   const tl = useMemo(() => buildTimeline(plan), [plan])
 
+  // A flight holds much more than the default tile budget: the cache is what lets the
+  // sharp tiles at a stop stay resident while the camera moves on and comes back.
+  useEffect(() => {
+    const c = tiles.current?.lruCache
+    if (c) { c.minSize = 12000; c.maxSize = 20000; c.minBytesSize = .7e9; c.maxBytesSize = 1.0e9 }
+  }, [tiles, loadTick])
+  const governor = useRef(new Governor())
   useEffect(() => { ground.setAnchors(anchorsFor(plan)) }, [ground, plan])
   useEffect(() => { ground.requeue() }, [ground, loadTick])
 
@@ -75,9 +87,9 @@ function Rig({ plan, begin, onStopReached, onFinish, onHud, control, tiles, load
   // Playback state lives in refs: it changes every frame, React does not need to know.
   const s = useRef({
     t: 0, started: false, reached: -1, finished: false,
-    beatKey: '', audio: null as HTMLAudioElement | null, wasPaused: false,
+    sweep: 0, beatKey: '', audio: null as HTMLAudioElement | null, wasPaused: false,
     inited: false, planAngle: 0, planEye: new THREE.Vector3(), planLook: new THREE.Vector3(),
-    look: new THREE.Vector3(), vantage: new Map<string, { scale: number; lift: number; at: number }>(),
+    look: new THREE.Vector3(), sizes: new Map<string, { h: number | null; at: number }>(), vantage: new Map<string, { scale: number; lift: number; at: number }>(),
     hud: '', lastHeading: new THREE.Vector3(0, 0, -1), highlightKey: '',
   })
   const hl = useRef<THREE.Group>(null)
@@ -109,12 +121,17 @@ function Rig({ plan, begin, onStopReached, onFinish, onHud, control, tiles, load
   /** A vantage on `targetKey` that can see it: start at the pan distance and
       climb / back off until the line of sight is clear. Re-checked every 1.5 s
       because the surface refines under us as tiles stream in. */
-  function dwellPose(stop: number, beatIndex: number | null, beatTarget: string | undefined, tIn: number, now: number, eye: THREE.Vector3, look: THREE.Vector3) {
+  function dwellPose(stop: number, beatIndex: number | null, beatTarget: string | undefined, tIn: number, now: number, eye: THREE.Vector3, look: THREE.Vector3, check = true) {
     const key = beatTarget ? keyTarget(stop, beatTarget) : keyStop(stop)
     const tg = cell(key, keyStop(stop)).clone()
-    look.set(tg.x, tg.y + 12, tg.z)
     const wide = beatIndex === null
-    const baseUp = wide ? WIDE_UP : PAN_UP, baseDist = wide ? WIDE_DIST : PAN_DIST
+    // The Director: frame what is there. Re-measured now and then, because the
+    // surface sharpens as finer tiles arrive under the camera.
+    let size = s.current.sizes.get(key)
+    if (!size || size.h === null || now - size.at > 4) { size = { h: ground.measure(tiles.current, tg.x, tg.y, tg.z), at: now }; s.current.sizes.set(key, size) }
+    const fr = frameFor(size.h, wide)
+    const baseUp = fr.up, baseDist = fr.dist
+    look.set(tg.x, tg.y + fr.lookUp, tg.z)
     const offset = [0, 0.7, -0.7, 1.4][(beatIndex ?? 0) % 4]
     const hd = headingIn(stop)
     const ang = Math.atan2(-hd.z, -hd.x) + offset + tIn * 0.04    // behind the way we came, slowly drifting
@@ -123,7 +140,7 @@ function Rig({ plan, begin, onStopReached, onFinish, onHud, control, tiles, load
 
     const vk = `${stop}:${beatIndex ?? 'wide'}`
     let v = s.current.vantage.get(vk)
-    if (!v || now - v.at > 1.5) {
+    if (check && (!v || now - v.at > 1.5)) {
       v = { scale: 1, lift: 0, at: now }
       for (const [sc, lf] of [[1, 0], [1, 40], [1.25, 90], [1.5, 170]] as const) {
         place(sc, lf); v.scale = sc; v.lift = lf
@@ -131,20 +148,102 @@ function Rig({ plan, begin, onStopReached, onFinish, onHud, control, tiles, load
       }
       s.current.vantage.set(vk, v)
     }
-    place(v.scale, v.lift)
+    place(v?.scale ?? 1, v?.lift ?? 0)
   }
 
-  function chasePose(seg: Extract<Segment, { kind: 'travel' }>, u: number, eye: THREE.Vector3, look: THREE.Vector3) {
+  function chasePose(seg: Extract<Segment, { kind: 'travel' }>, u: number, eye: THREE.Vector3, look: THREE.Vector3, commit = true) {
     const { route: r, legPaths: lp, legStart: ls } = routeRef.current
     const path = lp[seg.leg]
     if (!path || !r.length) return false
     const sDist = ls[seg.leg] + smootherstep(u) * path.length     // eased: slows into the stop
     const p = r.at(sDist, tmp.b)
     const hd = r.heading(sDist, 20, CHASE_LOOK, s.current.lastHeading)
-    s.current.lastHeading.copy(hd)
+    if (commit) s.current.lastHeading.copy(hd)
     eye.set(p.x - hd.x * CHASE_BACK, p.y + CHASE_UP, p.z - hd.z * CHASE_BACK)
     r.at(sDist + CHASE_LOOK, look); look.y += 4
     return true
+  }
+
+  /* ---- preloading ------------------------------------------------------
+     Tiles are chosen for the cameras the renderer knows about. Registering
+     invisible cameras at the shots coming up in the next PRELOAD_AHEAD_SEC (or
+     the opening ones, while the book is still being read) makes it fetch those
+     views at full detail before the flight gets there, and drop them as the
+     flight moves past, so memory stays bounded. */
+  const size = useThree(st => st.size)
+  const mainCam = camera as THREE.PerspectiveCamera
+  const pre = useRef({ cams: new Map<number, THREE.PerspectiveCamera>(), shots: [] as { t: number; eye: THREE.Vector3; look: THREE.Vector3 }[], built: -1, swept: -1 })
+  const metrics = useRef({ frames: 0, pendingFrames: 0, longFrames: 0, activeSec: 0, worstMs: 0, events: [] as { t: number; label: string; pending: number; settleMs?: number }[], awaiting: null as null | { rec: { settleMs?: number }; at: number }, last: '' })
+
+  function buildShots() {
+    const shots: typeof pre.current.shots = []
+    const push = (t: number, eye: THREE.Vector3, look: THREE.Vector3) => shots.push({ t, eye: eye.clone(), look: look.clone() })
+    const e = new THREE.Vector3(), l = new THREE.Vector3()
+    for (const seg of tl.segments) {
+      if (seg.kind === 'dwell') {
+        dwellPose(seg.stop, null, undefined, 0, 0, e, l, false); push(seg.t0, e, l)
+        for (const b of seg.beats) { dwellPose(seg.stop, b.index, b.beat.targetId, b.t0 - seg.t0, 0, e, l, false); push(b.t0, e, l) }
+      } else if (seg.kind === 'travel') {
+        for (const f of [0.15, 0.35, 0.55, 0.75, 0.95]) if (chasePose(seg, f, e, l, false)) push(seg.t0 + f * (seg.t1 - seg.t0), e, l)
+      }
+    }
+    return shots
+  }
+
+  function sweepPreload(now: number) {
+    const t = tiles.current, p = pre.current
+    if (!t || !PRELOAD_ON) return
+    if (p.built !== version) { p.shots = buildShots(); p.built = version }
+    const want = new Set<number>()
+    p.shots.forEach((sh, i) => { if (sh.t >= now - 1 && sh.t <= now + PRELOAD_AHEAD_SEC) want.add(i) })
+    for (const [i, cam] of p.cams) if (!want.has(i)) { t.deleteCamera(cam); p.cams.delete(i) }
+    for (const i of want) {
+      let cam = p.cams.get(i)
+      if (!cam) { cam = new THREE.PerspectiveCamera(mainCam.fov, mainCam.aspect, mainCam.near, mainCam.far); p.cams.set(i, cam); t.setCamera(cam) }
+      cam.position.copy(p.shots[i].eye); cam.lookAt(p.shots[i].look); cam.updateMatrixWorld(true)
+      t.setResolution(cam, size.width, size.height)
+    }
+  }
+
+  /* The flight is one transaction. What it carries is what the viewer felt:
+     how much of the time tiles were still arriving, how long each shot took to
+     resolve, and whether frames dropped. */
+  const flight = useRef<ReturnType<typeof startFlight> | null>(null)
+  function beginFlight() {
+    const m = metrics.current
+    m.frames = 0; m.pendingFrames = 0; m.longFrames = 0; m.activeSec = 0; m.worstMs = 0; m.events = []; m.awaiting = null; m.last = ''
+    tag('preload', PRELOAD_ON ? 'on' : 'off')
+    flight.current = startFlight({ plan: plan.id, stops: plan.stops.length, legs: plan.legs.length, preload: PRELOAD_ON, seconds_planned: Math.round(tl.total) })
+    log.info('flight started', { plan: plan.id, preload: PRELOAD_ON })
+  }
+  function endFlight(outcome: string) {
+    if (!flight.current) return
+    const m = metrics.current, settled = m.events.filter(e => e.settleMs !== undefined).map(e => e.settleMs as number)
+    const t = tiles.current
+    const result = {
+      outcome,
+      'flight.frames': m.frames,
+      'flight.fps_avg': m.activeSec > 0 ? Math.round(m.frames / m.activeSec) : 0,
+      'flight.long_frames': m.longFrames,                                   // frames over 50 ms
+      'flight.worst_frame_ms': Math.round(m.worstMs),
+      'flight.tiles_pending_pct': m.frames ? Math.round(100 * m.pendingFrames / m.frames) : 0,
+      'flight.tile_settle_ms_avg': settled.length ? Math.round(settled.reduce((a, b) => a + b, 0) / settled.length) : 0,
+      'flight.tile_settle_ms_max': settled.length ? Math.max(...settled) : 0,
+      'flight.tile_cache_mb': t ? Math.round(t.lruCache.cachedBytes / 1e6) : 0,
+      'flight.detail': +governor.current.detail.toFixed(2),
+    }
+    flight.current.end(result)
+    log.info(`flight ${outcome}`, result)
+    flight.current = null
+  }
+
+  function record(t: TilesHandle | null, label: string, time: number) {
+    if (!t) return
+    const m = metrics.current, st = t.stats
+    const pending = st.queued + st.downloading + st.parsing
+    const rec = { t: +time.toFixed(1), label, pending } as { t: number; label: string; pending: number; settleMs?: number }
+    m.events.push(rec); m.awaiting = { rec, at: performance.now() }
+    if (import.meta.env.DEV) (window as unknown as { __fly: unknown }).__fly = { preload: PRELOAD_ON, ...m, cacheMB: Math.round(t.lruCache.cachedBytes / 1e6), errorTarget: t.errorTarget, detail: governor.current.detail, dpr: window.devicePixelRatio }
   }
 
   useFrame((_, rawDt) => {
@@ -153,9 +252,9 @@ function Rig({ plan, begin, onStopReached, onFinish, onHud, control, tiles, load
     if (changed) { settled.current += changed; if (!ground.pending || settled.current >= 24) { settled.current = 0; setVersion(v => v + 1) } }
 
     // ---- clock -----------------------------------------------------------
-    if (begin && !st.started) { st.started = true; st.t = 0; st.reached = -1; st.finished = false }
-    if (!begin && st.started) { st.started = false; st.t = 0 }          // book reopened: back to the planning hold
-    if (ctl.restart) { ctl.restart = false; st.t = 0; st.reached = -1; st.finished = false; st.beatKey = '' }
+    if (begin && !st.started) { st.started = true; st.t = 0; st.reached = -1; st.finished = false; beginFlight() }
+    if (!begin && st.started) { st.started = false; st.t = 0; endFlight('exited') }          // book reopened: back to the planning hold
+    if (ctl.restart) { ctl.restart = false; endFlight('restarted'); st.t = 0; st.reached = -1; st.finished = false; st.beatKey = ''; beginFlight() }
     if (ctl.skip && st.started) {
       ctl.skip = false
       st.t = tl.dwellStart.find(x => x > st.t + 0.05) ?? tl.total
@@ -166,7 +265,23 @@ function Rig({ plan, begin, onStopReached, onFinish, onHud, control, tiles, load
     const { seg, u } = tl.at(st.t)
     const beat = st.started ? activeBeat(seg, st.t) : null
     if (st.started && seg.kind === 'dwell' && seg.stop > st.reached) { st.reached = seg.stop; onStopReached(plan.stops[seg.stop].id, seg.stop) }
-    if (st.started && !st.finished && st.t >= tl.total) { st.finished = true; onFinish() }
+    if (st.started && !st.finished && st.t >= tl.total) { st.finished = true; endFlight('finished'); onFinish() }
+
+    // ---- tile preloading + metrics (dev) ---------------------------------
+    st.sweep = (st.sweep ?? 0) + dt
+    if (st.sweep > 0.4) { st.sweep = 0; sweepPreload(st.started ? st.t : 0) }
+    if (tiles.current) {
+      const m = metrics.current, ts = tiles.current.stats
+      const pending = ts.queued + ts.downloading + ts.parsing
+      if (st.started && !st.finished && !ctl.paused) {
+        m.frames++; m.activeSec += rawDt; if (pending > 0) m.pendingFrames++
+        if (rawDt > 0.05) m.longFrames++
+        m.worstMs = Math.max(m.worstMs, rawDt * 1000)
+      }
+      const tag = st.started ? `${seg.kind}${seg.kind === 'dwell' ? seg.stop : seg.kind === 'travel' ? seg.leg : ''}${beat ? ':b' + beat.index : ''}` : 'idle'
+      if (st.started && tag !== m.last) { m.last = tag; record(tiles.current, tag, st.t) }
+      if (m.awaiting && pending === 0) { m.awaiting.rec.settleMs = Math.round(performance.now() - m.awaiting.at); m.awaiting = null }
+    }
 
     // ---- guide audio: one clip per beat, driven by the same clock --------
     const beatKey = beat ? `${(seg as Extract<Segment, { kind: 'dwell' }>).stop}:${beat.index}` : ''
@@ -178,6 +293,10 @@ function Rig({ plan, begin, onStopReached, onFinish, onHud, control, tiles, load
     st.wasPaused = ctl.paused
 
     // ---- camera ----------------------------------------------------------
+    if (tiles.current) {
+      const shot: Shot = !st.started ? 'map' : seg.kind
+      tiles.current.errorTarget = governor.current.step(rawDt, shot)
+    }
     const eye = tmp.eye, look = tmp.lk
     let smooth = 2
     if (!st.started) {
@@ -191,7 +310,11 @@ function Rig({ plan, begin, onStopReached, onFinish, onHud, control, tiles, load
     } else if (!chasePose(seg, u, eye, look)) {
       dwellPose(seg.leg, null, undefined, 0, st.t, eye, look)
     }
-    if (!st.inited) { camera.position.copy(eye); st.look.copy(look); st.inited = true }
+    if (!st.inited) {
+      // The flight starts from wherever the map left the camera, and glides from there.
+      st.look.copy(camera.position).addScaledVector(camera.getWorldDirection(new THREE.Vector3()), 600)
+      st.inited = true
+    }
     const k = 1 - Math.exp(-dt * smooth)
     camera.position.lerp(eye, k); st.look.lerp(look, k)
     camera.lookAt(st.look)
@@ -223,7 +346,12 @@ function Rig({ plan, begin, onStopReached, onFinish, onHud, control, tiles, load
     if (sig !== st.hud) { st.hud = sig; onHud(hud) }
   })
 
-  useEffect(() => () => { s.current.audio?.pause() }, [])
+  useEffect(() => () => {
+    s.current.audio?.pause()
+    endFlight('left')
+    const t = tiles.current
+    pre.current.cams.forEach(c => t?.deleteCamera(c)); pre.current.cams.clear()
+  }, [])
 
   const curLeg = Math.max(0, Math.min(plan.legs.length - 1, hudLeg(s.current.hud)))
   return (
@@ -252,15 +380,30 @@ function Rig({ plan, begin, onStopReached, onFinish, onHud, control, tiles, load
 
 const hudLeg = (sig: string) => { try { return Math.max(0, (JSON.parse(sig)[1] ?? 1) - 1) } catch { return 0 } }
 
-export default function Flythrough(props: FlyProps) {
-  const { plan, origin: preOrigin, begin, onExit } = props
+const NO_VIEW: MapView = { pins: [], routes: [] }
+
+export default function Flythrough(props: FlyProps & { map?: MapView }) {
+  const { plan, origin: preOrigin, begin, onExit, map = NO_VIEW } = props
   const origin = plan?.origin ?? preOrigin ?? null
   const [probe, setProbe] = useState<'checking' | 'ok' | { why: string }>('checking')
   const [loadTick, setLoadTick] = useState(0)
   const [hud, setHud] = useState<Hud | null>(null)
   const tiles = useRef<TilesHandle | null>(null)
   const control = useRef<Control>({ paused: false, skip: false, restart: false })
-  const onLoadEnd = useCallback(() => setLoadTick(t => t + 1), [])   // stable: the wrapper re-registers on identity change
+  // A new city is a new tileset, which takes seconds to arrive. Rather than a bare
+  // black gap the world dissolves out and, once real tiles are on screen, back in.
+  const [revealed, setRevealed] = useState(false)
+  const cityKey = origin ? `${origin.lat.toFixed(2)},${origin.lon.toFixed(2)}` : ''
+  useEffect(() => { setRevealed(false) }, [cityKey])
+  useEffect(() => {
+    if (revealed) return
+    const id = setInterval(() => { if ((tiles.current?.stats.visible ?? 0) > 8) setRevealed(true) }, 350)
+    return () => clearInterval(id)
+  }, [revealed, cityKey])
+  const onLoadEnd = useCallback(() => {                                   // stable: the wrapper re-registers on identity change
+    setLoadTick(t => t + 1)
+    if ((tiles.current?.stats.visible ?? 0) > 8) setRevealed(true)
+  }, [])
   const tilesRef = useCallback((t: TilesHandle | null) => { tiles.current = t }, [])
 
   const check = useCallback(() => {
@@ -279,14 +422,16 @@ export default function Flythrough(props: FlyProps) {
     )
   }
   return (
-    <div className="fly" data-ground="night">
+    <div className={`fly ${revealed ? 'is-revealed' : ''}`} data-ground="night">
       {origin && probe === 'ok' && (
-        <Canvas camera={{ fov: 50, near: 1, far: 20000, position: [0, 900, 700] }} gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping }}>
+        <Canvas dpr={plan ? [1, 2] : [1, 1.5]} camera={{ fov: 50, near: 1, far: 20000, position: [0, 900, 700] }} gl={{ antialias: true, toneMapping: THREE.NeutralToneMapping }}>
           <color attach="background" args={['#0a0806']} />
           <ambientLight intensity={1.6} />
           <directionalLight position={[300, 800, 400]} intensity={1.2} color="#ffe6b8" />
           <GoogleTiles lat={origin.lat} lon={origin.lon} onLoadEnd={onLoadEnd} tilesRef={tilesRef} />
-          {plan && <Rig {...props} plan={plan} onHud={setHud} control={control} tiles={tiles} loadTick={loadTick} />}
+          {plan
+            ? <Rig key={cityKey} {...props} plan={plan} onHud={setHud} control={control} tiles={tiles} loadTick={loadTick} />
+            : <MapRig key={cityKey} view={map} origin={origin} tiles={tiles} loadTick={loadTick} />}
         </Canvas>
       )}
       {probe === 'checking' && <div className="fly-status">Connecting to the map…</div>}

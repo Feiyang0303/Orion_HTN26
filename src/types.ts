@@ -58,17 +58,7 @@ export const BUDGET_LABEL: Record<Budget, string> = {
 }
 export type Meal = 'lunch' | 'dinner'
 
-/** Where to sleep, and where to eat. Neither is in Wikipedia, so both come
-    from OpenStreetMap: real places with real coordinates, and never a name a
-    model remembered. OSM has no ratings or prices, so this carries none —
-    an invented star rating would be the one dishonest thing in the book. */
-export type Lodging = 'hotel' | 'hostel' | 'guesthouse' | 'apartment' | 'any'
-export const LODGING_LABEL: Record<Lodging, string> = {
-  hotel: 'A hotel', hostel: 'A hostel', guesthouse: 'A guesthouse',
-  apartment: 'An apartment', any: 'Anywhere with a bed',
-}
-
-/** The desk, as data. Everything on it changes the plan; nothing on it is
+/** The kickoff, as data. Everything on it changes the plan; nothing on it is
     decoration. `wants` are places named by the person and are never dropped. */
 export type Wish = {
   city: string
@@ -86,11 +76,9 @@ export type Wish = {
   meals: Meal[]
   /** How many days the trip runs. One is the old behaviour exactly. */
   days: number
-  /** What sort of bed, and anything the kitchen needs to know. Both steer a
-      choice made from OSM's own list, never a recommendation from memory. */
-  lodging: Lodging
   /** Free text: "vegetarian", "no pork", "we like noodles". Passed to the
-      table-setter verbatim. */
+      table-setter verbatim. Where to sleep is not asked: the crew picks a bed
+      that suits the finished plan. */
   diet: string
 }
 
@@ -115,6 +103,18 @@ export type Target = LatLon & {
   source: Source
 }
 
+/** One sentence of narration, traced to the text it came from (see plan/auditor.ts).
+    `framing` sentences only point ("Look toward the museum") and state nothing.
+    `supported: false` means the Auditor could not find it in what the Narrator was given. */
+export type Claim = {
+  text: string
+  supported: boolean
+  framing?: boolean
+  quote?: string      // the source sentence it rests on
+  source?: Source
+  score?: number      // 0..1, share of its content words found together in the quote
+}
+
 /** One spoken moment. Caption, highlight and camera pan all run off the same
     Beat. */
 export type Beat = {
@@ -122,6 +122,7 @@ export type Beat = {
   targetId?: string          // must match a Stop.targets[].id; absent = just the stop itself
   audioUrl: string | null    // pre-generated TTS; null only if TTS failed
   durationSec: number        // real audio duration; a words/rate estimate when audioUrl is null
+  claims?: Claim[]           // each sentence traced to its source, or marked unverified
 }
 
 export type Photo = {

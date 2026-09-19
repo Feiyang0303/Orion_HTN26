@@ -6,7 +6,7 @@
  *                          [--transport walk|cycle|transit|drive]
  *                          [--hours 09:30-18:00] [--interests "History,Views"]
  *                          [--party solo|couple|family|easy] [--budget free|modest|any]
- *                          [--meals lunch,dinner] [--days 3] [--lodging hotel]
+ *                          [--meals lunch,dinner] [--days 3]
  *                          [--diet "vegetarian"]
  *
  * Writes public/plans/<id>/plan.json and public/plans/<id>/audio/*.mp3.
@@ -40,7 +40,6 @@ const wish: Wish = {
   budget: one('budget', 'modest') as Wish['budget'],
   meals: one('meals', '').split(',').map(s => s.trim()).filter(Boolean) as Wish['meals'],
   days: Number(one('days', '1')) || 1,
-  lodging: one('lodging', 'any') as Wish['lodging'],
   diet: one('diet', ''),
 }
 

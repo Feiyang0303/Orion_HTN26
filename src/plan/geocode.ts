@@ -61,14 +61,16 @@ async function search(params: URLSearchParams, signal?: AbortSignal): Promise<Ro
 
 /** Resolve one name, biased towards `near` when we have it. Null if nothing
     matched — the caller says so rather than inventing a coordinate. */
-export async function locate(query: string, near?: LatLon, signal?: AbortSignal): Promise<Place | null> {
-  const key = `${query}|${near ? `${near.lat.toFixed(2)},${near.lon.toFixed(2)}` : ''}`
+export async function locate(query: string, near?: LatLon, signal?: AbortSignal, opts: { settlement?: boolean } = {}): Promise<Place | null> {
+  const key = `${query}|${near ? `${near.lat.toFixed(2)},${near.lon.toFixed(2)}` : ''}|${opts.settlement ? 's' : ''}`
   const hit = cache.get(key)
   if (hit !== undefined) return hit
 
   const params = new URLSearchParams({
     q: query, format: 'jsonv2', limit: '5', addressdetails: '0', namedetails: '1', 'accept-language': 'en',
   })
+  // `settlement` asks for a city, town or village, so "Kyoto" is the city and not the prefecture around it.
+  if (opts.settlement) params.set('featuretype', 'settlement')
   // A viewbox biases without excluding, so "the airport" can still win from
   // outside the box.
   if (near) {
@@ -80,7 +82,10 @@ export async function locate(query: string, near?: LatLon, signal?: AbortSignal)
     lat: Number(r.lat), lon: Number(r.lon), importance: r.importance ?? 0,
   })).filter(r => Number.isFinite(r.lat) && Number.isFinite(r.lon))
 
-  if (!shaped.length) { cache.set(key, null); return null }
+  if (!shaped.length) {
+    if (opts.settlement) return locate(query, near, signal)      // nothing settlement-shaped: fall back to anything
+    cache.set(key, null); return null
+  }
   // Nearest wins when we have a centre; importance decides otherwise. Ranking
   // by importance alone puts the famous Cambridge in England when the person
   // is plainly planning a day in Massachusetts.
@@ -102,7 +107,7 @@ export async function locate(query: string, near?: LatLon, signal?: AbortSignal)
 
 /** The city itself. Throws, because there is no plan without one. */
 export async function geocode(query: string, signal?: AbortSignal): Promise<Place> {
-  const hit = await locate(query, undefined, signal)
+  const hit = await locate(query, undefined, signal, { settlement: true })
   if (!hit) throw new Error(`Couldn't find a place called "${query}".`)
   return hit
 }

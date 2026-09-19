@@ -21,7 +21,7 @@ Reject only for real problems:
 - The shape is wrong for the hours: exhausting, or so empty it is not a day.
 
 Do not nitpick. Do not ask for a different city, more stops than the hours
-allow, or places that were not in the catalogue. A stop marked ASKED FOR BY
+allow, or places you cannot see in the list. A stop marked ASKED FOR BY
 NAME was chosen by the person: it is not yours to reject, and a complaint about
 one will be discarded.
 

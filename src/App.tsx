@@ -1,105 +1,134 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { AnimatePresence, motion } from 'motion/react'
 import ErrorBoundary from './ui/ErrorBoundary'
 import FlyDev from './fly/dev/FlyDev'
 import PlanTest from './fly/dev/PlanTest'
+import CrewDev from './globe/CrewDev'
+import GlobeScene from './globe/GlobeScene'
+import type { CrewEvent } from './plan/events'
 import Flythrough from './fly/Flythrough'
-import Desk, { type DeskResult } from './plan/ui/Desk'
-import Home from './plan/ui/Home'
+import type { MapView } from './fly/MapRig'
+import Kickoff, { type KickoffResult } from './plan/ui/Kickoff'
 import Studio from './plan/ui/Studio'
 import type { Day, LatLon } from './types'
-import './plan/ui/journal.css'
+import { breadcrumb, tag } from './telemetry'
 
-/* The shell. One canvas (tiles, owned by src/fly) sits behind one overlay
- * (the desk and then the book, owned by src/plan) from the first frame, so
- * tiles preload while the trip is planned and read. Ownership hands over when
- * a day is flown.
+/* The shell. One canvas (the real city, in 3D, owned by src/fly) is the ground
+ * of every screen from the first frame, and each screen is a layer of glass laid
+ * over it. Nothing ever replaces the city: kickoff, the crew at work, the
+ * itinerary and the flight are five views of one place, so the tiles are warm
+ * by the time anyone needs them and the world never changes under their hands.
  *
- *   home  ->  ask  ->  planning  ->  reading  ->  flying  ->  done
+ *   kickoff  ->  studio (the crew works, then the trip is read)  ->  flying  ->  done
  *
- * A trip has no single route, so `flying` always carries one Day — and a Day
- * is a Plan, which is exactly what the flythrough has always taken.
+ * A trip has no single route, so `flying` always carries one Day, and a Day is a
+ * Plan, which is exactly what the flythrough has always taken.
  */
-export type Phase = 'home' | 'ask' | 'studio' | 'flying' | 'done'
+export type Phase = 'kickoff' | 'studio' | 'flying' | 'done'
 
-/* The front page is not a black screen with type on it: the tiles of a real
-   city load under it from the first frame, which also means the renderer is
-   warm and a session with Google is open by the time anyone presses a button. */
+/* Before a city is chosen the ground is Paris: complete coverage, and
+   recognisable from above within a second of the tiles landing. */
 const LANDING: LatLon = { lat: 48.8584, lon: 2.2945 }
+const EMPTY_MAP: MapView = { pins: [], routes: [] }
+
+const layer = {
+  initial: { opacity: 0 },
+  animate: { opacity: 1, transition: { duration: .6, ease: [.22, .9, .24, 1] as const } },
+  exit: { opacity: 0, transition: { duration: .35 } },
+}
 
 export default function App() {
-  const [phase, setPhase] = useState<Phase>('home')
-  const [origin, setOrigin] = useState<LatLon | null>(LANDING)
-  const [desk, setDesk] = useState<DeskResult | null>(null)
+  const [phase, setPhase] = useState<Phase>('kickoff')
+  // The trail an error will carry: which screen the person was on.
+  useEffect(() => { tag('phase', phase); breadcrumb('nav', `phase → ${phase}`) }, [phase])
+  const [origin, setOrigin] = useState<LatLon>(LANDING)
+  const [kickoff, setKickoff] = useState<KickoffResult | null>(null)
   const [flying, setFlying] = useState<Day | null>(null)
+  const [map, setMap] = useState<MapView>(EMPTY_MAP)
+  const [globeCity, setGlobeCity] = useState<LatLon | null>(null)
+  const [crewEvents, setCrewEvents] = useState<CrewEvent[]>([])
+  const [crewWorking, setCrewWorking] = useState(false)
   const audioUrls = useRef<string[]>([])
 
   useEffect(() => () => { audioUrls.current.forEach(URL.revokeObjectURL) }, [])
 
   if (import.meta.env.DEV) {
     const q = new URLSearchParams(location.search)
+    if (q.has('crew-dev')) return <ErrorBoundary><CrewDev /></ErrorBoundary>
     if (q.has('fly-dev')) return <ErrorBoundary><FlyDev /></ErrorBoundary>
-    if (q.has('plan-test')) {
-      return <ErrorBoundary><PlanTest id={q.get('plan-test') || 'paris-short-v1'} /></ErrorBoundary>
-    }
+    if (q.has('plan-test')) return <ErrorBoundary><PlanTest id={q.get('plan-test') || 'paris-short-v1'} /></ErrorBoundary>
   }
 
-  // Audio lives in the page, not on disk: a blob URL per beat, revoked when
-  // the shell unmounts.
+  // Audio lives in the page, not on disk: a blob URL per beat, revoked when the shell unmounts.
   const saveAudio = useCallback(async (_id: string, _name: string, bytes: ArrayBuffer) => {
     const url = URL.createObjectURL(new Blob([bytes], { type: 'audio/mpeg' }))
     audioUrls.current.push(url)
     return url
   }, [])
 
-  const goHome = useCallback(() => { setDesk(null); setFlying(null); setPhase('home') }, [])
-
+  const onCrew = useCallback((events: CrewEvent[], working: boolean) => { setCrewEvents(events); setCrewWorking(working) }, [])
+  const goHome = useCallback(() => { setKickoff(null); setFlying(null); setMap(EMPTY_MAP); setCrewEvents([]); setCrewWorking(false); setGlobeCity(null); setPhase('kickoff') }, [])
   const inFlight = phase === 'flying' || phase === 'done'
+  // Which world is on screen. The globe is the stage until the trip is written; the real
+  // city takes over then. The city's tiles only start loading once there are places to
+  // put on them, so they arrive well before they are needed without competing with the globe.
+  const onGlobe = phase === 'kickoff' || (phase === 'studio' && crewWorking)
+  const showCity = !onGlobe
+  const cityWanted = inFlight || (phase === 'studio' && (map.pins.length > 0 || !crewWorking))
 
   return (
     <ErrorBoundary>
-      <main data-ground={inFlight ? 'night' : 'parchment'} className="orion">
-        {/* Always mounted, from the first frame: while no day is being flown it
-            holds a slow view over the city and loads tiles; `begin` is what
-            turns it into the flight. */}
-        <div className={`orion-ground ${phase === 'home' ? 'is-landing' : ''}`} aria-hidden={!inFlight}>
+      <main className="orion" data-ground="night">
+        <div className="orion-ground" style={{ opacity: showCity ? 1 : 0 }}>
           <Flythrough
             plan={inFlight ? flying : null}
-            origin={origin}
+            origin={cityWanted ? origin : null}
+            map={map}
             begin={phase === 'flying'}
             onStopReached={() => {}}
             onFinish={() => setPhase('done')}
             onExit={() => setPhase('studio')}
           />
         </div>
+        <div className="orion-veil" style={{ opacity: inFlight || !showCity ? 0 : 1 }} />
 
-        {!inFlight && (
-          <div className="jr-stage orion-overlay">
-            {phase === 'home' && <Home onStart={() => setPhase('ask')} />}
-            {phase === 'ask' && (
-              <Desk
-                onCity={p => p && setOrigin({ lat: p.lat, lon: p.lon })}
-                onPlan={r => { setDesk(r); setOrigin({ lat: r.origin.lat, lon: r.origin.lon }); setPhase('studio') }}
-                onHome={goHome}
-              />
-            )}
-            {phase === 'studio' && desk && (
-              /* Keyed on the desk result: a new set of preferences is a new
-                 session, not an edit of the old one. */
-              <Studio key={`${desk.origin.name}-${desk.wish.days}-${desk.mode}`}
-                wish={desk.wish} mode={desk.mode} origin={desk.origin}
+        <AnimatePresence>
+          {onGlobe && (
+            <motion.div key="globe" className="orion-globe" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: .9 }}>
+              <GlobeScene mode={phase === 'kickoff' ? 'kickoff' : 'crew'} city={globeCity} events={crewEvents} places={map.pins.filter(p => !p.home)} className="orion-globe-canvas" />
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <AnimatePresence mode="wait">
+          {phase === 'kickoff' && (
+            <motion.div key="kickoff" className="orion-layer" {...layer}>
+              <Kickoff onCity={p => { setOrigin({ lat: p.lat, lon: p.lon }); setGlobeCity({ lat: p.lat, lon: p.lon }) }}
+                onStart={r => { setKickoff(r); setOrigin({ lat: r.origin.lat, lon: r.origin.lon }); setPhase('studio') }} />
+            </motion.div>
+          )}
+          {phase === 'studio' && kickoff && (
+            <motion.div key="studio" className="orion-layer" {...layer}>
+              {/* Keyed on the brief: new preferences are a new session, not an edit of the old one. */}
+              <Studio key={`${kickoff.origin.name}-${kickoff.wish.days}-${kickoff.mode}`}
+                wish={kickoff.wish} mode={kickoff.mode} origin={kickoff.origin}
                 onFly={day => { setFlying(day); setPhase('flying') }}
-                onHome={goHome} onBack={() => setPhase('ask')} saveAudio={saveAudio} />
-            )}
-          </div>
-        )}
-
-        {phase === 'done' && (
-          <div className="orion-done">
-            <p>That was {flying ? `day ${flying.number}` : 'the day'}.</p>
-            <button className="jr-btn" onClick={() => setPhase('studio')}>Back to the book</button>
-            <button className="jr-btn ghost" onClick={goHome}>Plan another</button>
-          </div>
-        )}
+                onHome={goHome} onMap={setMap} onCrew={onCrew} saveAudio={saveAudio} />
+            </motion.div>
+          )}
+          {phase === 'done' && (
+            <motion.div key="done" className="orion-done" {...layer}>
+              <div className="o-glass orion-done-card">
+                <p className="o-eyebrow">Landed</p>
+                <h2 className="o-title" style={{ fontSize: 44 }}>That was {flying ? `day ${flying.number}` : 'the day'}.</h2>
+                <div style={{ display: 'flex', gap: 10, marginTop: 24 }}>
+                  <button className="o-btn primary" onClick={() => setPhase('studio')}>Back to the trip</button>
+                  <button className="o-btn" onClick={goHome}>Plan another</button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </main>
     </ErrorBoundary>
   )
