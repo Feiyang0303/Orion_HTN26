@@ -61,6 +61,10 @@ Then, from a terminal:
 "/Applications/Unity Hub.app/Contents/MacOS/Unity Hub" -- --headless install-modules --version 6000.3.24f1 --module android android-sdk-ndk-tools android-open-jdk
 ```
 
+(On this Mac the Hub's headless installer hung without downloading, so the editor, Android support,
+OpenJDK 17, NDK r27c and the SDK pieces were fetched from the URLs Unity's release API lists and
+unpacked into `/Applications/Unity/Hub/Editor/6000.3.24f1`, the layout the Hub uses.)
+
 ## Build, test, install
 
 ```sh
@@ -82,7 +86,7 @@ last sent.
 | Google key works without a Referer (so from a native app) | **Checked** with curl, 2026-09-19 |
 | Map Tiles terms allow Cesium for Unity | **Read** on Google's policy page |
 | API shape (`/api/vr/current`, fixture plan) | **Checked** against the live endpoint and the fixture |
-| Runtime C# compiles | **Yes, outside the editor**: built with `dotnet` against Unity 6000.3.24f1's own DLLs and the Cesium 1.25.1, TextMeshPro, Input System and Mathematics sources (a deliberate mistake is caught, so the check is real). `Editor/Build.cs` is **not** covered by this |
+| Runtime C# compiles | **Yes, outside the editor**: built with `dotnet` against Unity 6000.3.24f1's own DLLs and the Cesium 1.25.1, TextMeshPro, Input System and Mathematics sources (a deliberate mistake is caught, so the check is real). `Editor/Build.cs` is covered the same way **except** its URP method (checked by reading URP 17.3's source) and one OpenXR editor call (`FeatureHelpers.RefreshFeatures`, signature read from source) |
 | Logic tests pass | **8 of 12** under `dotnet` (timeline, ride limits, mid-leg blink, follower caps, yaw, height smoothing, paths, director). The other 4 read the fixture with `JsonUtility`, which only exists inside the editor |
 | Editor play mode: city loads, flight plays | not yet |
 | APK builds | not yet |
