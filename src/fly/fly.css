@@ -11,6 +11,10 @@
   transition: border-color .16s, color .16s;
 }
 .fly-error button:hover, .hud-controls button:hover:not(:disabled) { border-color: #9a6b3f; color: #f0b45e; }
+/* A button that does nothing has to look like one. Asking the guide is only
+   offered over a place, so this is on screen for much of a flight, and an
+   unexplained dead button reads as a broken one. Its title says why. */
+.hud-controls button:disabled { opacity: .38; cursor: not-allowed; }
 .hud-controls button.quiet { color: #9a8763; }
 
 .hud-top {

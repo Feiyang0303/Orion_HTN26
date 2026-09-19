@@ -17,6 +17,8 @@ export default function FlightHud({ hud, control, onExit, onAsk }: {
   onAsk?: () => void
 }) {
   const done = hud.phase === 'done'
+  /** Questions belong to a stop: the guide is only asked about what is under them. */
+  const atAPlace = hud.phase === 'dwell'
   const label = hud.phase === 'hold' ? (hud.stopIndex ? 'That was the day' : 'Before we set off')
     : hud.phase === 'dive' ? 'Beginning the tour' : done ? 'Tour complete'
     : hud.phase === 'travel' ? `Walking to stop ${hud.stopIndex + 1} of ${hud.stopCount}` : `Stop ${hud.stopIndex + 1} of ${hud.stopCount}`
@@ -36,8 +38,21 @@ export default function FlightHud({ hud, control, onExit, onAsk }: {
         {!done && <button onClick={() => { control.current.paused = !control.current.paused }}>{hud.paused ? 'Resume' : 'Pause'}</button>}
         {!done && <button onClick={() => { control.current.skip = true }} disabled={hud.stopIndex >= hud.stopCount - 1 && hud.phase === 'dwell'}>Next stop</button>}
         {/* Asking holds the flight itself — a guide you have to pause first,
-            then find a button for, is not one you would interrupt. */}
-        {!done && onAsk && <button onClick={onAsk}>Ask the guide</button>}
+            then find a button for, is not one you would interrupt.
+
+            Only over a place, never on the way. "What is that?" has an answer
+            when there is a thing under you and the guide has just been talking
+            about it; halfway down a street between two stops there is nothing
+            for the question to be about, and the guide would be answering
+            about a place they have already left. The button stays visible and
+            says why, because one that appears and disappears is worse than one
+            that waits. */}
+        {!done && onAsk && (
+          <button onClick={onAsk} disabled={!atAPlace}
+            title={atAPlace ? undefined : 'You can ask once you are over a place'}>
+            Ask the guide
+          </button>
+        )}
         {done && <button onClick={() => { control.current.restart = true }}>Fly it again</button>}
         {onExit && <button className="quiet" onClick={onExit}>{done ? 'Back to the book' : 'End tour'}</button>}
       </div>

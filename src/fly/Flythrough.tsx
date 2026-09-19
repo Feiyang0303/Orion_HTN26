@@ -299,7 +299,13 @@ export default function Flythrough(props: FlyProps & { map?: MapView }) {
      not restart a flight the person had paused for their own reasons. */
   const [asking, setAsking] = useState(false)
   const heldByUs = useRef(false)
+  /* Only over a place. The button is already disabled on the way, and this is
+     the same rule kept where it cannot be got round: the guide is handed the
+     stop under them as its context, so a question asked mid-leg would be
+     answered about somewhere they have already left. */
+  const atAPlaceRef = useRef(false)
   const openAsk = useCallback(() => {
+    if (!atAPlaceRef.current) return
     heldByUs.current = !control.current.paused
     control.current.paused = true
     setAsking(true)
@@ -331,6 +337,11 @@ export default function Flythrough(props: FlyProps & { map?: MapView }) {
   }, [])
   useEffect(check, [check])
 
+  const atAPlace = hud?.phase === 'dwell'
+  useEffect(() => { atAPlaceRef.current = atAPlace }, [atAPlace])
+  /* If the flight leaves the stop while the panel is open — the person hits
+     resume, or skips on — the conversation ends, because its subject has. */
+  useEffect(() => { if (asking && !atAPlace) closeAsk() }, [asking, atAPlace, closeAsk])
   useEffect(() => { if (!begin) { control.current.paused = false; setHud(null); setAsking(false); heldByUs.current = false } }, [begin])
 
   if (typeof probe === 'object') {
