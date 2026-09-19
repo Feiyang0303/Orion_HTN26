@@ -436,6 +436,10 @@ input[type='time'].o-input { color-scheme: dark; padding: .7em .9em; }
 .t-stay-photos { display: flex; gap: 6px; margin-top: 8px; }
 .t-stay-photos a { flex: 1; min-width: 0; }
 .t-stay-photos img { width: 100%; height: 64px; object-fit: cover; border-radius: 4px; display: block; }
+/* While the journal is open it owns the screen: its own bar carries the way
+   back and the way out, and the studio's would sit on top of it. */
+.tv.is-reading .tv-bar, .tv.is-reading .ed { display: none; }
+
 .t-stay-swap { margin-top: 9px; }
 .t-stay-swap svg { margin-right: 5px; vertical-align: -2px; }
 

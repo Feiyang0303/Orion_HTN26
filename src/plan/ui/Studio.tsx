@@ -111,7 +111,11 @@ export default function Studio({ wish, mode, origin, saved: given, onTrip, onFly
 
   /* ---------------------------------------------------------- keeping it -- */
 
-  // Every trip is saved as soon as it exists and again after each change the editor makes.
+  /* Keeping a trip is the person's decision, not a side effect of having made
+     one. It used to save itself a second after every change, which meant the
+     editor's every experiment landed in their trips whether they wanted it or
+     not, and there was no way to try something and walk away from it. Now
+     nothing reaches the server until they press something that says so. */
   const tripKey = useRef(saved?.id ?? newId())
   const lastSaved = useRef<Trip | null>(saved?.trip ?? null)
   const keepError = useRef('')
@@ -123,11 +127,8 @@ export default function Studio({ wish, mode, origin, saved: given, onTrip, onFly
     catch (e) { keepError.current = e instanceof Error ? e.message : String(e); report(e, 'trips.save', { level: 'warning' }); setKeep('failed'); return false }
   }, [mode, origin])
   useEffect(() => { if (trip) onTrip?.({ id: tripKey.current, trip, mode, origin, updatedAt: Date.now() }) }, [trip, mode, origin, onTrip])
-  useEffect(() => {
-    if (!trip || trip === lastSaved.current) return
-    const t = setTimeout(() => { void persist(trip) }, 1200)
-    return () => clearTimeout(t)
-  }, [trip, persist])
+  const dirty = !!trip && trip !== lastSaved.current
+  const save = useCallback(async () => { if (trip) await persist(trip) }, [trip, persist])
 
   const saveAndOpenJournal = useCallback(async () => {
     if (!trip || openingJournal) return
@@ -226,16 +227,21 @@ export default function Studio({ wish, mode, origin, saved: given, onTrip, onFly
   }
 
   return (
-    <div className="tv">
+    <div className={`tv${book ? ' is-reading' : ''}`}>
       <div className="tv-bar">
         <button className="o-btn quiet small" onClick={onHome}>← New trip</button>
         <button className="o-btn primary small" onClick={() => void saveAndOpenJournal()} disabled={openingJournal || !trip}>
           <Icon name="spark" size={14} /> {openingJournal ? 'Saving…' : 'Save & open journal'}
         </button>
         <button className="o-btn small" onClick={openInVr} disabled={vr.state === 'busy' || asking}>{vr.state === 'busy' ? 'Preparing…' : 'View in VR'}</button>
-        {keep !== 'idle' && (
-          <span className={`tv-keep is-${keep}`} role="status">{{ saving: 'Saving…', saved: 'Saved to your trips', local: 'Saved until the server restarts', failed: 'Not saved', idle: '' }[keep]}</span>
-        )}
+        <button className="o-btn small" onClick={() => void save()} disabled={!dirty || keep === 'saving'}>
+          {keep === 'saving' ? 'Saving…' : dirty ? 'Save trip' : 'Saved'}
+        </button>
+        <span className={`tv-keep is-${dirty ? 'dirty' : keep}`} role="status">
+          {keep === 'saving' ? 'Saving…'
+            : dirty ? 'Not saved — this trip is only in this tab'
+            : { saved: 'Saved to your trips', local: 'Saved until the server restarts', failed: 'Not saved', idle: '' }[keep]}
+        </span>
         {vr.state === 'ready' && vr.url && (
           <p className="tv-vr o-glass">
             Open this on the headset’s browser: <a href={vr.url} target="_blank" rel="noreferrer">{vr.url}</a>

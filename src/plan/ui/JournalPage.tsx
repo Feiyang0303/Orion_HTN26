@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Food, Sketch, TransportGlyph, foodFor, sketchFor } from './Sketches'
 import { paletteFor } from './decor'
+import { weatherLine, type DayWeather } from '../weather'
 import { HHMM, MINS, TRANSPORT_LABEL, type Day, type LatLon, type Trip } from '../../types'
 
 /* One day, as a page of a hand-drawn travel journal.
@@ -26,9 +27,15 @@ import { HHMM, MINS, TRANSPORT_LABEL, type Day, type LatLon, type Trip } from '.
  * photograph, and nothing is a fact the plan does not hold.
  */
 
-const W = 900, H = 1200
+/* The sheet is landscape, and that is a layout decision rather than a taste
+   one: a portrait page taller than the screen has to be scrolled, and a day
+   you have to scroll is not a day you can see. Sixteen by ten is the shape of
+   the screen it is read on, so the whole day fits at once — the schedule down
+   the left, the map in the middle where the walking is, what you eat down the
+   right, and the memo torn across the foot. */
+const W = 1440, H = 900
 /* Where the map may put things: right of the schedule, below the title, above the memo. */
-const MAP = { x0: 0.34 * W, x1: 0.97 * W, y0: 0.17 * H, y1: 0.80 * H }
+const MAP = { x0: 0.265 * W, x1: 0.735 * W, y0: 0.10 * H, y1: 0.805 * H }
 
 type Pt = { x: number; y: number }
 
@@ -58,8 +65,10 @@ const mid = (pts: LatLon[]) => pts[Math.floor(pts.length / 2)] ?? pts[0]
 
 const WATER = /river|seine|thames|tiber|canal|bridge|pont|ponte|harbour|harbor|bay|lake|quay|beach|island|île|isola|kamo|lagoon/i
 
-export default function JournalPage({ day, trip, open, onFly }: {
+export default function JournalPage({ day, trip, open, onFly, weather }: {
   day: Day; trip: Trip; open: boolean; onFly: () => void
+  /** The forecast for this day of the trip, when one reaches that far. */
+  weather?: DayWeather
 }) {
   const [phase, setPhase] = useState<'folded' | 'opening' | 'live'>('folded')
   useEffect(() => {
@@ -120,7 +129,7 @@ export default function JournalPage({ day, trip, open, onFly }: {
     let river: string | null = null
     if (wet) {
       const pts: Pt[] = []
-      const x0 = MAP.x0 - 60, x1 = W + 40
+      const x0 = MAP.x0 - 50, x1 = MAP.x1 + 50
       for (let k = 0; k <= 10; k++) {
         const t = k / 10
         const x = x0 + (x1 - x0) * t
@@ -133,24 +142,38 @@ export default function JournalPage({ day, trip, open, onFly }: {
     /* Where each sketch stands: beside its pin if it can, else the nearest
        clear spot, and never over the schedule or the title. */
     type Box = { x: number; y: number; w: number; h: number }
-    const placed: Box[] = [{ x: 0, y: 0, w: MAP.x0 - 6, h: H }, { x: 0, y: 0, w: W, h: MAP.y0 - 10 }, { x: 0, y: MAP.y1 + 40, w: W, h: H }]
-    const SW = 156, SH = 150
+    const placed: Box[] = [
+      { x: 0, y: 0, w: MAP.x0 - 6, h: H },                    // the schedule's column
+      { x: MAP.x1 + 6, y: 0, w: W - MAP.x1, h: H },           // the table's column
+      { x: 0, y: 0, w: W, h: MAP.y0 - 10 },                   // the title's band
+      { x: 0, y: MAP.y1 + 16, w: W, h: H },                   // the memo's band
+    ]
+    const SW = 142, SH = 138
     const offsets: [number, number][] = [[100, -84], [-100, -84], [0, -128], [112, 44], [-112, 44], [0, 96], [156, -20], [-156, -20], [64, -150], [-64, -150]]
-    const clear = (b: Box) => b.x >= MAP.x0 - 24 && b.x + b.w <= W - 6 && b.y >= 6 && b.y + b.h <= H - 6 &&
+    const clear = (b: Box) => b.x >= MAP.x0 - 20 && b.x + b.w <= MAP.x1 + 20 && b.y >= MAP.y0 - 20 && b.y + b.h <= MAP.y1 + 16 &&
       !placed.some(o => b.x < o.x + o.w && b.x + b.w > o.x && b.y < o.y + o.h && b.y + b.h > o.y)
     const put = (x: number, y: number, w = SW, h = SH) => {
       for (const [dx, dy] of offsets) {
         const b = { x: x + dx - w / 2, y: y + dy - h / 2, w, h }
         if (clear(b)) { placed.push(b); return { bx: b.x + w / 2, by: b.y + h / 2 } }
       }
-      for (let ring = 190; ring <= 560; ring += 45) {
+      for (let ring = 150; ring <= 420; ring += 38) {
         for (let k = 0; k < 16; k++) {
           const a = (k / 16) * Math.PI * 2 - Math.PI / 2
           const b = { x: x + Math.cos(a) * ring - w / 2, y: y + Math.sin(a) * ring - h / 2, w, h }
           if (clear(b)) { placed.push(b); return { bx: b.x + w / 2, by: b.y + h / 2 } }
         }
       }
-      const b = { x: Math.max(MAP.x0, Math.min(W - w - 6, x - w / 2)), y: Math.max(MAP.y0, y - 150), w, h }
+      /* Nothing was clear, so it goes as near its pin as the band allows and
+         overlaps something. It must still be clamped into the band: the
+         columns either side hold the schedule and the table, and a sketch
+         that lands on top of the day's lunch is worse than two sketches
+         sharing a corner of the map. */
+      const b = {
+        x: Math.max(MAP.x0, Math.min(MAP.x1 - w, x - w / 2)),
+        y: Math.max(MAP.y0, Math.min(MAP.y1 - h, y - 120)),
+        w, h,
+      }
       placed.push(b); return { bx: b.x + w / 2, by: b.y + h / 2 }
     }
     const homeAt = home ? put(home.x, home.y, 120, 110) : null
@@ -179,10 +202,11 @@ export default function JournalPage({ day, trip, open, onFly }: {
   ].filter(Boolean).slice(0, 3)
 
   /* The four things on the memo. Counted where they can be, plain where they
-     cannot: the book does not know the weather, and says so. */
+     cannot: the forecast only reaches so far, and past that the book says so
+     rather than inventing a number for day nine. */
   const memo = [
     ['ID', 'carry it — museums and some churches check, and the hotel will'],
-    ['Weather', 'the book cannot know it; look the night before and dress for it'],
+    ['Weather', weatherLine(weather)],
     ['Shoes', `${km.toFixed(1)} km ${modes.map(m => TRANSPORT_LABEL[m].toLowerCase()).join(' & ')} — comfortable ones`],
     ['Getting about', modes.includes('transit') ? 'a day pass usually beats singles' : modes.includes('walk') ? 'all of it on foot; a card for the way home' : 'a card, and the hotel address written down'],
   ]
@@ -341,8 +365,11 @@ export default function JournalPage({ day, trip, open, onFly }: {
           <ul>
             {memo.map(([k, v]) => <li key={k}><b>{k}</b><span>{v}</span></li>)}
           </ul>
-          <p className="jp-closing">— have a good day in {trip.city}.</p>
-          <button type="button" className="jp-fly" onClick={onFly}>fly day {day.number} →</button>
+          {/* the closing and the way out, kept together at the torn edge's right */}
+          <div>
+            <p className="jp-closing">— have a good day in {trip.city}.</p>
+            <button type="button" className="jp-fly" onClick={onFly}>fly day {day.number} →</button>
+          </div>
         </footer>
 
         <div className="jp-creases" aria-hidden />

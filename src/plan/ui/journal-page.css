@@ -19,8 +19,8 @@
 
 .jn {
   position: absolute; inset: 0; overflow: auto;
-  display: flex; flex-direction: column; align-items: center;
-  padding: 14px 20px 130px;
+  display: flex; flex-direction: column; align-items: center; justify-content: safe center;
+  padding: 12px 20px 26px;
   background: radial-gradient(120% 90% at 50% 40%, rgba(10,8,6,.5), rgba(10,8,6,.9) 75%);
   backdrop-filter: blur(7px);
   font-family: 'Patrick Hand', 'Caveat', var(--ui);
@@ -32,7 +32,24 @@
 
 /* ------------------------------------------------------------ the sheet */
 
-.jp { position: relative; width: min(920px, 100%); aspect-ratio: 3 / 4; flex: none; perspective: 2200px; perspective-origin: 50% 40%; }
+/* Landscape, and sized by whichever runs out first — the width of the column
+   or the height of the window. Both constraints are written into `width`
+   rather than left to `max-height`, because a box with an aspect-ratio and a
+   max-height keeps its width and overflows instead of shrinking. The 172px is
+   the day bar, this layer's own padding, and the room the editor bar needs at
+   the foot. */
+.jp {
+  position: relative; flex: none;
+  width: min(1440px, 100%, calc((100vh - 118px) * 1.6));
+  aspect-ratio: 16 / 10;
+  perspective: 2600px; perspective-origin: 50% 40%;
+  /* One unit is a hundredth of the sheet, spelled exactly like the width above.
+     Everything written on the paper is sized in these, so a smaller window
+     gets smaller handwriting rather than a schedule that runs off the bottom
+     edge. A container query would say this more neatly, but containment on
+     this element would flatten the fold. */
+  --u: calc(min(1440px, 100vw - 40px, (100vh - 118px) * 1.6) / 100);
+}
 .jp-sheet {
   position: absolute; inset: 0; overflow: hidden;
   transform-style: preserve-3d;
@@ -129,7 +146,7 @@
 .jp-sk {
   position: absolute; margin: 0; z-index: 3; pointer-events: none;
   display: flex; flex-direction: column; align-items: center; gap: 0;
-  width: 156px; transform: translate(-50%, -50%);
+  width: calc(var(--u) * 11.8); transform: translate(-50%, -50%);
   opacity: 0; transition: opacity .4s calc(1.7s + var(--i) * .5s);
 }
 .jp-sk.is-home { width: 120px; }
@@ -166,14 +183,14 @@
 }
 @keyframes jp-settle { to { opacity: 1; transform: none; } }
 
-.jp-title { position: absolute; left: 4%; top: 2.4%; z-index: 4; width: 62%; }
+.jp-title { position: absolute; left: 3%; top: 2.6%; z-index: 4; width: 23%; }
 .jp-title-wash {
-  position: absolute; left: -14px; top: 8px; width: 280px; height: 92px; z-index: -1; border-radius: 40% 55% 45% 50% / 55% 45% 55% 45%;
+  position: absolute; left: -14px; top: 6px; width: 250px; height: 82px; z-index: -1; border-radius: 40% 55% 45% 50% / 55% 45% 55% 45%;
   background: var(--wash-day, #d9b98a); opacity: .38; filter: blur(1px); transform: rotate(-3deg);
 }
-.jp-city { margin: 0; font-family: 'Caveat', cursive; font-weight: 700; font-size: 66px; line-height: .9; letter-spacing: .01em; color: var(--line); }
-.jp-brush { margin: 4px 0 0 4px; font-family: 'Nanum Brush Script', 'Caveat', cursive; font-size: 30px; line-height: 1; color: var(--ink-day, #8a5a2b); }
-.jp-title-marks { position: absolute; right: -2%; top: 4px; display: flex; gap: 2px; opacity: .85; }
+.jp-city { margin: 0; font-family: 'Caveat', cursive; font-weight: 700; font-size: calc(var(--u) * 4.38); line-height: .9; letter-spacing: .01em; color: var(--line); }
+.jp-brush { margin: 3px 0 0 3px; font-family: 'Nanum Brush Script', 'Caveat', cursive; font-size: calc(var(--u) * 1.85); line-height: 1; color: var(--ink-day, #8a5a2b); }
+.jp-title-marks { position: absolute; right: -6%; top: 2px; display: flex; gap: 2px; opacity: .85; }
 
 .jp-stamp {
   position: absolute; right: 3.2%; top: 2.6%; z-index: 4; padding: 8px 10px 6px; transform: rotate(7deg);
@@ -181,64 +198,71 @@
   font-family: 'Caveat', cursive; text-align: center; line-height: 1; opacity: 0; transition: opacity .5s 3.4s;
 }
 .jp.is-live .jp-stamp { opacity: .8; }
-.jp-stamp span { display: block; font-size: 13px; letter-spacing: .12em; text-transform: uppercase; }
-.jp-stamp b { display: block; font-size: 22px; margin-top: 3px; }
+.jp-stamp span { display: block; font-size: calc(var(--u) * 1.1); letter-spacing: .12em; text-transform: uppercase; }
+.jp-stamp b { display: block; font-size: calc(var(--u) * 1.85); margin-top: 3px; }
 
 /* the schedule, written on the paper itself */
-.jp-plan { position: absolute; left: 4.2%; top: 17.5%; width: 28.5%; z-index: 4; }
+.jp-plan { position: absolute; left: 3.2%; top: 15.5%; width: 22%; z-index: 4; }
 .jp-plan h3 {
-  margin: 0 0 6px; font-family: 'Nanum Brush Script', 'Caveat', cursive; font-weight: 400; font-size: 34px; line-height: 1; color: var(--ink-day, #8a5a2b);
+  margin: 0 0 calc(var(--u) * 0.42); font-family: 'Nanum Brush Script', 'Caveat', cursive; font-weight: 400; font-size: calc(var(--u) * 2.27); line-height: 1; color: var(--ink-day, #8a5a2b);
   border-bottom: 1.5px dashed var(--rule-day, #c2b18d); padding-bottom: 2px;
 }
-.jp-plan ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.jp-plan li { display: grid; grid-template-columns: 50px 1fr; gap: 7px; align-items: start; }
-.jp-plan li em { font-style: normal; font-family: 'Caveat', cursive; font-weight: 700; font-size: 18px; line-height: 1; color: var(--ink-day, #8a5a2b); display: flex; flex-direction: column; }
-.jp-plan li em i { font-style: normal; font-size: 12px; font-weight: 400; color: #8a7d70; margin-top: 1px; }
+.jp-plan ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: calc(var(--u) * 0.34); }
+.jp-plan li { display: grid; grid-template-columns: calc(var(--u) * 3.9) 1fr; gap: calc(var(--u) * 0.5); align-items: start; }
+.jp-plan li em { font-style: normal; font-family: 'Caveat', cursive; font-weight: 700; font-size: calc(var(--u) * 1.35); line-height: 1; color: var(--ink-day, #8a5a2b); display: flex; flex-direction: column; }
+.jp-plan li em i { font-style: normal; font-size: calc(var(--u) * 0.93); font-weight: 400; color: #8a7d70; margin-top: 1px; }
 .jp-plan li span { display: flex; flex-direction: column; }
-.jp-plan li b { font-weight: 400; font-size: 16px; color: var(--line); line-height: 1.15; }
-.jp-plan li small { font-size: 12.5px; color: #7d6c50; line-height: 1.3; }
+.jp-plan li b { font-weight: 400; font-size: calc(var(--u) * 1.22); color: var(--line); line-height: 1.15; }
+.jp-plan li small { font-size: calc(var(--u) * 0.97); color: #7d6c50; line-height: 1.25; }
 .jp-plan li small.jp-meal { color: #a2503c; }
-.jp-plan li.jp-edge b { font-size: 14.5px; }
+.jp-plan li.jp-edge b { font-size: calc(var(--u) * 1.1); }
 
 /* the table: a dish, drawn, and what the tag says */
-.jp-table { position: absolute; left: 4%; bottom: 20.5%; width: 29%; z-index: 4; display: flex; flex-direction: column; gap: 6px; }
-.jp-dish { display: grid; grid-template-columns: 96px 1fr; gap: 6px; align-items: center; }
+.jp-table { position: absolute; left: 75.5%; top: 14.5%; width: 21.5%; z-index: 4; display: flex; flex-direction: column; gap: 10px; }
+.jp-dish { display: grid; grid-template-columns: calc(var(--u) * 8.1) 1fr; gap: 6px; align-items: center; }
 .jp-dish div { display: flex; flex-direction: column; line-height: 1.15; }
-.jp-dish b { font-family: 'Nanum Brush Script', 'Caveat', cursive; font-weight: 400; font-size: 26px; color: var(--ink-day, #8a5a2b); text-transform: lowercase; }
-.jp-dish strong { font-weight: 400; font-family: 'Caveat', cursive; font-size: 19px; color: var(--line); }
-.jp-dish span { font-size: 12.5px; color: #7d6c50; }
-.jp-dish q { quotes: '“' '”'; font-size: 13px; color: #5c4a33; margin-top: 2px; font-style: italic; }
+.jp-dish b { font-family: 'Nanum Brush Script', 'Caveat', cursive; font-weight: 400; font-size: calc(var(--u) * 2.19); color: var(--ink-day, #8a5a2b); text-transform: lowercase; }
+.jp-dish strong { font-weight: 400; font-family: 'Caveat', cursive; font-size: calc(var(--u) * 1.6); color: var(--line); }
+.jp-dish span { font-size: calc(var(--u) * 1.05); color: #7d6c50; }
+.jp-dish q { quotes: '“' '”'; font-size: calc(var(--u) * 1.1); color: #5c4a33; margin-top: 2px; font-style: italic; }
 
 
 /* pencil in the corners */
-.jp-pencil { list-style: none; margin: 0; padding: 0; position: absolute; right: 3.5%; top: 17%; width: 22%; z-index: 4; display: flex; flex-direction: column; gap: 4px; align-items: flex-end; }
-.jp-pencil li { font-family: 'Homemade Apple', 'Caveat', cursive; font-size: 11.5px; line-height: 1.5; color: #8a8078; text-align: right; transform: rotate(2deg); max-width: 100%; }
+.jp-pencil { list-style: none; margin: 0; padding: 0; position: absolute; right: 3%; bottom: 17%; width: 21%; z-index: 4; display: flex; flex-direction: column; gap: 4px; align-items: flex-end; }
+.jp-pencil li { font-family: 'Homemade Apple', 'Caveat', cursive; font-size: calc(var(--u) * 0.97); line-height: 1.5; color: #8a8078; text-align: right; transform: rotate(2deg); max-width: 100%; }
 
 /* the memo at the foot: torn, taped, four things and a closing */
 .jp-memo {
-  position: absolute; left: 4%; right: 4%; bottom: 2.6%; z-index: 4; padding: 14px 18px 12px;
+  position: absolute; left: 3%; right: 3%; bottom: 2.4%; z-index: 4; padding: 13px 20px 11px;
   background: rgba(255,247,226,.9);
   clip-path: polygon(0 3%, 2% 0, 9% 2%, 18% 0, 27% 2.5%, 38% 0, 49% 2%, 60% 0, 71% 2.5%, 82% 0, 91% 2%, 98% 0, 100% 3%, 100% 97%, 97% 100%, 88% 98%, 77% 100%, 66% 98%, 55% 100%, 44% 98%, 33% 100%, 22% 98%, 11% 100%, 3% 98%, 0 97%);
   box-shadow: 0 6px 14px -8px rgba(40,25,10,.5);
-  display: grid; grid-template-columns: 1fr 1fr; gap: 4px 18px;
+  display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 4px 26px;
 }
 .jp-memo .jp-tape { position: absolute; left: 50%; top: -9px; width: 70px; height: 18px; transform: translateX(-50%) rotate(-3deg); background: rgba(214,196,150,.6); border: 1px solid rgba(160,140,90,.35); }
-.jp-memo ul { list-style: none; margin: 0; padding: 0; grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 3px 18px; }
-.jp-memo li { display: grid; grid-template-columns: 82px 1fr; gap: 6px; font-size: 13.5px; line-height: 1.35; color: #5c4a33; }
-.jp-memo li b { font-family: 'Caveat', cursive; font-weight: 700; font-size: 17px; color: var(--ink-day, #8a5a2b); }
-.jp-closing { margin: 4px 0 0; font-family: 'Homemade Apple', 'Caveat', cursive; font-size: 13px; color: #5c4a33; align-self: end; }
+.jp-memo ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 3px 26px; }
+.jp-memo > div { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.jp-memo li { display: grid; grid-template-columns: calc(var(--u) * 6.9) 1fr; gap: calc(var(--u) * 0.5); font-size: calc(var(--u) * 1.14); line-height: 1.35; color: #5c4a33; }
+.jp-memo li b { font-family: 'Caveat', cursive; font-weight: 700; font-size: calc(var(--u) * 1.43); color: var(--ink-day, #8a5a2b); }
+.jp-closing { margin: 0; font-family: 'Homemade Apple', 'Caveat', cursive; font-size: calc(var(--u) * 1.1); color: #5c4a33; align-self: end; }
 .jp-fly {
-  justify-self: end; align-self: end; font-family: 'Caveat', cursive; font-weight: 700; font-size: 22px; padding: 4px 16px;
+  justify-self: end; align-self: end; font-family: 'Caveat', cursive; font-weight: 700; font-size: calc(var(--u) * 1.85); padding: calc(var(--u) * 0.35) calc(var(--u) * 1.35);
   background: none; color: var(--ink-day, #8a5a2b); border: 2px solid var(--ink-day, #8a5a2b); border-radius: 40% 60% 50% 50% / 60% 40% 60% 40%; cursor: pointer;
   transform: rotate(-2deg);
 }
 .jp-fly:hover { background: var(--wash-day); }
 
-@media (max-width: 720px) {
-  .jp { aspect-ratio: auto; height: 1180px; }
-  .jp-sk { width: 118px; }
-  .jp-sk figcaption { font-size: 16px; }
-  .jp-city { font-size: 48px; }
+/* Under this the three columns have nowhere to go, so the page stops trying to
+   fit the height and becomes a scroll again — a legible tall page beats an
+   unreadable wide one. */
+@media (max-width: 900px) {
+  .jn { justify-content: flex-start; }
+  .jp { width: 100%; aspect-ratio: 3 / 4; }
+  .jp-sk { width: 112px; }
+  .jp-sk figcaption { font-size: 15px; }
+  .jp-city { font-size: 42px; }
+  .jp-memo { grid-template-columns: 1fr; }
+  .jp-memo ul { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) {
   .jp-sheet, .jp-panel, .jp-creases, .jp-pin, .jp-sk, .sk-ink path, .sk-pencil path, .sk-wash, .jp-title, .jp-plan, .jp-table, .jp-memo, .jp-pencil li { transition-duration: .01s !important; animation-duration: .01s !important; animation-delay: 0s !important; }

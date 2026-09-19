@@ -3,6 +3,7 @@ import JournalPage from './JournalPage'
 import { SketchDefs } from './Sketches'
 import Icon from '../../ui/Icon'
 import type { Day, Trip } from '../../types'
+import { forecast, type DayWeather } from '../weather'
 import './journal-page.css'
 
 /* The journal: one hand-drawn page per day, and the trip's cover.
@@ -20,6 +21,16 @@ export default function Journal({ trip, onFly, onClose, onHome }: {
   const [at, setAt] = useState(0)
   const [open, setOpen] = useState(false)
   const day = trip.days[Math.min(at, trip.days.length - 1)]
+
+  /* One forecast for the whole book, read once when it opens. The trip carries
+     no dates, so this is the days from tomorrow and each page says which day
+     it printed — see weather.ts. */
+  const [weather, setWeather] = useState<DayWeather[]>([])
+  useEffect(() => {
+    const ctl = new AbortController()
+    void forecast(trip.origin, trip.days.length, ctl.signal).then(w => { if (!ctl.signal.aborted) setWeather(w) })
+    return () => ctl.abort()
+  }, [trip.origin, trip.days.length])
 
   // Fold, then unfold: the same sheet cannot be seen to reprint itself.
   useEffect(() => {
@@ -52,7 +63,7 @@ export default function Journal({ trip, onFly, onClose, onHome }: {
         </div>
         <button type="button" className="o-btn quiet small" onClick={onClose}>Close the journal</button>
       </nav>
-      {day && <JournalPage key={day.number} day={day} trip={trip} open={open} onFly={() => onFly(day)} />}
+      {day && <JournalPage weather={weather[day.number - 1]} key={day.number} day={day} trip={trip} open={open} onFly={() => onFly(day)} />}
     </div>
   )
 }
