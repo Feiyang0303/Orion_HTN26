@@ -34,6 +34,10 @@ export type Turn = { who: 'you' | 'guide'; text: string }
     Plan where it does not — the guide only needs the parts they share. */
 export type Flown = Plan & { number?: number; title?: string; tables?: Table[] }
 
+/* The moods the proxy knows how to speak. A model that invents one of its own
+   gets the neutral setting rather than a refusal. */
+const MOODS = ['excited', 'amused', 'curious', 'warm', 'thoughtful', 'calm', 'serious']
+
 const SYSTEM = `You are a travel guide flying someone over a real city, in the air beside
 them. They have paused the tour to ask you something. Reply with JSON.
 
@@ -101,7 +105,7 @@ export async function ask(
   city: string,
   stopIndex: number,
   caption: string,
-): Promise<{ spoken: string; shown: string }> {
+): Promise<{ spoken: string; shown: string; mood: string }> {
   const said = history.slice(-6).map(t => `${t.who === 'you' ? 'They' : 'You'}: ${t.text}`).join('\n')
   const user = [
     ctx(day, city, stopIndex, caption),
@@ -115,7 +119,6 @@ export async function ask(
   return { spoken, shown: untag(spoken), mood }
 }
 
-const MOODS = ['excited', 'amused', 'curious', 'warm', 'thoughtful', 'calm', 'serious']
 
 /** The answer, out loud: the tags where a voice can act them, and the mood as
     voice settings where it cannot. */

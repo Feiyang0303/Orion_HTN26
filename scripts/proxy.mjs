@@ -186,21 +186,39 @@ async function models(key) {
     tuned = { fast, rich, tags: rich === 'eleven_v3', style: styles.has(rich) }
   }
   console.log(`[tts] pages: ${tuned.fast} · guide: ${tuned.rich} (${tuned.tags ? 'audio tags' : 'voice settings'}${tuned.style ? ' + style' : ''})`)
+  if (/_v3/.test(tuned.fast)) {
+    console.warn('[tts] the written pages are on v3 too. It acts better than it hurries, and a day is dozens of clips:'
+      + ' if voicing a day feels slow, set ELEVENLABS_MODEL=eleven_flash_v2_5 and leave the guide to find v3 by itself.')
+  }
   return tuned
+}
+
+/* v3 does not take a sliding stability. It takes three settings — Creative,
+   Natural and Robust — and the API spells them 0, 0.5 and 1; anything else is
+   refused. Robust also stops acting on the audio tags, which is the whole
+   reason for being on v3, so nothing that carries tags is ever sent there.
+   The dial the other models use is mapped onto the three. */
+const v3Stability = mood => {
+  const m = MOOD[mood] || MOOD.warm
+  if (mood === 'read') return 1                      // dozens of pages in a row: even, not acted
+  return m.stability <= 0.32 ? 0 : 0.5
 }
 
 async function speak(key, voice, text, model, mood, withStyle) {
   const m = MOOD[mood] || MOOD.warm
+  const v3 = /_v3/.test(model)
   return fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voice}?output_format=mp3_44100_128`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'xi-api-key': key, accept: 'audio/mpeg' },
     body: JSON.stringify({
       text: text.trim().slice(0, 5000),
       model_id: model,
-      voice_settings: {
-        stability: m.stability, similarity_boost: 0.75, use_speaker_boost: true,
-        ...(withStyle ? { style: m.style } : {}),
-      },
+      voice_settings: v3
+        ? { stability: v3Stability(mood), similarity_boost: 0.75, use_speaker_boost: true }
+        : {
+            stability: m.stability, similarity_boost: 0.75, use_speaker_boost: true,
+            ...(withStyle ? { style: m.style } : {}),
+          },
     }),
   })
 }
