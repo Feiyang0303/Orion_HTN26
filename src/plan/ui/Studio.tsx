@@ -4,7 +4,8 @@ import CrewStage from './CrewStage'
 import TripView from './TripView'
 import Journal from './Journal'
 import Icon from '../../ui/Icon'
-import { shareTrip } from '../../vr/share'
+import { vrLink } from '../../vr/share'
+import { newId, saveTrip, type Saved } from '../../trips/store'
 import { dayColour } from '../../ui/palette'
 import type { MapView } from '../../fly/MapRig'
 import type { CrewEvent } from '../events'
@@ -31,10 +32,12 @@ import type { Day, LatLon, Stay, Trip, Wish } from '../../types'
 
 type Line = { who: 'you' | 'editor'; text: string }
 
-export default function Studio({ wish, mode, origin, onFly, onHome, onMap, onCrew, saveAudio }: {
+export default function Studio({ wish, mode, origin, saved, onFly, onHome, onMap, onCrew, saveAudio }: {
   wish: Wish
   mode: Mode
   origin: Place
+  /** A trip that was saved earlier: opened as it was, with nothing planned again. */
+  saved?: Saved
   onFly: (day: Day) => void
   onHome: () => void
   onMap: (view: MapView) => void
@@ -57,12 +60,6 @@ export default function Studio({ wish, mode, origin, onFly, onHome, onMap, onCre
   const [editing, setEditing] = useState(false)
   const [asking, setAsking] = useState(false)
   const session = useRef<Session | null>(null)
-  const [vr, setVr] = useState<{ state: 'idle' | 'busy' | 'ready' | 'failed'; url?: string }>({ state: 'idle' })
-  const openInVr = useCallback(async () => {
-    if (!trip) return
-    setVr({ state: 'busy' })
-    try { setVr({ state: 'ready', url: (await shareTrip(trip)).url }) } catch { setVr({ state: 'failed' }) }
-  }, [trip])
 
   const onEvent = useCallback((e: CrewEvent) => {
     setEvents(list => [...list, e])
@@ -79,6 +76,14 @@ export default function Studio({ wish, mode, origin, onFly, onHome, onMap, onCre
       try {
         const s = await openSession(wish, mode, origin, onEvent, ctl.signal)
         session.current = s
+        if (saved) {
+          // Resuming: the trip is as it was, so the editor is handed what it needs to change it without writing the rest again.
+          for (const d of saved.trip.days) for (const st of d.stops) s.written.set(st.id, st)
+          // The bed matters as much: days are routed out from it, so an edit that rebuilds one must still start there.
+          s.bed = saved.trip.stays[0] ?? null; s.offered.push(...saved.trip.stays.map(b => b.id))
+          setStay(s.bed); setTrip(saved.trip)
+          return
+        }
         const found = await stagePlaces(s)
         if (ctl.signal.aborted) return
         setDrafts(found)
@@ -97,7 +102,34 @@ export default function Studio({ wish, mode, origin, onFly, onHome, onMap, onCre
       }
     })()
     return () => ctl.abort()
-  }, [wish, mode, origin, attempt, saveAudio, onEvent])
+  }, [wish, mode, origin, saved, attempt, saveAudio, onEvent])
+
+  /* ---------------------------------------------------------- keeping it -- */
+
+  // Every trip is saved as soon as it exists and again after each change the editor makes.
+  const tripKey = useRef(saved?.id ?? newId())
+  const lastSaved = useRef<Trip | null>(saved?.trip ?? null)
+  const [keep, setKeep] = useState<'idle' | 'saving' | 'saved' | 'local' | 'failed'>('idle')
+  const persist = useCallback(async (t: Trip) => {
+    setKeep('saving')
+    try { const r = await saveTrip(tripKey.current, t, mode, origin); lastSaved.current = t; setKeep(r.persistent ? 'saved' : 'local'); return true }
+    catch { setKeep('failed'); return false }
+  }, [mode, origin])
+  useEffect(() => {
+    if (!trip || trip === lastSaved.current) return
+    const t = setTimeout(() => { void persist(trip) }, 1200)
+    return () => clearTimeout(t)
+  }, [trip, persist])
+
+  const [vr, setVr] = useState<{ state: 'idle' | 'busy' | 'ready' | 'failed'; url?: string }>({ state: 'idle' })
+  const openInVr = useCallback(async () => {
+    if (!trip) return
+    setVr({ state: 'busy' })
+    try {
+      if (trip !== lastSaved.current && !(await persist(trip))) throw new Error('not saved')
+      setVr({ state: 'ready', url: await vrLink(tripKey.current) })
+    } catch { setVr({ state: 'failed' }) }
+  }, [trip, persist])
 
   /* ------------------------------------------------------------- the map -- */
 
@@ -163,6 +195,9 @@ export default function Studio({ wish, mode, origin, onFly, onHome, onMap, onCre
       <div className="tv-bar">
         <button className="o-btn quiet small" onClick={onHome}>← New trip</button>
         <button className="o-btn small" onClick={openInVr} disabled={vr.state === 'busy' || asking}>{vr.state === 'busy' ? 'Preparing…' : 'View in VR'}</button>
+        {keep !== 'idle' && (
+          <span className={`tv-keep is-${keep}`} role="status">{{ saving: 'Saving…', saved: 'Saved to your trips', local: 'Saved until the server restarts', failed: 'Not saved', idle: '' }[keep]}</span>
+        )}
         {vr.state === 'ready' && vr.url && (
           <p className="tv-vr o-glass">
             Open this on the headset’s browser: <a href={vr.url} target="_blank" rel="noreferrer">{vr.url}</a>
