@@ -6,8 +6,9 @@ import { geocode, locate } from './geocode'
 import { notable, photoFor, wikiSource, type Article } from './wikipedia'
 import { bestOrder, legsFor } from './router'
 import { schedule, visitBudgetMin, windowOf } from './timekeeper'
-import { narrate, withAudio, writePreface, type Mode, type StopContext } from './narrator'
+import { narrate, withAudio, writePreface, type Draft, type Mode, type StopContext } from './narrator'
 import { estimateSec, speak } from './tts'
+import { auditText, tally } from './auditor'
 import { catalogueFor, findStops, matchWant, roomFor, type Candidate, type Skeleton } from './crew'
 import { slug } from './geo'
 
@@ -95,7 +96,7 @@ export async function writePages(skeleton: Skeleton, opts: PipelineOptions): Pro
       last: index === chosen.length - 1,
     }
 
-    let drafts: { text: string; targetId?: string }[] = []
+    let drafts: Draft[] = []
     if (a || targets.length) {
       try {
         drafts = (await narrate({ name: c.name, extract: a?.extract ?? '' }, targets, mode, ctx)).beats
@@ -104,6 +105,17 @@ export async function writePages(skeleton: Skeleton, opts: PipelineOptions): Pro
         say('Narrator', 'agent', 'failed', `${c.name}: ${(e as Error).message}`)
       }
     }
+
+    // The Auditor: every sentence traced to the text the Narrator was given.
+    const docs = [
+      ...(a ? [{ text: a.extract, source: wikiSource(a) }] : []),
+      ...targets.map(t => ({ text: t.summary, source: t.source })),
+    ]
+    const names = [c.name, ...targets.map(t => t.name)]
+    drafts = drafts.map(d => ({ ...d, claims: auditText(d.text, docs, names) }))
+    const traced = tally(drafts)
+    if (traced.total) say('Auditor', 'tool', traced.traced === traced.total ? 'done' : 'failed',
+      `${c.name}: ${traced.traced} of ${traced.total} statements traced to a source${traced.traced === traced.total ? '' : ' — the rest are marked unverified'}`)
 
     const beats = await Promise.all(drafts.map((d, i) => voice(async () => {
       try {

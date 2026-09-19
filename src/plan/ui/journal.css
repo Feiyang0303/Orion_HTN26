@@ -1073,3 +1073,10 @@
 }
 .jr-editor-ask input::placeholder { color: #9a8a70; }
 .orion-overlay.jr-stage > .jr-studio-plan { margin-block: 0; }
+
+/* narration with receipts (plan/auditor.ts): a traced sentence is quietly underlined, an unverified one is flagged */
+.jr-claim { border-bottom: 1px dotted color-mix(in srgb, var(--ink) 35%, transparent); cursor: help; transition: background .18s; }
+.jr-claim:hover, .jr-claim:focus-visible { background: color-mix(in srgb, var(--wax, #9a6b3f) 14%, transparent); outline: none; }
+.jr-claim.is-unverified { border-bottom: 1px dashed #a2503c; }
+.jr-cite { margin-left: 2px; font-size: .78em; color: var(--wax, #9a6b3f); text-decoration: none; opacity: .7; }
+.jr-cite:hover { opacity: 1; }

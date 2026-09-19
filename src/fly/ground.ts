@@ -82,6 +82,27 @@ export class GroundPlacer {
     return changed
   }
 
+  /** Roughly how tall whatever stands at (x, z) is: the highest surface in a small
+      grid over it, against the lowest surface in a ring around it. Null until
+      enough tiles are loaded to say. `y` is any height near the ground there. */
+  measure(t: TilesHandle | null, x: number, y: number, z: number): number | null {
+    if (!t) return null
+    const top = (px: number, pz: number) => {
+      this.origin.set(px, y + 800, pz)
+      this.caster.set(this.origin, this.down)
+      this.hits.length = 0
+      t.raycast(this.caster, this.hits)
+      if (!this.hits.length) return null
+      this.hits.sort((a, b) => a.distance - b.distance)
+      return this.hits[0].point.y
+    }
+    const roof: number[] = [], street: number[] = []
+    for (const dx of [-20, 0, 20]) for (const dz of [-20, 0, 20]) { const v = top(x + dx, z + dz); if (v !== null) roof.push(v) }
+    for (let k = 0; k < 8; k++) { const a = k * Math.PI / 4; const v = top(x + Math.cos(a) * 110, z + Math.sin(a) * 110); if (v !== null) street.push(v) }
+    if (roof.length < 5 || street.length < 4) return null
+    return Math.min(250, Math.max(0, Math.max(...roof) - Math.min(...street)))
+  }
+
   /** Is there open air between two points? False if a tile surface is in the way. */
   lineOfSight(t: TilesHandle | null, from: Vector3, to: Vector3, margin = 12): boolean {
     if (!t) return true

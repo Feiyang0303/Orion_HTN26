@@ -1,6 +1,6 @@
 import type { Leg, Waypoint, Wish } from '../types'
 import type { Agent, CrewEvent } from './events'
-import { notable, type Article } from './wikipedia'
+import { notable, wideCatalogue, type Article } from './wikipedia'
 import { nearestWorthIt, scout, type Kind, type NearChoice, type ScoutPick } from './scout'
 import { critic } from './critic'
 import { audit, visitMinutes, windowOf } from './timekeeper'
@@ -58,7 +58,9 @@ export const guessKind = (name: string): Kind => KIND_RULES.find(([r]) => r.test
 /** What Wikipedia knows about the area, most-read first. The one network call
     the whole planning page shares. */
 export async function catalogueFor(origin: { lat: number; lon: number }, radiusM = RADIUS_M, keep = 40) {
-  return (await notable(origin, radiusM, keep, 400)).filter(a => a.extract.length > 80)
+  // The wide catalogue is fetched once per city (and usually already has been:
+  // the desk starts it as soon as the city is recognised); this only narrows it.
+  return (await wideCatalogue(origin)).filter(a => a.distM <= radiusM && a.extract.length > 80).slice(0, keep)
 }
 
 /** A place the person pinned, resolved to something the day can actually fly

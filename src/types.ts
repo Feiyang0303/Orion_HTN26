@@ -115,6 +115,18 @@ export type Target = LatLon & {
   source: Source
 }
 
+/** One sentence of narration, traced to the text it came from (see plan/auditor.ts).
+    `framing` sentences only point ("Look toward the museum") and state nothing.
+    `supported: false` means the Auditor could not find it in what the Narrator was given. */
+export type Claim = {
+  text: string
+  supported: boolean
+  framing?: boolean
+  quote?: string      // the source sentence it rests on
+  source?: Source
+  score?: number      // 0..1, share of its content words found together in the quote
+}
+
 /** One spoken moment. Caption, highlight and camera pan all run off the same
     Beat. */
 export type Beat = {
@@ -122,6 +134,7 @@ export type Beat = {
   targetId?: string          // must match a Stop.targets[].id; absent = just the stop itself
   audioUrl: string | null    // pre-generated TTS; null only if TTS failed
   durationSec: number        // real audio duration; a words/rate estimate when audioUrl is null
+  claims?: Claim[]           // each sentence traced to its source, or marked unverified
 }
 
 export type Photo = {

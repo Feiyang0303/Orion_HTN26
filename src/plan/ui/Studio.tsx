@@ -44,6 +44,9 @@ export default function Studio({ wish, mode, origin, onFly, onHome, onBack, save
   const [step, setStep] = useState<Step>('beds')
   const [events, setEvents] = useState<CrewEvent[]>([])
   const [busy, setBusy] = useState<string | null>(null)
+  // Finding a bed runs in the background: a slow OpenStreetMap must never hold the rest of the trip hostage.
+  const [bedsBusy, setBedsBusy] = useState(false)
+  const step_ = useRef<Step>('beds')
   const [error, setError] = useState('')
   const [beds, setBeds] = useState<Stay[]>([])
   const [bed, setBed] = useState<Stay | null>(null)
@@ -63,13 +66,14 @@ export default function Studio({ wish, mode, origin, onFly, onHome, onBack, save
   /* ------------------------------------------------------------- stage 1 */
 
   const runBeds = useCallback(async () => {
-    setBusy('a bed'); setError('')
+    setBedsBusy(true); setError('')
     try {
       if (!session.current) session.current = await openSession(wish, mode, onEvent, abort.current.signal)
       const found = await stageBeds(session.current)
+      if (step_.current !== 'beds') return           // they carried on without one; do not change their mind for them
       setBeds(found); setBed(found[0] ?? null)
-    } catch (e) { setError(e instanceof Error ? e.message : String(e)) }
-    finally { setBusy(null) }
+    } catch (e) { if (step_.current === 'beds') setError(e instanceof Error ? e.message : String(e)) }
+    finally { setBedsBusy(false) }
   }, [wish, mode, onEvent])
 
   useEffect(() => { void runBeds(); return () => abort.current.abort() }, [])   // eslint-disable-line react-hooks/exhaustive-deps
@@ -80,6 +84,7 @@ export default function Studio({ wish, mode, origin, onFly, onHome, onBack, save
     if (!session.current) return
     setBusy('the places'); setError('')
     try {
+      step_.current = 'places'
       setDrafts(await stagePlaces(session.current, bed))
       setStep('places')
     } catch (e) { setError(e instanceof Error ? e.message : String(e)) }
@@ -231,11 +236,12 @@ export default function Studio({ wish, mode, origin, onFly, onHome, onBack, save
                   </button>
                 </li>
               ))}
-              {!beds.length && !busy && <li className="jr-empty">OpenStreetMap lists nothing to sleep in near here. You can carry on without a bed; the days will start from the city centre.</li>}
+              {bedsBusy && <li className="jr-empty is-busy">Asking OpenStreetMap for somewhere to sleep… you do not have to wait for it.</li>}
+              {!beds.length && !bedsBusy && <li className="jr-empty">Couldn't get a list of places to sleep just now. You can carry on without a bed; the days will start from the city centre.</li>}
             </ol>
             <p className="jr-caption">Ranked on distance from where the days will be, the sort of bed you asked for, and the tags OpenStreetMap has. Nothing here knows prices or availability.</p>
             <div className="jr-order-moves">
-              <button type="button" className="jr-btn tiny ghost" disabled={!!busy} onClick={() => void runBeds()}>Three different ones</button>
+              <button type="button" className="jr-btn tiny ghost" disabled={!!busy || bedsBusy} onClick={() => void runBeds()}>Three different ones</button>
             </div>
           </section>
         )}
@@ -271,9 +277,9 @@ export default function Studio({ wish, mode, origin, onFly, onHome, onBack, save
         {error && <p className="jr-error">{error}</p>}
 
         <footer className="jr-planner-foot">
-          <button type="button" className="jr-btn ghost" disabled={!!busy} onClick={() => step === 'beds' ? onBack() : setStep('beds')}>Back</button>
+          <button type="button" className="jr-btn ghost" disabled={!!busy} onClick={() => { if (step === 'beds') return onBack(); step_.current = 'beds'; setStep('beds') }}>Back</button>
           <span style={{ flex: 1 }} />
-          {step === 'beds' && <button type="button" className="jr-btn primary" disabled={!!busy || !session.current} onClick={() => void runPlaces()}>{busy === 'the places' ? 'The scout is choosing…' : bed ? `Sleep at ${short(bed.name)} →` : 'Carry on without a bed →'}</button>}
+          {step === 'beds' && <button type="button" className="jr-btn primary" disabled={!!busy || !session.current} onClick={() => void runPlaces()}>{busy === 'the places' ? 'The scout is choosing…' : bed ? `Sleep at ${short(bed.name)} →` : bedsBusy ? 'Skip the bed for now →' : 'Carry on without a bed →'}</button>}
           {step === 'places' && <button type="button" className="jr-btn primary big" disabled={!!busy || !drafts.some(d => d.stops.length)} onClick={() => void runPlan()}><Mark name="key" size={16} /> Build the plan</button>}
         </footer>
       </aside>

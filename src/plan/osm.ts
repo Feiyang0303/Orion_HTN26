@@ -15,11 +15,22 @@ import { metresBetween } from './geo'
  * book would rather print nothing than a number nobody measured.
  */
 
+// Public mirrors come and go, and any one of them can hang for a minute, so all
+// of them are asked at once and the first good answer wins.
 const MIRRORS = [
   'https://overpass-api.de/api/interpreter',
+  'https://overpass.openstreetmap.fr/api/interpreter',
+  'https://overpass.private.coffee/api/interpreter',
   'https://overpass.kumi.systems/api/interpreter',
 ]
-const TIMEOUT_MS = 22_000
+const BUDGET_MS = 12_000
+
+/** Every mirror failed or ran out of time. Different from "there is nothing
+    here": callers must not tell someone a city has no hotels because a server
+    was slow. */
+export class OverpassDown extends Error {
+  constructor() { super('OpenStreetMap did not answer in time') }
+}
 
 export type OsmPlace = LatLon & {
   id: string
@@ -40,30 +51,36 @@ type Element = {
 }
 
 async function overpass(query: string, signal?: AbortSignal): Promise<Element[]> {
-  for (const url of MIRRORS) {
-    const guard = new AbortController()
-    const timer = setTimeout(() => guard.abort(), TIMEOUT_MS)
-    const onAbort = () => guard.abort()
-    signal?.addEventListener('abort', onAbort)
-    try {
-      const res = await fetch(url, {
-        method: 'POST', signal: guard.signal,
-        headers: { 'content-type': 'application/x-www-form-urlencoded' },
-        body: 'data=' + encodeURIComponent(query),
-      })
-      if (!res.ok) { report(new Error(`overpass ${new URL(url).hostname} answered ${res.status}`), 'osm.overpass', { level: 'warning' }); continue }
-      const body = await res.json() as { elements?: Element[] }
-      return body.elements ?? []
-    } catch (e) {
-      if (!signal?.aborted) report(e, 'osm.overpass', { level: 'warning', extra: { mirror: new URL(url).hostname, timedOut: guard.signal.aborted } })
-      /* next mirror */
-    } finally {
-      clearTimeout(timer)
-      signal?.removeEventListener('abort', onAbort)
-    }
+  const guard = new AbortController()
+  const timer = setTimeout(() => guard.abort(), BUDGET_MS)
+  const onAbort = () => guard.abort()
+  signal?.addEventListener('abort', onAbort)
+  try {
+    return await Promise.any(MIRRORS.map(async url => {
+      const mirror = new URL(url).hostname
+      try {
+        const res = await fetch(url, {
+          method: 'POST', signal: guard.signal,
+          headers: { 'content-type': 'application/x-www-form-urlencoded' },
+          body: 'data=' + encodeURIComponent(query),
+        })
+        if (!res.ok) throw new Error(`${mirror} answered ${res.status}`)
+        return ((await res.json()) as { elements?: Element[] }).elements ?? []
+      } catch (e) {
+        // A mirror that loses the race is aborted on purpose; that is not a fault.
+        if (!signal?.aborted) report(e, 'osm.overpass', { level: 'warning', extra: { mirror, timedOut: guard.signal.aborted } })   // report() ignores the AbortError of a mirror that simply lost
+        throw e
+      }
+    }))
+  } catch (e) {
+    if (signal?.aborted) throw e
+    report(new Error('every Overpass mirror failed'), 'osm.overpass.exhausted', { level: 'error' })
+    throw new OverpassDown()
+  } finally {
+    clearTimeout(timer)
+    signal?.removeEventListener('abort', onAbort)
+    guard.abort()                      // cancel the mirrors that lost
   }
-  if (!signal?.aborted) report(new Error('every Overpass mirror failed'), 'osm.overpass.exhausted', { level: 'error' })
-  return []
 }
 
 const osmSource = (e: Element): Source => ({
@@ -91,7 +108,7 @@ function shape(elements: Element[], centre: LatLon, kindOf: (t: Record<string, s
 }
 
 const around = (centre: LatLon, radiusM: number, filters: string[]) =>
-  `[out:json][timeout:20];(${filters.map(f => `node${f}(around:${radiusM},${centre.lat},${centre.lon});way${f}(around:${radiusM},${centre.lat},${centre.lon});`).join('')});out center tags 120;`
+  `[out:json][timeout:10];(${filters.map(f => `node${f}(around:${radiusM},${centre.lat},${centre.lon});way${f}(around:${radiusM},${centre.lat},${centre.lon});`).join('')});out center tags 120;`
 
 /** Places to sleep near a point. `kinds` are OSM tourism values. */
 export async function beds(
@@ -107,7 +124,7 @@ export async function tables(
   centre: LatLon, radiusM: number, signal?: AbortSignal,
 ): Promise<OsmPlace[]> {
   const filters = ['restaurant', 'cafe', 'fast_food', 'bar'].map(k => `["amenity"="${k}"]["name"]`)
-  const raw = await overpass(around(centre, radiusM, filters), signal)
+  const raw = await overpass(around(centre, radiusM, filters), signal).catch(e => { if (e instanceof OverpassDown) return []; throw e })
   return shape(raw, centre, t => t.amenity ?? 'restaurant')
 }
 

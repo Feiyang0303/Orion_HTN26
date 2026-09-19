@@ -78,10 +78,11 @@ async function stageBedsImpl(s: Session): Promise<Stay[]> {
     ? { lat: top.reduce((a, p) => a + p.lat, 0) / top.length, lon: top.reduce((a, p) => a + p.lon, 0) / top.length }
     : { lat: s.origin.lat, lon: s.origin.lon }
   say(s, 'Scout', 'agent', 'working', s.offered.length ? 'Looking for three different places to sleep' : 'Looking for somewhere to sleep, central to where the days will be')
-  const { stays, looked } = await chooseBeds(centre, s.wish, top.map(a => a.title), s.offered, s.signal)
+  const { stays, looked, down } = await chooseBeds(centre, s.wish, top.map(a => a.title), s.offered, s.signal)
   s.offered.push(...stays.map(b => b.id))
   say(s, 'Scout', 'agent', stays.length ? 'done' : 'failed',
-    stays.length ? `${stays.map(b => b.name).join(' · ')}, from ${looked} OpenStreetMap lists` : 'OpenStreetMap lists nothing to sleep in near here')
+    stays.length ? `${stays.map(b => b.name).join(' · ')}, from ${looked} OpenStreetMap lists`
+      : down ? 'OpenStreetMap did not answer in time; the days can carry on without a bed' : 'OpenStreetMap lists nothing to sleep in near here')
   return stays
 }
 

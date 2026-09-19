@@ -6,6 +6,7 @@ import type { FlyProps, Plan } from '../types'
 import GoogleTiles, { probeTiles, type TilesHandle } from './GoogleTiles'
 import { GroundPlacer, type Anchor } from './ground'
 import { Path } from './routePath'
+import { frameFor } from './director'
 import { activeBeat, buildTimeline, type Segment } from './timeline'
 import { resample, smootherstep } from './geo'
 import { startFlight, tag, log } from '../telemetry'
@@ -25,7 +26,6 @@ import './fly.css'
  */
 
 const CHASE_UP = 55, CHASE_BACK = 110, CHASE_LOOK = 60
-const PAN_UP = 90, PAN_DIST = 170, WIDE_UP = 140, WIDE_DIST = 250
 const SAMPLE_STEP_M = 30
 const PRELOAD_AHEAD_SEC = 30       // tiles for shots this far ahead are fetched at full detail in advance
 const PRELOAD_ON = new URLSearchParams(location.search).get('preload') !== '0'
@@ -80,7 +80,7 @@ function Rig({ plan, begin, onStopReached, onFinish, onHud, control, tiles, load
     t: 0, started: false, reached: -1, finished: false,
     sweep: 0, beatKey: '', audio: null as HTMLAudioElement | null, wasPaused: false,
     inited: false, planAngle: 0, planEye: new THREE.Vector3(), planLook: new THREE.Vector3(),
-    look: new THREE.Vector3(), vantage: new Map<string, { scale: number; lift: number; at: number }>(),
+    look: new THREE.Vector3(), sizes: new Map<string, { h: number | null; at: number }>(), vantage: new Map<string, { scale: number; lift: number; at: number }>(),
     hud: '', lastHeading: new THREE.Vector3(0, 0, -1), highlightKey: '',
   })
   const hl = useRef<THREE.Group>(null)
@@ -115,9 +115,14 @@ function Rig({ plan, begin, onStopReached, onFinish, onHud, control, tiles, load
   function dwellPose(stop: number, beatIndex: number | null, beatTarget: string | undefined, tIn: number, now: number, eye: THREE.Vector3, look: THREE.Vector3, check = true) {
     const key = beatTarget ? keyTarget(stop, beatTarget) : keyStop(stop)
     const tg = cell(key, keyStop(stop)).clone()
-    look.set(tg.x, tg.y + 12, tg.z)
     const wide = beatIndex === null
-    const baseUp = wide ? WIDE_UP : PAN_UP, baseDist = wide ? WIDE_DIST : PAN_DIST
+    // The Director: frame what is there. Re-measured now and then, because the
+    // surface sharpens as finer tiles arrive under the camera.
+    let size = s.current.sizes.get(key)
+    if (!size || size.h === null || now - size.at > 4) { size = { h: ground.measure(tiles.current, tg.x, tg.y, tg.z), at: now }; s.current.sizes.set(key, size) }
+    const fr = frameFor(size.h, wide)
+    const baseUp = fr.up, baseDist = fr.dist
+    look.set(tg.x, tg.y + fr.lookUp, tg.z)
     const offset = [0, 0.7, -0.7, 1.4][(beatIndex ?? 0) % 4]
     const hd = headingIn(stop)
     const ang = Math.atan2(-hd.z, -hd.x) + offset + tIn * 0.04    // behind the way we came, slowly drifting

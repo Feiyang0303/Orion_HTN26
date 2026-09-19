@@ -11,6 +11,7 @@
 import { createServer } from 'node:http'
 import * as Sentry from '@sentry/node'
 import { loadEnv, scrub } from './shared.mjs'
+import { handleWiki } from './wiki.mjs'
 
 loadEnv()   // also done by instrument.mjs when preloaded; harmless twice
 const env = name => process.env[name] || ''
@@ -46,17 +47,27 @@ async function llm(req, res) {
     attributes: { 'gen_ai.operation.name': 'chat', 'gen_ai.system': 'openai', 'gen_ai.request.model': model, 'gen_ai.agent.name': String(role), 'gen_ai.request.max_tokens': maxTokens },
   }, async span => {
     const t0 = Date.now()
-    const upstream = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
-      body: JSON.stringify({
-        model, max_completion_tokens: maxTokens,
-        response_format: { type: 'json_object' },
-        ...(effort ? { reasoning_effort: effort } : {}),
-        messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
-      }),
-    })
-    const data = await upstream.json()
+    /* Reasoning models spend the completion budget on thinking first, so a budget
+       that suits a plain model can run out before a single word of the answer.
+       That used to fail the whole stage; now it gets one retry with three times
+       the room, which the trace records, so how often it happens is visible. */
+    const ask = async budget => {
+      const r = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
+        body: JSON.stringify({
+          model, max_completion_tokens: budget,
+          response_format: { type: 'json_object' },
+          ...(effort ? { reasoning_effort: effort } : {}),
+          messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
+        }),
+      })
+      return { upstream: r, data: await r.json() }
+    }
+    let { upstream, data } = await ask(maxTokens)
+    const retried = upstream.ok && data.choices?.[0]?.finish_reason === 'length'
+    if (retried) ({ upstream, data } = await ask(Math.min(16000, maxTokens * 3)))
+    span.setAttribute('gen_ai.retried_with_larger_budget', retried)
     const usage = data.usage ?? {}
     span.setAttributes({
       'gen_ai.response.model': data.model ?? model,
@@ -66,10 +77,10 @@ async function llm(req, res) {
       'gen_ai.usage.output_tokens.reasoning': usage.completion_tokens_details?.reasoning_tokens ?? 0,
       'gen_ai.response.finish_reason': data.choices?.[0]?.finish_reason ?? 'error',
     })
-    Sentry.logger.info('llm call', { role: String(role), model, ms: Date.now() - t0, status: upstream.status, input_tokens: usage.prompt_tokens ?? 0, output_tokens: usage.completion_tokens ?? 0, reasoning_tokens: usage.completion_tokens_details?.reasoning_tokens ?? 0, finish: data.choices?.[0]?.finish_reason ?? 'error' })
+    Sentry.logger.info('llm call', { role: String(role), model, ms: Date.now() - t0, status: upstream.status, input_tokens: usage.prompt_tokens ?? 0, output_tokens: usage.completion_tokens ?? 0, reasoning_tokens: usage.completion_tokens_details?.reasoning_tokens ?? 0, finish: data.choices?.[0]?.finish_reason ?? 'error', retried })
     if (!upstream.ok) throw new HttpError(502, data?.error?.message ?? `openai ${upstream.status}`)
     const choice = data.choices?.[0]
-    if (choice?.finish_reason === 'length') throw new HttpError(502, 'model ran out of output tokens (raise maxTokens)')
+    if (choice?.finish_reason === 'length') throw new HttpError(502, 'model ran out of output tokens even with three times the budget')
     return { text: choice?.message?.content ?? '', usage, model: data.model ?? model }
   })
   json(res, 200, out)
@@ -152,6 +163,7 @@ const routes = {
     ok: true,
     keys: { openai: !!env('OPENAI_API_KEY'), elevenlabs: !!env('ELEVENLABS_API_KEY') && !!env('ELEVENLABS_VOICE_ID'), routes: !!routesKey() },
   }),
+  'GET /api/wiki': handleWiki,
   'POST /api/llm': llm,
   'POST /api/tts': tts,
   'POST /api/routes/matrix': routesMatrix,

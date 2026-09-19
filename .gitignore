@@ -6,3 +6,6 @@ dist/
 .env.local
 # Generated plans are committed on purpose (instant demo cities); scratch output is not.
 scripts/.out/
+
+# Cached Wikipedia/Wikidata answers (scripts/wiki.mjs)
+.cache/

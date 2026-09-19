@@ -573,7 +573,7 @@ function Beats({ stop }: { stop: Stop }) {
           <li key={i}>
             <Mark name={b.targetId ? 'compass' : 'clock'} size={18} />
             <span>
-              <span className="jr-story" style={{ display: 'block', margin: 0 }}>{b.text}</span>
+              <span className="jr-story" style={{ display: 'block', margin: 0 }}>{b.claims?.length ? <Sentences claims={b.claims} /> : b.text}</span>
               <span className="jr-caption" style={{ margin: '2px 0 0' }}>
                 {target(b) ? <>points at <b>{target(b)!.name}</b> · </> : null}
                 {b.durationSec.toFixed(1)}s
@@ -587,6 +587,16 @@ function Beats({ stop }: { stop: Stop }) {
       </ol>
     </div>
   )
+}
+
+/** Narration with its receipts: hover (or focus) a sentence to read the line it rests on. */
+function Sentences({ claims }: { claims: import('../../types').Claim[] }) {
+  return <>{claims.map((c, i) => c.framing ? <span key={i}>{c.text} </span> : (
+    <span key={i} className={`jr-claim ${c.supported ? 'is-traced' : 'is-unverified'}`} tabIndex={0}
+      title={c.supported ? `“${c.quote}” — ${c.source?.label}` : 'Could not be traced to the text the guide was given'}>
+      {c.text}{c.supported && c.source && <a className="jr-cite" href={c.source.url} target="_blank" rel="noreferrer" aria-label={`Source: ${c.source.label}`}>↗</a>}{' '}
+    </span>
+  ))}</>
 }
 
 function Near({ list, total, offset = 0 }: {
@@ -700,7 +710,7 @@ function BeforeYouGo({ trip }: { trip: Trip }) {
 
 /* ------------------------------------------------------------- the crew bar */
 
-const CREW: Agent[] = ['Geocode', 'Scout', 'Router', 'Timekeeper', 'Critic', 'Narrator', 'Voice']
+const CREW: Agent[] = ['Geocode', 'Scout', 'Router', 'Timekeeper', 'Critic', 'Narrator', 'Auditor', 'Voice']
 
 function CrewStrip({ crew, planning }: { crew: Extract<CrewEvent, { type: 'crew' }>[]; planning: boolean }) {
   const latest = new Map<Agent, typeof crew[number]>()

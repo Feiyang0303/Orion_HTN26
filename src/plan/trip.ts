@@ -1,7 +1,7 @@
 import type { LatLon, Meal, Stay, Table, Wish } from '../types'
 import { BUDGET_LABEL, LODGING_LABEL, MINS, PARTY_LABEL } from '../types'
 import { askJson } from './json'
-import { addressOf, beds, describe, tables as osmTables, type OsmPlace } from './osm'
+import { addressOf, beds, describe, OverpassDown, tables as osmTables, type OsmPlace } from './osm'
 import { metresBetween } from './geo'
 import type { Candidate } from './crew'
 
@@ -125,7 +125,8 @@ HARD RULES
 
 Reply with a JSON object: {"picks":[{"id":"<id>","why":"<max 22 words>"}]}`
 
-export type BedChoice = { stays: Stay[]; looked: number }
+/** `down` means OpenStreetMap did not answer, which is not the same as there being nothing to find. */
+export type BedChoice = { stays: Stay[]; looked: number; down?: boolean }
 
 /** Three beds, ranked, with reasons. `exclude` are ids already offered — the
     shuffle — so a new batch is a genuinely new batch. */
@@ -135,8 +136,19 @@ export async function chooseBeds(
   const kinds = wish.lodging === 'any'
     ? ['hotel', 'hostel', 'guest_house', 'apartment']
     : [wish.lodging === 'guesthouse' ? 'guest_house' : wish.lodging]
-  let found = await beds(centre, 1800, kinds, signal)
-  if (found.length < 6) found = await beds(centre, 3200, ['hotel', 'hostel', 'guest_house', 'apartment'], signal)
+  // Both radii at once: the wider is only used when the near one is thin, but
+  // asking in sequence would spend a second full timeout finding that out.
+  const [near, far] = await Promise.allSettled([
+    beds(centre, 1800, kinds, signal),
+    beds(centre, 3200, ['hotel', 'hostel', 'guest_house', 'apartment'], signal),
+  ])
+  if (near.status === 'rejected' && far.status === 'rejected') {
+    if (near.reason instanceof OverpassDown) return { stays: [], looked: 0, down: true }
+    throw near.reason
+  }
+  const nearList = near.status === 'fulfilled' ? near.value : []
+  const farList = far.status === 'fulfilled' ? far.value : []
+  const found = nearList.length >= 6 ? nearList : farList.length > nearList.length ? farList : nearList
   const fresh = found.filter(p => !exclude.includes(p.id))
   if (!fresh.length) return { stays: [], looked: found.length }
 

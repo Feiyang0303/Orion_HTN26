@@ -16,7 +16,7 @@ import { askJson } from './json'
  * who is travelling.
  */
 
-export type Draft = { text: string; targetId?: string }
+export type Draft = { text: string; targetId?: string; claims?: import('../types').Claim[] }
 export type Mode = 'full' | 'short'
 
 const LIMITS = { short: { beats: 2, words: 22 }, full: { beats: 3, words: 34 } }
