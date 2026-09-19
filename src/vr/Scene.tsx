@@ -3,6 +3,7 @@ import { useFrame, useThree } from '@react-three/fiber'
 import { Billboard, RoundedBox, Text } from '@react-three/drei'
 import { XROrigin, useXR } from '@react-three/xr'
 import * as THREE from 'three'
+import { Scheduler } from '3d-tiles-renderer'
 import type { Day } from '../types'
 import GoogleTiles, { type TilesHandle } from '../fly/GoogleTiles'
 import { GroundPlacer } from '../fly/ground'
@@ -46,11 +47,17 @@ const FONT = 'https://cdn.jsdelivr.net/fontsource/fonts/dm-sans@latest/latin-500
 const DISPLAY = 'https://cdn.jsdelivr.net/fontsource/fonts/im-fell-english@latest/latin-400-normal.woff'
 const AMBER = '#f0b45e'
 const noHit = () => null
+const setLoaderSession = (s: XRSession | null) => Scheduler.setXRSession(s as XRSession)     // null is how it is cleared; its typings leave that out
 
 export default function Scene({ days, store: xr, onReady }: { days: Day[]; store: typeof store; onReady: (ready: boolean) => void }) {
   const gl = useThree(s => s.gl)
   const controls = useThree(s => s.controls) as { target: THREE.Vector3; update: () => void } | null
-  const inXR = useXR(s => s.session != null)
+  const session = useXR(s => s.session)
+  const inXR = session != null
+  // The tile loader does its fetching and unpacking on animation frames, and while a headset session is
+  // running the page's own stop coming: only the session's do. Unless it is handed the session, the
+  // loader all but stops the moment VR starts, and the city stays as coarse as it was at the door.
+  useEffect(() => { setLoaderSession(session ?? null); return () => setLoaderSession(null) }, [session])
   const [dayAt, setDayAt] = useState(0)
   const [smooth, setSmooth] = useState(true)
   const day = days[Math.min(dayAt, days.length - 1)]
