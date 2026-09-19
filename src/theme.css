@@ -1,0 +1,31 @@
+@import url('https://fonts.googleapis.com/css2?family=IM+Fell+English:ital@0;1&family=DM+Sans:wght@400;500;600&display=swap');
+
+/* Orion keeps Atlas's two surfaces, now with jobs:
+ *   parchment  the storybook (planning: reading, deciding)
+ *   night      the flight (watching; chrome recedes)
+ * Same ink, same rules, only the ground changes. */
+
+:root {
+  --display: 'IM Fell English', 'Iowan Old Style', Georgia, serif;
+  --ui: 'DM Sans', system-ui, -apple-system, sans-serif;
+  --wax: #9a6b3f;
+  --wax-hot: #f0b45e;
+  --danger: #a2503c;
+}
+
+[data-ground='parchment'] {
+  --ground: #e6dcc2; --ground-lift: #f0e8d4;
+  --ink: #3f3426; --muted: #6f6250; --faint: #9b8e76; --rule: #cabd9f;
+}
+[data-ground='night'] {
+  --ground: #0a0806; --ground-lift: #140f09;
+  --ink: #e3d2ac; --muted: #9a8763; --faint: #5d4f3b; --rule: #3a3024;
+}
+
+* { box-sizing: border-box; }
+html, body, #root { margin: 0; width: 100%; height: 100%; }
+body { font-family: var(--ui); background: #0a0806; color: var(--ink); overflow: hidden; }
+button, input { font: inherit; }
+button { cursor: pointer; }
+button:disabled { opacity: .42; cursor: not-allowed; }
+:focus-visible { outline: 2px solid var(--wax); outline-offset: 2px; }
