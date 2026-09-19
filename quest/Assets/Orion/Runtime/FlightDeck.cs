@@ -184,7 +184,6 @@ namespace Orion
             if (!smooth && seg.Kind == SegmentKind.Travel) { t = seg.T1; (seg, u) = timeline.At(t); ride = null; }     // "Ride: blinks": a leg is not ridden at all
             var beat = seg.ActiveBeat(t);
             bool travelling = seg.Kind == SegmentKind.Travel;
-            world.SetMoving(travelling);
 
             /* the blink */
             fade += (fadeGoal - fade) * (1 - Mathf.Exp(-dt * 16));

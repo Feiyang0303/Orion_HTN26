@@ -13,7 +13,7 @@ namespace Orion
 
         void Start()
         {
-            Application.targetFrameRate = -1;                    // the headset's compositor sets the pace
+            Application.targetFrameRate = 72;                    // in a headset the compositor sets the pace; anywhere else, this does
             var rig = Rig.Make();
             rig.Veil.Fade = 0;
             rig.Carry(Vector3.up * Rig.HeadHeight, 0);
@@ -23,6 +23,8 @@ namespace Orion
             catch (InvalidOperationException e) { rig.Captions.Show("ORION", "This build has no key", e.Message, null); return; }
 
             var world = City.Make(config.googleTilesKey);
+            world.Refused += status => rig.Captions.Show("ORION", "Google would not serve the city",
+                status == 429 ? "The map key has used up its tile requests for today (HTTP 429). They come back at midnight Pacific." : $"The tile server answered HTTP {status}.", null);
             var marks = new GameObject("Marks").AddComponent<Marks>();
             marks.Build(rig.Head.transform);
             var client = new TripClient(config.apiBase);

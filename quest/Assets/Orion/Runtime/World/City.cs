@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using CesiumForUnity;
 using Orion.Flight;
@@ -6,17 +7,21 @@ using UnityEngine;
 namespace Orion.World
 {
     /* The real city: Google's Photorealistic 3D Tiles, streamed by Cesium. A headset has a mobile
-     * GPU and a fraction of a laptop's memory, so: detail is spent where the person is (a screen-
-     * space error that loosens while they are moving), nothing is fetched beyond the haze, what is
+     * GPU and a fraction of a laptop's memory, so: nothing is fetched beyond the haze, what is
      * out of view is kept only coarsely so there is a city there if they turn round, and the cache
      * is bounded. Photogrammetry has its lighting baked in, and the tiles say so (KHR_materials_unlit),
      * which Cesium honours with its unlit material. */
 
     public class City : MonoBehaviour
     {
-        const float DwellError = 12, TravelError = 24;         // screen-space error, in the headset's own pixels
+        // Screen-space error, in the headset's own pixels. One value for the whole flight: Cesium reloads the entire
+        // tileset when this is set, a fresh request to Google each time, so it is set once and never touched again.
+        const float ScreenSpaceError = 12;
         const long CacheBytes = 512L * 1024 * 1024;
         const int PreloadPx = 700;
+
+        /// <summary>Google would not serve the city: the HTTP status it answered with (429 is a used-up quota).</summary>
+        public event Action<long> Refused;
 
         public CesiumGeoreference Georeference { get; private set; }
         public Cesium3DTileset Tiles { get; private set; }
@@ -33,7 +38,7 @@ namespace Orion.World
             t.tilesetSource = CesiumDataSource.FromUrl;
             t.url = $"https://tile.googleapis.com/v1/3dtiles/root.json?key={googleTilesKey}";
             t.showCreditsOnScreen = true;                        // Google's terms: the attribution stays in view (see Credits)
-            t.maximumScreenSpaceError = DwellError;
+            t.maximumScreenSpaceError = ScreenSpaceError;
             t.maximumCachedBytes = CacheBytes;
             t.maximumSimultaneousTileLoads = 12;
             t.preloadAncestors = true;
@@ -45,6 +50,8 @@ namespace Orion.World
             t.createPhysicsMeshes = true;                        // the ground is found by rays onto them (see Ground)
             t.generateSmoothNormals = false;
 
+            Cesium3DTileset.OnCesium3DTilesetLoadFailure += city.OnLoadFailure;
+
             RenderSettings.fog = true;
             RenderSettings.fogMode = FogMode.Linear;
             RenderSettings.fogColor = Look.Haze;
@@ -54,10 +61,13 @@ namespace Orion.World
             return city;
         }
 
+        // Only the status is passed on: Cesium's own message carries the tileset's address, and the key is in it.
+        void OnLoadFailure(Cesium3DTilesetLoadFailureDetails failure) { if (failure.tileset == Tiles) Refused?.Invoke(failure.httpStatusCode); }
+
+        void OnDestroy() => Cesium3DTileset.OnCesium3DTilesetLoadFailure -= OnLoadFailure;
+
         /// <summary>Centre the world on a day. Everything the flight places is within a few kilometres of here.</summary>
         public void CentreOn(LatLon origin) => Georeference.SetOriginLongitudeLatitudeHeight(origin.lon, origin.lat, 0);
-
-        public void SetMoving(bool moving) => Tiles.maximumScreenSpaceError = moving ? TravelError : DwellError;
 
         /// <summary>Tiles are chosen for the cameras Cesium knows about. Cameras that draw nothing, held on the
         /// views coming up, make it fetch those views in advance, and drop them as the flight moves past.</summary>

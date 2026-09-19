@@ -33,14 +33,23 @@ console (Prev · Pause/Play · Next · Ride: smooth/blinks · Day › · Leave) 
   its first stop (the web's `/vr` also skips the dive).
 - **An ungrounded point takes the height of the last ground found**, not the ellipsoid, which can be
   a long way under a city.
-- Tile detail: Cesium has one screen-space error per tileset (12 px at a stop, 24 px on a leg),
-  64 px for what is out of view, fog culling beyond 4.5 km, a 512 MB tile cache.
+- Tile detail: one screen-space error for the whole flight (12 px), 64 px for what is out of view, fog culling beyond 4.5 km, a 512 MB tile cache.
+
+## Never set a Cesium3DTileset property in a loop
+
+Most of `Cesium3DTileset`'s setters (`maximumScreenSpaceError`, `url`, …) **reload the whole tileset**, and
+each reload is a billable root request to Google (10,000 a day by default, then HTTP 429 for everyone
+using the key, the web app included). An early version loosened the screen-space error on legs every
+frame, and one headless play-mode run used the entire day's quota in under two minutes. `City` now sets
+every property once, the app caps its frame rate outside a headset, a refusal is shown on the caption
+panel, and `./build.sh smoke` stops at the first refusal.
 
 ## The Google tiles key
 
 The build reads `VITE_GOOGLE_MAPS_KEY` from the web app's `.env` one directory up (or
 `ORION_GOOGLE_TILES_KEY` if set) and writes it to `Assets/Orion/Resources/OrionConfig.json`, which is
-gitignored. It is never logged or committed. Be aware it ships inside the APK, and the key is
+gitignored. The build never logs or commits it. Cesium itself writes the tileset's address, key
+included, into the Unity log when a load fails (`Logs/` is gitignored; `adb logcat` on the headset shows it too). Be aware it ships inside the APK, and the key is
 currently unrestricted: keep the APK to yourselves, and cap the key's quota in Google Cloud.
 
 Terms: Google's Map Tiles API policies list Cesium for Unity as a supported renderer. Tiles may not
