@@ -1,0 +1,53 @@
+using System;
+using Orion.Flight;
+using Orion.World;
+using UnityEngine;
+
+namespace Orion
+{
+    /// <summary>Open the app and it plays the trip last sent to VR from the web app.</summary>
+    public class App : MonoBehaviour
+    {
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
+        static void Boot() => new GameObject("Orion").AddComponent<App>();
+
+        void Start()
+        {
+            Application.targetFrameRate = -1;                    // the headset's compositor sets the pace
+            var rig = Rig.Make();
+            rig.Veil.Fade = 0;
+            rig.Carry(Vector3.up * Rig.HeadHeight, 0);
+
+            Config config;
+            try { config = Config.Load(); }
+            catch (InvalidOperationException e) { rig.Captions.Show("ORION", "This build has no key", e.Message, null); return; }
+
+            var world = City.Make(config.googleTilesKey);
+            var marks = new GameObject("Marks").AddComponent<Marks>();
+            marks.Build(rig.Head.transform);
+            var client = new TripClient(config.apiBase);
+            var narration = Narration.Make(rig.Head.transform, client);
+            void Begin(Trip trip)
+            {
+                if (trip?.days == null || trip.days.Length == 0 || trip.days[0].stops.Length == 0) rig.Captions.Show("ORION", "That trip has no stops", "Send another from Orion on the web, then open this again.", null);
+                else FlightDeck.Begin(trip, world, rig, marks, narration);
+            }
+
+#if UNITY_EDITOR
+            // Offline development: ORION_FIXTURE names a Day-shaped plan under Assets/Orion/Fixtures to fly instead of the trip last sent.
+            string fixture = Environment.GetEnvironmentVariable("ORION_FIXTURE");
+            if (!string.IsNullOrEmpty(fixture))
+            {
+                string json = System.IO.File.ReadAllText($"{Application.dataPath}/Orion/Fixtures/{fixture}.json");
+                Begin(new Trip { city = JsonUtility.FromJson<Trip>(json).city, days = new[] { JsonUtility.FromJson<Day>(json) } });
+                return;
+            }
+#endif
+            rig.Captions.Show("ORION", "Looking for your trip…", "", null);
+            StartCoroutine(client.Current(
+                Begin,
+                onNone: () => rig.Captions.Show("ORION", "No trip has been sent yet", "In Orion on the web, open a trip and send it to VR. Then open this again.", null),
+                onError: error => rig.Captions.Show("ORION", "Orion could not be reached", error, null)));
+        }
+    }
+}

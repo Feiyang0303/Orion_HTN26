@@ -1,0 +1,21 @@
+{
+  "scopedRegistries": [
+    { "name": "Cesium", "url": "https://unity.pkg.cesium.com", "scopes": ["com.cesium.unity"] }
+  ],
+  "dependencies": {
+    "com.cesium.unity": "1.25.1",
+    "com.unity.inputsystem": "1.14.0",
+    "com.unity.render-pipelines.universal": "17.0.4",
+    "com.unity.test-framework": "1.5.1",
+    "com.unity.ugui": "2.0.0",
+    "com.unity.xr.management": "4.5.1",
+    "com.unity.xr.openxr": "1.14.3",
+    "com.unity.modules.audio": "1.0.0",
+    "com.unity.modules.jsonserialize": "1.0.0",
+    "com.unity.modules.physics": "1.0.0",
+    "com.unity.modules.uielements": "1.0.0",
+    "com.unity.modules.unitywebrequest": "1.0.0",
+    "com.unity.modules.unitywebrequestaudio": "1.0.0",
+    "com.unity.modules.xr": "1.0.0"
+  }
+}

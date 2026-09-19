@@ -1,0 +1,14 @@
+# Unity
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Bb]uild/
+/[Ll]ogs/
+/[Uu]ser[Ss]ettings/
+/*.csproj
+/*.sln
+.DS_Store
+
+# The Google tiles key, written at build time from ../.env. Never committed.
+/Assets/Orion/Resources/OrionConfig.json
+/Assets/Orion/Resources/OrionConfig.json.meta
