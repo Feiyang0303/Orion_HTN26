@@ -32,7 +32,7 @@ import type { Day, LatLon, Stay, Trip, Wish } from '../../types'
 
 type Line = { who: 'you' | 'editor'; text: string }
 
-export default function Studio({ wish, mode, origin, saved, onFly, onHome, onMap, onCrew, saveAudio }: {
+export default function Studio({ wish, mode, origin, saved, onFly, onHome, onJournal, onMap, onCrew, saveAudio }: {
   wish: Wish
   mode: Mode
   origin: Place
@@ -40,6 +40,7 @@ export default function Studio({ wish, mode, origin, saved, onFly, onHome, onMap
   saved?: Saved
   onFly: (day: Day) => void
   onHome: () => void
+  onJournal: () => void
   onMap: (view: MapView) => void
   /** What the crew is doing, for the globe behind the screen. */
   onCrew: (events: CrewEvent[], working: boolean) => void
@@ -110,6 +111,7 @@ export default function Studio({ wish, mode, origin, saved, onFly, onHome, onMap
   const tripKey = useRef(saved?.id ?? newId())
   const lastSaved = useRef<Trip | null>(saved?.trip ?? null)
   const [keep, setKeep] = useState<'idle' | 'saving' | 'saved' | 'local' | 'failed'>('idle')
+  const [openingJournal, setOpeningJournal] = useState(false)
   const persist = useCallback(async (t: Trip) => {
     setKeep('saving')
     try { const r = await saveTrip(tripKey.current, t, mode, origin); lastSaved.current = t; setKeep(r.persistent ? 'saved' : 'local'); return true }
@@ -120,6 +122,14 @@ export default function Studio({ wish, mode, origin, saved, onFly, onHome, onMap
     const t = setTimeout(() => { void persist(trip) }, 1200)
     return () => clearTimeout(t)
   }, [trip, persist])
+
+  const saveAndOpenJournal = useCallback(async () => {
+    if (!trip || openingJournal) return
+    setOpeningJournal(true)
+    const kept = trip === lastSaved.current || await persist(trip)
+    setOpeningJournal(false)
+    if (kept) onJournal()
+  }, [trip, openingJournal, persist, onJournal])
 
   const [vr, setVr] = useState<{ state: 'idle' | 'busy' | 'ready' | 'failed'; url?: string }>({ state: 'idle' })
   const openInVr = useCallback(async () => {
@@ -180,6 +190,25 @@ export default function Studio({ wish, mode, origin, saved, onFly, onHome, onMap
     finally { setAsking(false) }
   }, [draftMsg, trip, asking, saveAudio, onEvent])
 
+  /* Another bed. It goes through the same edit the editor uses, so the one
+     path that can change where you sleep is the one that also re-routes the
+     mornings, the ways home and the dinner that was chosen near the old door.
+     The stops keep their pages: `written` means nothing is narrated twice. */
+  const [swapping, setSwapping] = useState(false)
+  const shuffleStay = useCallback(async () => {
+    const s = session.current
+    if (!s || !trip || swapping || asking) return
+    setSwapping(true)
+    try {
+      const { trip: next, notes } = await applyEdits(s, trip, [{ op: 'new_bed' }], { saveAudio, onEvent })
+      setTrip(next); setStay(s.bed)
+      if (notes.length) setChat(c => [...c, { who: 'editor', text: `${notes.join('; ')}. The days are routed from there now.` }])
+    } catch (e) {
+      const id = report(e, 'studio.new_bed', { extra: { city: origin.name } })
+      setChat(c => [...c, { who: 'editor', text: `Could not find another place to sleep: ${e instanceof Error ? e.message : String(e)}${id ? ` (${id})` : ''}` }])
+    } finally { setSwapping(false) }
+  }, [trip, swapping, asking, saveAudio, onEvent, origin.name])
+
   const last = useMemo(() => events.filter(e => e.type === 'crew').at(-1) as Extract<CrewEvent, { type: 'crew' }> | undefined, [events])
   /* The same trip, read as a book: paper spreads, the map that unfolds, the
      bed's page with the street outside it. It is a way of reading the plan,
@@ -194,6 +223,9 @@ export default function Studio({ wish, mode, origin, saved, onFly, onHome, onMap
     <div className="tv">
       <div className="tv-bar">
         <button className="o-btn quiet small" onClick={onHome}>← New trip</button>
+        <button className="o-btn primary small" onClick={() => void saveAndOpenJournal()} disabled={openingJournal || !trip}>
+          <Icon name="spark" size={14} /> {openingJournal ? 'Saving…' : 'Save & open journal'}
+        </button>
         <button className="o-btn small" onClick={openInVr} disabled={vr.state === 'busy' || asking}>{vr.state === 'busy' ? 'Preparing…' : 'View in VR'}</button>
         {keep !== 'idle' && (
           <span className={`tv-keep is-${keep}`} role="status">{{ saving: 'Saving…', saved: 'Saved to your trips', local: 'Saved until the server restarts', failed: 'Not saved', idle: '' }[keep]}</span>
@@ -206,7 +238,8 @@ export default function Studio({ wish, mode, origin, saved, onFly, onHome, onMap
         )}
         {vr.state === 'failed' && <p className="tv-vr o-glass">Couldn’t prepare the trip for VR.</p>}
       </div>
-      <TripView trip={trip!} day={dayIx} onDay={setDayIx} onFly={onFly} onFocus={setFocus} planning={asking} onBook={() => setBook(true)} />
+      <TripView trip={trip!} day={dayIx} onDay={setDayIx} onFly={onFly} onFocus={setFocus} planning={asking || swapping}
+        onBook={() => setBook(true)} onShuffleStay={shuffleStay} shufflingStay={swapping} />
 
       <AnimatePresence>
         {/* Fixed and above the trip panel, below the editor bar, which stays

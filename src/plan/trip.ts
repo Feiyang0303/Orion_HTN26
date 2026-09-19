@@ -115,15 +115,49 @@ const shortName = (n: string) => n.replace(/\s*\(.*?\)\s*/g, ' ').replace(/,.*$/
 /** `down` means OpenStreetMap did not answer, which is not the same as there being nothing to find. */
 export type BedChoice = { stays: Stay[]; looked: number; down?: boolean }
 
+/** A place on one of the days, as the bed sees it. */
+type Waypost = { name: string; lat: number; lon: number }
+
+/** The trip in the shape that decides where to sleep: each day in visiting
+    order, so what a bed costs can be measured rather than guessed. */
+export type TripShape = { days: Waypost[][]; centre: LatLon }
+
+/** What a bed costs every day of the trip, in metres: out to the first place
+    in the morning, back from the last at night. `worstOut` is the morning that
+    hurts most, which is the thing an average quietly hides. */
+function commute(bed: LatLon, days: Waypost[][]) {
+  let out = 0, round = 0, worstOut = 0, worst = 0, n = 0
+  for (const d of days) {
+    if (!d.length) continue
+    const o = metresBetween(bed, d[0]), b = metresBetween(d[d.length - 1], bed)
+    out += o; round += o + b
+    worstOut = Math.max(worstOut, o); worst = Math.max(worst, o + b)
+    n++
+  }
+  return n
+    ? { out: out / n, round: round / n, worstOut, worst, days: n }
+    : { out: 0, round: 0, worstOut: 0, worst: 0, days: 0 }
+}
+
 /* Where to sleep is not asked of the person and not decided by a model. Nobody
    can say what kind of bed they want before they know where their days are, and
    the only things that honestly bear on the choice are ones that can be
-   measured: how central it is to the places the trip actually visits, and what
-   OpenStreetMap has been told about it. So the list is ranked by arithmetic,
-   the reasons are written from the same numbers, and the best is chosen. */
-const score = (p: OsmPlace, wish: Wish) => {
+   measured: what it costs to reach your places every morning and come back
+   every night, and what OpenStreetMap has been told about it. So the list is
+   ranked by arithmetic, the reasons are written from the same numbers, and the
+   best of them is the one you wake up in.
+
+   The measure used to be the distance to the middle of the places, which is
+   the same thing only when the places sit in a ring around it. Two clusters
+   either side of a river have their middle in the water, and the bed that won
+   was the one nearest to nowhere in particular. */
+const score = (p: OsmPlace, wish: Wish, days: Waypost[][]) => {
   const stars = Number(p.tags.stars) || 0
-  let s = p.distM
+  const c = commute(p, days)
+  /* Half the round trip is the average one-way walk, which keeps this on the
+     same scale as the adjustments below; the worst morning is weighted in so a
+     bed cannot buy a good average with one miserable day. */
+  let s = c.round * 0.5 + c.worstOut * 0.5
   if (p.kind === 'hostel' && wish.party !== 'solo') s += 700          // a hostel for a couple or a family needs a reason
   if (p.kind === 'hostel' && wish.budget === 'free') s -= 250
   if (p.kind === 'apartment' && wish.days < 2) s += 500               // an apartment for one night is odd
@@ -133,15 +167,21 @@ const score = (p: OsmPlace, wish: Wish) => {
   return s
 }
 
-/** The best beds around the middle of the trip, best first. `exclude` are ids
-    already offered, so asking again gives a genuinely different one. */
+/** The beds that suit this trip, best first. `exclude` are ids already shown,
+    so asking again gives a genuinely different one rather than the hotel next
+    door to the last. */
 export async function chooseBeds(
-  centre: LatLon, wish: Wish, exclude: string[] = [], signal?: AbortSignal,
+  shape: TripShape, wish: Wish, exclude: string[] = [], signal?: AbortSignal,
 ): Promise<BedChoice> {
+  const { centre, days } = shape
+  /* The near ring first; the wider one sized to how spread out the places
+     actually are, so a compact trip is not offered a bed across the city. */
+  const spread = days.flat().reduce((m, w) => Math.max(m, metresBetween(centre, w)), 0)
+  const wide = Math.round(Math.max(2600, Math.min(6000, spread * 0.75)))
   // Both radii at once: the wider is only used when the near one is thin, but
   // asking in sequence would spend a second full wait finding that out.
   const kinds = ['hotel', 'hostel', 'guest_house', 'apartment']
-  const [near, far] = await Promise.allSettled([beds(centre, 1800, kinds, signal), beds(centre, 3200, kinds, signal)])
+  const [near, far] = await Promise.allSettled([beds(centre, 1800, kinds, signal), beds(centre, wide, kinds, signal)])
   if (near.status === 'rejected' && far.status === 'rejected') {
     if (near.reason instanceof OverpassDown) return { stays: [], looked: 0, down: true }
     throw near.reason
@@ -149,27 +189,38 @@ export async function chooseBeds(
   const nearList = near.status === 'fulfilled' ? near.value : []
   const farList = far.status === 'fulfilled' ? far.value : []
   const found = nearList.length >= 6 ? nearList : farList.length > nearList.length ? farList : nearList
-  const ranked = found.filter(p => !exclude.includes(p.id)).sort((a, b) => score(a, wish) - score(b, wish))
+  const ranked = found.filter(p => !exclude.includes(p.id)).sort((a, b) => score(a, wish, days) - score(b, wish, days))
   if (!ranked.length) return { stays: [], looked: found.length }
 
-  // Three that are genuinely different: the best, then the best of another kind if there is one.
+  /* One to sleep in, and two held behind it. They have to be genuinely apart:
+     three doors on the same street are one choice offered three times, and the
+     person asking for another bed is asking to be somewhere else. */
   const picks = [ranked[0]]
   for (const p of ranked.slice(1)) {
     if (picks.length >= 3) break
-    if (picks.every(q => q.kind !== p.kind) || picks.length + (ranked.length - picks.length) <= 3) picks.push(p)
+    if (picks.every(q => metresBetween(q, p) > 250)) picks.push(p)
   }
   for (const p of ranked) { if (picks.length >= 3) break; if (!picks.includes(p)) picks.push(p) }
 
-  const stays = picks.map(p => toStay(p, reasonFor(p)))
+  const stays = picks.map(p => toStay(p, reasonFor(p, days)))
   // Photographs of the street, where anyone has taken one.
   await Promise.all(stays.map(async b => { b.photos = await photosNear(b, 120, 3) }))
   return { stays, looked: found.length }
 }
 
-const reasonFor = (p: OsmPlace) => {
+const fmtM = (m: number) => (m < 950 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(1)} km`)
+
+/* The reason is the arithmetic, said out loud. It names the trip's own places,
+   because "central" means nothing and "800 m from where day two begins" is
+   something the person can weigh for themselves. */
+const reasonFor = (p: OsmPlace, days: Waypost[][]) => {
+  const c = commute(p, days)
+  const first = days[0]?.[0]
   const stars = Number(p.tags.stars)
   return [
-    `${p.distM < 950 ? `${Math.round(p.distM)} m` : `${(p.distM / 1000).toFixed(1)} km`} from the middle of your places`,
+    c.days === 0 ? `${fmtM(p.distM)} from the middle of your places`
+      : c.days === 1 && first ? `${fmtM(c.out)} to ${shortName(first.name)}, where the day starts`
+      : `${fmtM(c.out)} to the first place on an average day, never more than ${fmtM(c.worstOut)}`,
     Number.isFinite(stars) && stars > 0 ? `${stars} stars, self-declared` : '',
     p.tags['addr:street'] ? `on ${p.tags['addr:street']}` : '',
   ].filter(Boolean).join(' · ')

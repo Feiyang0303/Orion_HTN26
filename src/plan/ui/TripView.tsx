@@ -18,7 +18,7 @@ const km = (m: number) => (m < 950 ? `${Math.round(m / 10) * 10} m` : `${(m / 10
 const mins = (s: number) => `${Math.max(1, Math.round(s / 60))} min`
 
 
-export default function TripView({ trip, day, onDay, onFly, onFocus, planning, onBook }: {
+export default function TripView({ trip, day, onDay, onFly, onFocus, planning, onBook, onShuffleStay, shufflingStay }: {
   trip: Trip
   day: number | 'all'
   onDay: (d: number | 'all') => void
@@ -28,6 +28,10 @@ export default function TripView({ trip, day, onDay, onFly, onFocus, planning, o
   /** Open the same trip as a paper book: a spread per day, the map that
       unfolds, the bed's page, the stops' pages. */
   onBook?: () => void
+  /** Sleep somewhere else. Every day leaves from the bed and comes back to it,
+      so this re-routes and re-times the whole trip around the new one. */
+  onShuffleStay?: () => void
+  shufflingStay?: boolean
 }) {
   const shown = day === 'all' ? trip.days : trip.days.filter(d => d.number === day)
   const places = trip.days.reduce((n, d) => n + d.stops.length, 0)
@@ -59,7 +63,7 @@ export default function TripView({ trip, day, onDay, onFly, onFocus, planning, o
         </nav>
       )}
 
-      {stay && <StayCard stay={stay} />}
+      {stay && <StayCard stay={stay} onShuffle={onShuffleStay} busy={shufflingStay} />}
 
       <div className="t-days">
         {shown.map(d => <DayBlock key={d.number} day={d} many={trip.days.length > 1} stay={stay} onFly={onFly} onFocus={onFocus} planning={planning} />)}
@@ -73,7 +77,7 @@ export default function TripView({ trip, day, onDay, onFly, onFocus, planning, o
   )
 }
 
-function StayCard({ stay }: { stay: Stay }) {
+function StayCard({ stay, onShuffle, busy }: { stay: Stay; onShuffle?: () => void; busy?: boolean }) {
   const t = stay.tags ?? {}
   const facts = [
     stay.address, t.phone || t['contact:phone'],
@@ -88,6 +92,15 @@ function StayCard({ stay }: { stay: Stay }) {
         <h3>{stay.name}</h3>
         <p>{stay.why}</p>
         {facts.length > 0 && <p className="t-stay-facts">{facts.join(' · ')}</p>}
+        {/* One bed, not a shortlist: the arithmetic already knows which is
+            nearest the days. This is for when the person wants somewhere else
+            anyway — a different street, a different kind of room — and it
+            re-routes every day around whatever comes back. */}
+        {onShuffle && (
+          <button type="button" className="o-btn quiet small t-stay-swap" onClick={onShuffle} disabled={busy}>
+            <Icon name="again" size={13} /> {busy ? 'Finding another…' : 'Try another'}
+          </button>
+        )}
         {/* The street outside, as someone photographed it: the neighbourhood,
             never the rooms, and said so. */}
         {stay.photos?.length > 0 && (

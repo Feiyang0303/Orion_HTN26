@@ -64,13 +64,18 @@ function openSessionImpl(
     places is the centre that matters. Nothing here waits on the person; if
     OpenStreetMap is down the trip simply starts from the city and says so. */
 async function stageStayImpl(s: Session, drafts: DayDraft[]): Promise<Stay[]> {
-  const all = drafts.flatMap(d => d.stops)
+  // Each day in visiting order: the bed is priced against the mornings and
+  // evenings it actually causes, not against the middle of a cloud of places.
+  const days = drafts.map(d => d.stops.map(c => ({ name: c.name, lat: c.lat, lon: c.lon }))).filter(d => d.length)
+  const all = days.flat()
   const centre = all.length
     ? { lat: all.reduce((a, c) => a + c.lat, 0) / all.length, lon: all.reduce((a, c) => a + c.lon, 0) / all.length }
     : { lat: s.origin.lat, lon: s.origin.lon }
-  say(s, 'Scout', 'agent', 'working', s.offered.length ? 'Finding a different place to sleep' : 'Finding somewhere to sleep, central to the places')
-  const { stays, down } = await chooseBeds(centre, s.wish, s.offered, s.signal)
-  s.offered.push(...stays.map(b => b.id))
+  say(s, 'Scout', 'agent', 'working', s.offered.length ? 'Finding a different place to sleep' : 'Finding somewhere to sleep, close to the days')
+  const { stays, down } = await chooseBeds({ days, centre }, s.wish, s.offered, s.signal)
+  // Only the bed actually taken is written down as seen. The runners-up stay
+  // available, so asking for another does not burn three hotels at a time.
+  if (stays[0]) s.offered.push(stays[0].id)
   s.bed = stays[0] ?? null
   say(s, 'Scout', 'agent', stays.length ? 'done' : 'failed',
     stays.length ? `${stays[0].name}: ${stays[0].why}` : down ? 'OpenStreetMap did not answer, so the days start from the city centre' : 'OpenStreetMap lists nothing to sleep in near here, so the days start from the city centre')

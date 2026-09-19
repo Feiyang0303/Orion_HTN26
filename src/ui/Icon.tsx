@@ -12,6 +12,7 @@ const PATHS = {
   send: <path d="M4 12l16-8-6 16-2.6-6.4z" />,
   close: <path d="M6 6l12 12M18 6L6 18" />,
   spark: <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z" />,
+  again: <><path d="M20 12a8 8 0 1 1-2.6-5.9" /><path d="M20 3.4V7h-3.6" /></>,
 } as const
 
 export type IconName = keyof typeof PATHS
