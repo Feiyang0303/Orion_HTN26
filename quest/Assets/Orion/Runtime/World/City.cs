@@ -50,7 +50,7 @@ namespace Orion.World
             RenderSettings.fogColor = Look.Haze;
             RenderSettings.fogStartDistance = Rig.Far * .4f;
             RenderSettings.fogEndDistance = Rig.Far;
-            RenderSettings.skybox = new Material(Look.Shader("OrionSky"));
+            RenderSettings.skybox = new Material(Look.ShaderNamed("OrionSky"));
             return city;
         }
 

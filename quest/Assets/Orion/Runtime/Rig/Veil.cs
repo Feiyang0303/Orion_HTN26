@@ -22,7 +22,7 @@ namespace Orion
         {
             var mesh = Meshes.Quad(2, 2);
             mesh.bounds = new Bounds(Vector3.zero, Vector3.one * 1e6f);          // it has no place in the world, so it is never out of view
-            var veil = Look.Draw("Veil", head, mesh, new Material(Look.Shader("OrionVeil"))).AddComponent<Veil>();
+            var veil = Look.Draw("Veil", head, mesh, new Material(Look.ShaderNamed("OrionVeil"))).AddComponent<Veil>();
             veil.material = veil.GetComponent<Renderer>().sharedMaterial;
             return veil;
         }

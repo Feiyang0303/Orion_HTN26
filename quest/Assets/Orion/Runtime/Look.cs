@@ -20,11 +20,11 @@ namespace Orion
 
         public static Color Alpha(this Color c, float a) => new Color(c.r, c.g, c.b, a);
 
-        public static Shader Shader(string name) => Resources.Load<Shader>($"Shaders/{name}");
+        public static Shader ShaderNamed(string name) => Resources.Load<Shader>($"Shaders/{name}");
 
         public static Material Flat(Color colour, bool depthTest = true, bool depthWrite = false, int queue = 3000)
         {
-            var m = new Material(Shader("OrionFlat")) { color = colour, renderQueue = queue };
+            var m = new Material(ShaderNamed("OrionFlat")) { color = colour, renderQueue = queue };
             m.SetFloat("_ZTest", (float)(depthTest ? CompareFunction.LessEqual : CompareFunction.Always));
             m.SetFloat("_ZWrite", depthWrite ? 1 : 0);
             return m;

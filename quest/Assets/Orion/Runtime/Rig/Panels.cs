@@ -124,7 +124,7 @@ namespace Orion
             settings.colorClearValue = Color.clear;
             overlay.panelSettings = settings;
 
-            var strip = Look.Draw("Credits", rig, Meshes.Quad(W, W * PxHigh / Px), new Material(Look.Shader("OrionTexture")) { mainTexture = texture });
+            var strip = Look.Draw("Credits", rig, Meshes.Quad(W, W * PxHigh / Px), new Material(Look.ShaderNamed("OrionTexture")) { mainTexture = texture });
             strip.transform.localPosition = new Vector3(0, .83f, .98f);
             strip.transform.localRotation = Quaternion.Euler(31.5f, 0, 0);
         }
