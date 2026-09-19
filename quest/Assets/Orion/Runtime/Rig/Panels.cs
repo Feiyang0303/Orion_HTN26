@@ -111,7 +111,8 @@ namespace Orion
     /// instead, and the texture shown on a strip under the captions.</summary>
     public static class Credits
     {
-        const int Px = 1024, PxHigh = 96;
+        const int Px = 1024, PxHigh = 160;          // tall enough for the credits to wrap onto three rows: they are anchored to the bottom, and the logo is in the first
+        const float TextScale = 1.5f;               // Cesium's credits are 11 px, sized for a monitor
         const float W = .95f;
 
         public static void Make(Transform rig)
@@ -120,12 +121,14 @@ namespace Orion
             var texture = new RenderTexture(Px, PxHigh, 0) { name = "Credits" };
             var settings = UnityEngine.Object.Instantiate(overlay.panelSettings);
             settings.targetTexture = texture;
+            settings.scaleMode = PanelScaleMode.ConstantPixelSize;
+            settings.scale = TextScale;
             settings.clearColor = true;
             settings.colorClearValue = Color.clear;
             overlay.panelSettings = settings;
 
             var strip = Look.Draw("Credits", rig, Meshes.Quad(W, W * PxHigh / Px), new Material(Look.ShaderNamed("OrionTexture")) { mainTexture = texture });
-            strip.transform.localPosition = new Vector3(0, .83f, .98f);
+            strip.transform.localPosition = new Vector3(0, .78f, .928f);           // hung from the caption panel's lower edge, in its plane
             strip.transform.localRotation = Quaternion.Euler(31.5f, 0, 0);
         }
     }
