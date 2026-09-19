@@ -1003,3 +1003,73 @@
 
 /* the folded map needs room on its page */
 .jr-map-page .jr-fold { min-height: 340px; }
+
+/* ======================================================================
+   The studio: the crew working with someone watching.
+   ====================================================================== */
+
+/* the crew, as a thread */
+.jr-thread { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.jr-thread li {
+  display: grid; grid-template-columns: 78px 1fr; gap: 8px; align-items: baseline;
+  font-size: 11.5px; line-height: 1.45; color: #6a5c47;
+  padding: 3px 0; border-bottom: 1px dashed #d9caa9;
+}
+.jr-thread li b { font-family: var(--display); font-weight: 400; font-size: 13px; color: #8a5a2b; }
+.jr-thread li.is-working b::after { content: '…'; }
+.jr-thread li.is-failed b { color: #a2503c; }
+.jr-thread li.is-done b { color: #4a7c4e; }
+
+/* three beds */
+.jr-beds { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.jr-beds li button {
+  display: grid; grid-template-columns: 26px 1fr; gap: 10px; align-items: start; width: 100%; text-align: left;
+  background: rgba(255,250,236,.45); border: 1px solid #d9caa9; border-radius: 2px; padding: 10px 12px 10px 10px;
+  color: #3f3426;
+}
+.jr-beds li.is-on button { border-color: #9a6b3f; background: rgba(255,250,236,.85); box-shadow: 0 0 0 2px rgba(154,107,63,.18); }
+.jr-beds li .jr-disc { background: #b49b6c; }
+.jr-beds li.is-on .jr-disc { background: #9a6b3f; }
+.jr-bed-body { display: flex; flex-direction: column; gap: 2px; }
+.jr-bed-body b { font-family: var(--display); font-weight: 400; font-size: 17px; line-height: 1.2; }
+.jr-bed-body em { font-style: normal; font-size: 11px; color: #8a7a60; letter-spacing: .02em; }
+.jr-bed-body span { font-size: 12.5px; line-height: 1.5; color: #6a5c47; margin-top: 2px; }
+
+/* places by day */
+.jr-draft-day { margin: 0 0 10px; }
+.jr-draft-day h3 {
+  display: flex; align-items: center; gap: 8px; margin: 0 0 4px;
+  font-family: var(--display); font-weight: 400; font-size: 17px; color: #3f3426;
+}
+.jr-draft-day h3 em { font-style: normal; font-size: 11px; color: #9a8a70; margin-left: auto; }
+.jr-draft-day .jr-order li { grid-template-columns: 18px 1fr auto auto; }
+.jr-draft-day .jr-order .jr-mark { color: var(--c); }
+
+/* the plan and the editor beside it */
+.jr-studio-plan { display: grid; grid-template-columns: 1fr minmax(280px, 340px); gap: 16px; width: 100%; flex: 1; min-height: 0; }
+.jr-studio-book { min-width: 0; min-height: 0; overflow: auto; display: flex; flex-direction: column; align-items: center; }
+.jr-editor {
+  display: flex; flex-direction: column; min-height: 0;
+  background: #efe4cb; color: #3f3426; border: 1px solid #cdbd99; border-radius: 3px;
+  padding: 18px 18px 14px; box-shadow: 0 20px 44px rgba(0,0,0,.42), 0 1px 0 #fff8e8 inset;
+  background-image:
+    repeating-linear-gradient(0deg, rgba(120,95,60,.035) 0 1px, transparent 1px 3px),
+    radial-gradient(130% 90% at 12% 0%, rgba(255,250,236,.7), transparent 55%);
+}
+.jr-editor header .jr-caption { margin: 4px 0 10px; }
+.jr-editor-log { list-style: none; margin: 0; padding: 0; flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 8px; }
+.jr-editor-log li span {
+  display: inline-block; max-width: 92%; padding: 8px 11px; border-radius: 3px; font-size: 13px; line-height: 1.5;
+}
+.jr-editor-log li.is-you { text-align: right; }
+.jr-editor-log li.is-you span { background: #9a6b3f; color: #fbf3e2; }
+.jr-editor-log li.is-editor span { background: rgba(255,250,236,.7); border: 1px solid #d9caa9; color: #3f3426; }
+.jr-editor-log li.is-crew span { font-size: 11.5px; color: #8a7a60; background: none; padding: 0 2px; }
+.jr-editor-log li.is-busy span { color: #8a7a60; font-style: italic; }
+.jr-editor-ask { display: flex; gap: 8px; margin-top: 12px; }
+.jr-editor-ask input {
+  flex: 1; min-width: 0; padding: 9px 10px; font-size: 13px; color: #3f3426;
+  background: rgba(255,250,236,.7); border: 1px solid #cdbd99; border-radius: 2px;
+}
+.jr-editor-ask input::placeholder { color: #9a8a70; }
+.orion-overlay.jr-stage > .jr-studio-plan { margin-block: 0; }

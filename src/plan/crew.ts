@@ -57,8 +57,8 @@ export const guessKind = (name: string): Kind => KIND_RULES.find(([r]) => r.test
 
 /** What Wikipedia knows about the area, most-read first. The one network call
     the whole planning page shares. */
-export async function catalogueFor(origin: { lat: number; lon: number }, radiusM = RADIUS_M) {
-  return (await notable(origin, radiusM, 40)).filter(a => a.extract.length > 80)
+export async function catalogueFor(origin: { lat: number; lon: number }, radiusM = RADIUS_M, keep = 40) {
+  return (await notable(origin, radiusM, keep, 400)).filter(a => a.extract.length > 80)
 }
 
 /** A place the person pinned, resolved to something the day can actually fly
@@ -129,7 +129,7 @@ export async function matchWant(
 export const fromPick = (p: ScoutPick, wish: Wish): Candidate => ({
   id: slug(p.article.title), name: p.article.title, lat: p.article.lat, lon: p.article.lon,
   kind: p.kind, why: p.why, asked: false, article: p.article,
-  visitMin: visitMinutes(p.kind, wish.pace, wish.party),
+  visitMin: visitMinutes(p.kind, wish.pace, wish.party, p.minutes),
 })
 
 /** How many more places the day has room for, given what is pinned already. */
@@ -177,7 +177,7 @@ export async function findStops(opts: {
 
     const all = [...fixed, ...picks.map(p => fromPick(p, wish))]
     const secs = legSecs ? await legSecs(all).catch(() => []) : []
-    const t = audit(all.map(c => c.visitMin), secs, window, wish.transport, wish.meals)
+    const t = audit(all.map(c => c.visitMin), secs, window, wish.transport === 'auto' ? 'transit' : wish.transport, wish.meals)
     say('Timekeeper', 'tool', t.complaints.length ? 'failed' : 'done',
       t.complaints.join('; ') ||
       `${Math.round(t.totalMin)} min in all${t.mealMin ? `, ${t.mealMin} of them at the table` : ''}, inside ${wish.startAt}–${wish.endAt}`)

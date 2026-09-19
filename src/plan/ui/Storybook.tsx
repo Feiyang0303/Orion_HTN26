@@ -5,7 +5,7 @@ import { RouteSheet, TRANSPORT_MARK } from './RouteSheet'
 import FoldedMap from './FoldedMap'
 import type { Agent, CrewEvent } from '../events'
 import {
-  HHMM, LODGING_LABEL, MINS, PARTY_LABEL, TRANSPORT_LABEL,
+  HHMM, LODGING_LABEL, MINS, PARTY_LABEL, TRANSPORT_LABEL, TRANSPORT_WISH_LABEL,
   type Beat, type Day, type Plan, type Stop, type Table, type Target, type Trip,
 } from '../../types'
 
@@ -275,7 +275,7 @@ function Opening({ trip }: { trip: Trip }) {
         <div><dt>Days</dt><dd>{trip.days.length}</dd></div>
         <div><dt>Hours</dt><dd>{trip.wish.startAt} — {trip.wish.endAt}</dd></div>
         <div><dt>Who</dt><dd>{PARTY_LABEL[trip.wish.party]}</dd></div>
-        <div><dt>Getting about</dt><dd>{TRANSPORT_LABEL[trip.wish.transport]}</dd></div>
+        <div><dt>Getting about</dt><dd>{TRANSPORT_WISH_LABEL[trip.wish.transport]}</dd></div>
         <div><dt>Bed</dt><dd>{LODGING_LABEL[trip.wish.lodging]}</dd></div>
         {trip.wish.diet.trim() && <div><dt>At the table</dt><dd>{trip.wish.diet}</dd></div>}
       </dl>
@@ -419,7 +419,7 @@ function DayPage({ day, trip, onPick, onFly }: {
       {/* Pencil in the corner: the things a plan should say out loud and
           usually does not. Every line is counted from this day, never advice. */}
       <ul className="jr-day-notes">
-        {dayNotes(day, trip).map((n, i) => <li key={i}>{n}</li>)}
+        {dayNotes(day).map((n, i) => <li key={i}>{n}</li>)}
       </ul>
 
       <div className="jr-day-foot">
@@ -435,11 +435,13 @@ function DayPage({ day, trip, onPick, onFly }: {
 /** Four lines, in the spirit of the notes people pencil into a paper itinerary
     — and every one of them counted from this day rather than offered as
     advice the book has no standing to give. */
-function dayNotes(day: Day, trip: Trip): string[] {
+function dayNotes(day: Day): string[] {
   const out: string[] = []
   const km = kmOf(day)
-  const walking = trip.wish.transport === 'walk'
-  if (km) out.push(`${km.toFixed(1)} km ${walking ? 'on foot' : `by ${trip.wish.transport}`} across the day — ${walking ? 'the shoes matter more than the bag' : 'the legs are priced door to door'}.`)
+  const modes = [...new Set([...(day.approach ? [day.approach] : []), ...day.legs].map(l => l.transport))]
+  const walking = modes.length === 1 && modes[0] === 'walk'
+  const how = modes.map(m => TRANSPORT_LABEL[m].toLowerCase()).join(' and ')
+  if (km) out.push(`${km.toFixed(1)} km ${how} across the day — ${walking ? 'the shoes matter more than the bag' : 'each leg priced door to door in the mode that suits it'}.`)
   const est = day.legs.filter(l => l.estimated).length
   if (est) out.push(`${est} leg${est === 1 ? '' : 's'} timed by straight line; the router did not answer. Allow a little more.`)
   const hours = day.tables.filter(t => t.openingHours)
@@ -644,7 +646,7 @@ function Ending({ trip }: { trip: Trip }) {
       <ul className="jr-stats">
         <li><b>{stops.length}</b><span>stops</span></li>
         <li><b>{tripKm(trip).toFixed(1)}</b><span>km</span></li>
-        <li><b>{Math.round(moving)}</b><span>min {TRANSPORT_LABEL[trip.wish.transport].toLowerCase()}</span></li>
+        <li><b>{Math.round(moving)}</b><span>min on the move</span></li>
         <li><b>{Math.round(staying / 60 * 10) / 10}</b><span>hours there</span></li>
       </ul>
       <ol className="jr-passport" aria-label="Stamps">

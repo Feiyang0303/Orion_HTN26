@@ -4,7 +4,7 @@ import type { Agent, CrewEvent } from './events'
 import { geocode, locate } from './geocode'
 import { notable, photoFor, wikiSource, type Article } from './wikipedia'
 import { bestOrder, legsFor } from './router'
-import { schedule, windowOf } from './timekeeper'
+import { schedule, visitBudgetMin, windowOf } from './timekeeper'
 import { narrate, withAudio, writePreface, type Mode, type StopContext } from './narrator'
 import { estimateSec, speak } from './tts'
 import { catalogueFor, findStops, matchWant, roomFor, type Candidate, type Skeleton } from './crew'
@@ -25,6 +25,9 @@ const MAX_TTS_CONCURRENT = 3
 
 export type PipelineOptions = {
   onEvent?: (e: CrewEvent) => void
+  /** Stops already written on an earlier pass, by id. A revision that moves
+      one place must not re-narrate and re-voice the four that did not move. */
+  written?: Map<string, Stop>
   /** Where a beat's mp3 goes; returns the URL the browser will play it from.
       Browser: a blob URL. Fixture script: a file under public/plans/<id>/. */
   saveAudio: (planId: string, name: string, bytes: ArrayBuffer) => Promise<string>
@@ -62,6 +65,13 @@ export async function writePages(skeleton: Skeleton, opts: PipelineOptions): Pro
   let voiceFailed = false
 
   const stops: Stop[] = await Promise.all(chosen.map(async (c, index): Promise<Stop> => {
+    const before = opts.written?.get(c.id)
+    if (before) {
+      const brk = clock.breaks.find(b => b.after === index)
+      const stop: Stop = { ...before, visitMin: c.visitMin, arrival: clock.arrivals[index], ...(brk ? { breakMin: brk.minutes } : { breakMin: undefined }) }
+      onEvent({ type: 'stop', index, stop })
+      return stop
+    }
     const a = c.article
     const here = { lat: c.lat, lon: c.lon }
     const [near, photo] = await Promise.all([
@@ -77,7 +87,9 @@ export async function writePages(skeleton: Skeleton, opts: PipelineOptions): Pro
       arrival: clock.arrivals[index], visitMin: c.visitMin,
       previous: index ? chosen[index - 1].name : from?.name,
       legMin: index ? legs[index - 1]?.durationSec / 60 : approach ? approach.durationSec / 60 : undefined,
-      transport: wish.transport, party: wish.party, interests: wish.interests,
+      // The narrator is told how they actually arrived, not what the desk asked for.
+      transport: index ? legs[index - 1]?.transport : approach?.transport,
+      party: wish.party, interests: wish.interests,
       last: index === chosen.length - 1,
     }
 
@@ -174,7 +186,7 @@ export async function planTour(wish: Wish, opts: PipelineOptions & { mode?: Mode
 
   const extra = await findStops({
     catalogue, wish, mode, fixed, count: roomFor(mode, fixed.length), onEvent,
-    legSecs: async all => (await legsFor(all.map(c => ({ id: c.id, lat: c.lat, lon: c.lon })), wish.transport)).map(l => l.durationSec),
+    legSecs: async all => (await legsFor(all.map(c => ({ id: c.id, lat: c.lat, lon: c.lon })), wish.transport, wish.budget)).map(l => l.durationSec),
   })
 
   const all = [...fixed, ...extra]
@@ -182,11 +194,11 @@ export async function planTour(wish: Wish, opts: PipelineOptions & { mode?: Mode
 
   say('Router', 'tool', 'working', `Measuring real ${wish.transport} times`)
   const points = [...(from ? [from] : []), ...all]
-  const routed = await bestOrder(points, wish.transport, !!from)
+  const routed = await bestOrder(points, wish.transport, wish.budget, !!from)
   const seq = routed.order.filter(i => !(from && i === 0)).map(i => from ? i - 1 : i)
   const stops = seq.map(i => all[i])
   const chain = [...(from ? [{ id: 'from', lat: from.lat, lon: from.lon }] : []), ...stops]
-  const allLegs = await legsFor(chain, wish.transport)
+  const allLegs = await legsFor(chain, wish.transport, wish.budget)
   const approach = from ? allLegs[0] ?? null : null
   const legs = from ? allLegs.slice(1) : allLegs
   const km = (legs.reduce((s, l) => s + l.distanceM, 0) + (approach?.distanceM ?? 0)) / 1000
@@ -271,7 +283,7 @@ export async function planTrip(wish: Wish, opts: TripOptions): Promise<Trip> {
   /* ---- 3. which places belong to which day ------------------------------- */
 
   say('Scout', 'agent', 'working', `Laying ${all.length} places out over ${nDays} day${nDays === 1 ? '' : 's'}`)
-  const shapes = await shapeDays(all, nDays, wish)
+  const shapes = await shapeDays(all, nDays, wish, visitBudgetMin(wish))
   say('Scout', 'agent', 'done', shapes.map((d, i) => `${i + 1}. ${d.title} (${d.ids.length})`).join(' · '))
 
   /* ---- 4. each day: route it, write it, feed it -------------------------- */
@@ -286,11 +298,11 @@ export async function planTrip(wish: Wish, opts: TripOptions): Promise<Trip> {
     // The bed is where each day starts and ends once it is known; on the first
     // pass there is no bed yet, so a given starting point stands in.
     const points = [...(from ? [from] : []), ...chosen]
-    const routed = await bestOrder(points, wish.transport, !!from)
+    const routed = await bestOrder(points, wish.transport, wish.budget, !!from)
     const seq = routed.order.filter(k => !(from && k === 0)).map(k => from ? k - 1 : k)
     const ordered = seq.map(k => chosen[k])
     const chain = [...(from ? [{ id: 'from', lat: from.lat, lon: from.lon }] : []), ...ordered]
-    const allLegs = await legsFor(chain, wish.transport)
+    const allLegs = await legsFor(chain, wish.transport, wish.budget)
     const approach = from ? allLegs[0] ?? null : null
     const legs = from ? allLegs.slice(1) : allLegs
     say('Router', 'tool', 'done',
@@ -304,7 +316,7 @@ export async function planTrip(wish: Wish, opts: TripOptions): Promise<Trip> {
     say('Narrator', 'agent', 'working', `Day ${i + 1}: finding somewhere to eat`)
     const tables = await chooseTables({
       number: i + 1, title: shape.title,
-      stops: plan.stops.map(s => ({ id: s.id, name: s.name, lat: s.lat, lon: s.lon, arrival: s.arrival })),
+      stops: plan.stops.map(s => ({ id: s.id, name: s.name, lat: s.lat, lon: s.lon, arrival: s.arrival, visitMin: s.visitMin })),
     }, wish, signal)
     say('Narrator', 'agent', tables.length ? 'done' : 'failed',
       tables.length
@@ -323,7 +335,7 @@ export async function planTrip(wish: Wish, opts: TripOptions): Promise<Trip> {
     lon: spread.reduce((s, p) => s + p.lon, 0) / spread.length,
   }
   say('Scout', 'agent', 'working', 'Looking for somewhere to sleep, central to the whole trip')
-  const { stays, looked } = await chooseBeds(centre, wish, days.map(d => d.title), signal)
+  const { stays, looked } = await chooseBeds(centre, wish, days.map(d => d.title), [], signal)
   say('Scout', 'agent', stays.length ? 'done' : 'failed',
     stays.length
       ? `${stays[0].name}${stays.length > 1 ? ` and ${stays.length - 1} more` : ''}, from ${looked} OpenStreetMap knows of`

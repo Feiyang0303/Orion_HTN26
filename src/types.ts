@@ -30,6 +30,13 @@ export type Transport = 'walk' | 'cycle' | 'transit' | 'drive'
 export const TRANSPORT_LABEL: Record<Transport, string> = {
   walk: 'On foot', cycle: 'By bicycle', transit: 'Public transport', drive: 'Driving',
 }
+/** What the desk asks for: one mode for the whole trip, or "whatever suits",
+    which lets the router choose per leg from distance and budget. A Leg always
+    carries the concrete mode it was actually priced with. */
+export type TransportWish = Transport | 'auto'
+export const TRANSPORT_WISH_LABEL: Record<TransportWish, string> = {
+  ...TRANSPORT_LABEL, auto: 'Whatever suits each leg',
+}
 
 export type Pace = 'gentle' | 'steady' | 'full'
 /** How long a pace lingers, as a multiplier on the Timekeeper's per-kind table.
@@ -71,7 +78,7 @@ export type Wish = {
   from: string           // a hotel, a station, or ''
   interests: string[]
   pace: Pace
-  transport: Transport
+  transport: TransportWish
   party: Party
   budget: Budget
   /** Gaps the Timekeeper keeps clear. A day that schedules you into a

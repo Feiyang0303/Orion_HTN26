@@ -1,14 +1,15 @@
-import type { LatLon, Leg, Transport } from '../types'
+import type { Budget, LatLon, Leg, Transport, TransportWish } from '../types'
 import { postJson } from './net'
 import { decodePolyline, metresBetween } from './geo'
 
 /* ROUTER (code, not an LLM). Real travel times from Google Routes, the best
-   visiting order by brute force, then a real polyline per leg.
+ * visiting order by brute force, then a real polyline per leg.
  *
- * When the router cannot answer — no key, no route, a transit query at three
- * in the morning — the leg is not abandoned: it becomes a straight line priced
- * at the transport's own speed, and it is marked `estimated` so every surface
- * that draws or prints it can say so. */
+ * "Whatever suits" is decided here, per leg, from two things the desk actually
+ * said — how far apart the places are and what the day may cost — and never
+ * from a model's opinion of a city. A leg the router cannot answer for is a
+ * straight line priced at the mode's own speed, marked `estimated`, so every
+ * surface that draws or prints it can say so. */
 
 type Matrix = { distanceM: (number | null)[][]; durationSec: (number | null)[][] }
 
@@ -16,6 +17,18 @@ type Matrix = { distanceM: (number | null)[][]; durationSec: (number | null)[][]
 const SPEED: Record<Transport, number> = { walk: 1.35, cycle: 4.2, transit: 6.5, drive: 9 }
 /** Streets are not straight. Multiplier from crow-flies to plausible ground. */
 const DETOUR = 1.32
+
+/* Beyond this, on foot, a leg stops being part of a day out and becomes the
+   day. What replaces walking depends on the budget: free days take the bus,
+   modest days take the bus, and days where cost is not the point may drive. */
+const WALK_UP_TO_M: Record<Budget, number> = { free: 2200, modest: 1800, any: 1400 }
+const FAR_MODE: Record<Budget, Transport> = { free: 'transit', modest: 'transit', any: 'drive' }
+
+/** The concrete mode for one leg. */
+export function modeFor(wish: TransportWish, budget: Budget, crowM: number): Transport {
+  if (wish !== 'auto') return wish
+  return crowM <= WALK_UP_TO_M[budget] ? 'walk' : FAR_MODE[budget]
+}
 
 function* permutations<T>(items: T[]): Generator<T[]> {
   if (items.length <= 1) { yield items; return }
@@ -28,17 +41,21 @@ const guessSec = (a: LatLon, b: LatLon, transport: Transport) =>
   (metresBetween(a, b) * DETOUR) / SPEED[transport]
 
 /** Order of point indices minimising total travel time, start and end free.
-    `fixedFirst` pins index 0 in place, which is what a given starting point
-    means. Falls back to straight-line times when the matrix is unavailable. */
+    `fixedFirst` pins index 0 in place, which is what a hotel means. For
+    "whatever suits" the matrix is priced on foot if the set is compact and by
+    the budget's far mode otherwise — the order barely changes between them,
+    and the legs are priced properly afterwards anyway. */
 export async function bestOrder(
-  points: LatLon[], transport: Transport = 'walk', fixedFirst = false,
-): Promise<{ order: number[]; totalSec: number; estimated: boolean; minutes: number[][] }> {
-  if (points.length > 8) throw new Error('brute-force routing is only for fewer than 9 stops')
+  points: LatLon[], wish: TransportWish = 'walk', budget: Budget = 'modest', fixedFirst = false,
+): Promise<{ order: number[]; totalSec: number; estimated: boolean; minutes: number[][]; transport: Transport }> {
+  if (points.length > 9) throw new Error('brute-force routing is only for fewer than 10 stops')
+  let far = 0
+  for (let i = 0; i < points.length; i++) for (let j = i + 1; j < points.length; j++) far = Math.max(far, metresBetween(points[i], points[j]))
+  const transport = modeFor(wish, budget, far / 2)
+
   let m: Matrix | null = null
   try { m = await postJson<Matrix>('routes/matrix', { points, transport }) } catch { m = null }
-
-  const sec = (i: number, j: number) =>
-    m?.durationSec[i]?.[j] ?? guessSec(points[i], points[j], transport)
+  const sec = (i: number, j: number) => m?.durationSec[i]?.[j] ?? guessSec(points[i], points[j], transport)
 
   const movable = points.map((_, i) => i).filter(i => !(fixedFirst && i === 0))
   let best: number[] | null = null, bestSec = Infinity
@@ -49,21 +66,17 @@ export async function bestOrder(
     if (total < bestSec) { bestSec = total; best = order }
   }
   if (!best) throw new Error('These places cannot be connected.')
-  // The matrix comes back too: the planning page prints the hop between each
-  // pair while the person reorders them, and asking twice for the same numbers
-  // would be both slower and, when one call estimates and the other does not,
-  // inconsistent.
   const minutes = points.map((_, i) => points.map((__, j) => i === j ? 0 : sec(i, j) / 60))
-  return { order: best, totalSec: bestSec, estimated: !m, minutes }
+  return { order: best, totalSec: bestSec, estimated: !m, minutes, transport }
 }
 
-/** One leg per consecutive pair. A leg that the router will not answer for is
-    still a leg — a straight line, priced, and labelled as a guess. */
+/** One leg per consecutive pair, each priced in the mode that suits it. */
 export async function legsFor(
-  stops: { id: string; lat: number; lon: number }[], transport: Transport = 'walk',
+  stops: { id: string; lat: number; lon: number }[], wish: TransportWish = 'walk', budget: Budget = 'modest',
 ): Promise<Leg[]> {
   return Promise.all(stops.slice(1).map(async (to, i) => {
     const from = stops[i]
+    const transport = modeFor(wish, budget, metresBetween(from, to))
     try {
       const r = await postJson<{ encodedPolyline: string; distanceM: number; durationSec: number }>(
         'routes/walk', { from, to, transport })
@@ -83,5 +96,4 @@ export async function legsFor(
   }))
 }
 
-/** Kept for the old name; the flythrough imports nothing from here. */
 export const walkingLegs = legsFor

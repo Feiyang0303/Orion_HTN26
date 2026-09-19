@@ -2,14 +2,24 @@ import type { Meal, Pace, Party, Transport, Wish } from '../types'
 import { HHMM, MINS, PACE_FACTOR } from '../types'
 import type { Kind } from './scout'
 
-/* TIMEKEEPER (code). How long a visit takes is a lookup, not a model's guess;
-   the day either fits the window the person gave or it does not; and a day
-   that walks you into a cathedral at one o'clock with no lunch is a timetable,
-   not a plan. */
+/* TIMEKEEPER (code). How long a visit takes starts as a lookup, may be adjusted
+   by the scout within bounds, and is never a model's unbounded guess; the day
+   either fits the window the person gave or it does not; and a day that walks
+   you into a cathedral at one o'clock with no lunch is a timetable, not a
+   plan.
+
+   These are minutes for a *real* day out, not for a camera hold. A museum is
+   two hours. The flythrough paces itself from the narration and ignores this
+   number entirely, which is what lets the same Plan be both. */
 
 const VISIT_MIN: Record<Kind, number> = {
-  viewpoint: 15, monument: 15, plaza: 15, street: 20, bridge: 10,
-  church: 25, park: 30, market: 40, museum: 30, other: 15,
+  viewpoint: 30, monument: 30, plaza: 30, street: 45, bridge: 15,
+  church: 45, park: 60, market: 60, museum: 120, other: 40,
+}
+/** How far a per-place estimate may move from the table. */
+const BOUNDS: Record<Kind, [number, number]> = {
+  viewpoint: [15, 60], monument: [15, 75], plaza: [15, 60], street: [20, 90], bridge: [10, 30],
+  church: [20, 90], park: [30, 150], market: [30, 120], museum: [60, 240], other: [15, 120],
 }
 
 /* Who is travelling changes how long a place takes as much as the pace does.
@@ -17,10 +27,15 @@ const VISIT_MIN: Record<Kind, number> = {
    the sitting-down time nobody ever puts in a plan. */
 const PARTY_FACTOR: Record<Party, number> = { solo: 0.9, couple: 1, family: 1.25, easy: 1.2 }
 
-/** Minutes at a stop of this kind, for this pace and this party. Rounded to
-    five so the book prints a number a person would say out loud. */
-export const visitMinutes = (kind: Kind, pace: Pace = 'steady', party: Party = 'solo') =>
-  Math.max(10, Math.round(VISIT_MIN[kind] * PACE_FACTOR[pace] * PARTY_FACTOR[party] / 5) * 5)
+/** Minutes at a stop of this kind, for this pace and this party. `estimate`
+    is the scout's own figure for this particular place, honoured only inside
+    the kind's bounds. Rounded to five so the book prints a number a person
+    would say out loud. */
+export function visitMinutes(kind: Kind, pace: Pace = 'steady', party: Party = 'solo', estimate?: number) {
+  const [lo, hi] = BOUNDS[kind]
+  const base = estimate && Number.isFinite(estimate) ? Math.min(hi, Math.max(lo, estimate)) : VISIT_MIN[kind]
+  return Math.max(10, Math.round(base * PACE_FACTOR[pace] * PARTY_FACTOR[party] / 5) * 5)
+}
 
 export type DayWindow = { startMin: number; endMin: number }
 export const DEFAULT_WINDOW: DayWindow = { startMin: 10 * 60, endMin: 18 * 60 }
@@ -42,17 +57,15 @@ const MEAL: Record<Meal, { after: number; min: number; label: string }> = {
 }
 export const mealMinutes = (meals: Meal[]) => meals.reduce((s, m) => s + MEAL[m].min, 0)
 
-/** How long a single leg may be before it is not a compact day any more.
-    Walking twenty-five minutes between two stops is a slog; the same distance
-    on a bicycle or a tram is not, so the ceiling moves with the transport. */
+/** How long a single leg may be before it is not a compact day any more. */
 const LEG_CEILING_SEC: Record<Transport, number> = {
-  walk: 25 * 60, cycle: 20 * 60, transit: 35 * 60, drive: 30 * 60,
+  walk: 30 * 60, cycle: 25 * 60, transit: 45 * 60, drive: 40 * 60,
 }
 
 /** Total minutes for the day, and any hard complaints (empty = it fits). */
 export function audit(
   visitMins: number[], legSecs: number[],
-  window = DEFAULT_WINDOW, transport: Transport = 'walk', meals: Meal[] = [],
+  window = DEFAULT_WINDOW, transports: Transport[] | Transport = 'walk', meals: Meal[] = [],
 ) {
   const travelMin = legSecs.reduce((a, b) => a + b, 0) / 60
   const eating = mealMinutes(meals)
@@ -62,19 +75,16 @@ export function audit(
   if (totalMin > span) {
     complaints.push(`the day takes ${Math.round(totalMin)} min${eating ? ` (including ${eating} for meals)` : ''} but the window is ${span} min`)
   }
-  const ceiling = LEG_CEILING_SEC[transport]
   legSecs.forEach((s, i) => {
-    if (s > ceiling) complaints.push(`leg ${i + 1} is a ${Math.round(s / 60)} min journey, too long for a compact day`)
+    const t = Array.isArray(transports) ? transports[i] ?? 'walk' : transports
+    if (s > LEG_CEILING_SEC[t]) complaints.push(`leg ${i + 1} is a ${Math.round(s / 60)} min journey by ${t}, too long for a compact day`)
   })
-  return { totalMin, walkMin: travelMin, mealMin: eating, complaints }
+  return { totalMin, walkMin: travelMin, mealMin: eating, complaints, slackMin: span - totalMin }
 }
 
 export type Schedule = {
-  /** 'HH:MM' per stop. */
   arrivals: string[]
-  /** Minutes kept clear *after* stop i, and what for. Zero almost everywhere. */
   breaks: { after: number; minutes: number; label: string }[]
-  /** When the last stop is done with. */
   endsAt: string
 }
 
@@ -89,7 +99,6 @@ export function schedule(
   const arrivals = visitMins.map((stay, i) => {
     const at = clock
     clock += stay
-    // A meal lands in the first gap that opens after its hour, between stops.
     const due = pending[0]
     if (due && clock >= MEAL[due].after && i < visitMins.length - 1) {
       breaks.push({ after: i, minutes: MEAL[due].min, label: MEAL[due].label })
@@ -102,5 +111,12 @@ export function schedule(
   return { arrivals, breaks, endsAt: HHMM(clock) }
 }
 
-/** Kept for callers that only want the times. */
 export const arrivals = (v: number[], l: number[], w: DayWindow, a = 0, m: Meal[] = []) => schedule(v, l, w, a, m).arrivals
+
+/** How many minutes of visiting a day has room for, after meals and a guess
+    at travel. Used to decide how many places a day should hold *before* the
+    scout is asked, so it is asked for a number that can actually fit. */
+export function visitBudgetMin(wish: Wish, travelGuessMin = 60) {
+  const w = windowOf(wish)
+  return Math.max(60, w.endMin - w.startMin - mealMinutes(wish.meals) - travelGuessMin)
+}

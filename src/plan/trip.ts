@@ -1,5 +1,5 @@
 import type { LatLon, Meal, Stay, Table, Wish } from '../types'
-import { BUDGET_LABEL, LODGING_LABEL, PARTY_LABEL } from '../types'
+import { BUDGET_LABEL, LODGING_LABEL, MINS, PARTY_LABEL } from '../types'
 import { askJson } from './json'
 import { addressOf, beds, describe, tables as osmTables, type OsmPlace } from './osm'
 import { metresBetween } from './geo'
@@ -22,7 +22,11 @@ with its position, what kind of thing it is, and why it was chosen. Split them
 into the requested number of days.
 
 HOW TO SPLIT
-- Geography first. A day should be walkable as a cluster; the worst possible
+- Time first. Each place comes with the minutes it takes. A day has a budget of
+  minutes for visiting, given below; the places you put in a day must add up
+  to no more than that, and a day that is half empty is also wrong. Travel
+  between places costs time too — leave room for it.
+- Geography next. A day should be walkable as a cluster; the worst possible
   split sends someone back and forth across the city on consecutive days.
 - Balance the count, but not slavishly: a day around one enormous park and a
   day of four small squares are both fine days.
@@ -34,20 +38,22 @@ HOW TO SPLIT
 
 NAMING
 Give each day a short title of three to six words, drawn from what is actually
-in it — "The river and the old bridge", not "Cultural highlights". No colons,
-no "Day 1:".
+in it: name a place, a street, a river, or the one thing the day's places share
+— "The river and the old bridge", "Three temples east of the Kamo". Never a
+theme or a brochure phrase: not "Cultural highlights", not "Sacred spaces", not
+"Immersion", not "Retreats". No colons, no "Day 1:".
 
 Reply with a JSON object:
 {"days":[{"title":"<3-6 words>","ids":["<stop id>", ...],"why":"<max 14 words: what makes this a day>"}]}`
 
 export type DayShape = { title: string; ids: string[]; why: string }
 
-export async function shapeDays(all: Candidate[], count: number, wish: Wish): Promise<DayShape[]> {
+export async function shapeDays(all: Candidate[], count: number, wish: Wish, budgetMin: number): Promise<DayShape[]> {
   if (count <= 1) return [{ title: 'The day', ids: all.map(c => c.id), why: '' }]
   const lines = all.map(c =>
-    `${c.id} | ${c.name} | ${c.kind} | ${c.lat.toFixed(4)},${c.lon.toFixed(4)} | ${c.asked ? 'ASKED FOR BY NAME' : c.why}`)
+    `${c.id} | ${c.name} | ${c.kind} | ${c.visitMin} min | ${c.lat.toFixed(4)},${c.lon.toFixed(4)} | ${c.asked ? 'ASKED FOR BY NAME' : c.why}`)
   const user = [
-    `${count} days. ${all.length} places.`,
+    `${count} days. ${all.length} places. Each day has about ${budgetMin} minutes for visiting, after meals and travel.`,
     `Hours each day: ${wish.startAt} to ${wish.endAt}. Getting about: ${wish.transport}. Pace: ${wish.pace}.`,
     `Who: ${PARTY_LABEL[wish.party]}.`,
     wish.interests.length ? `Interests: ${wish.interests.join(', ')}.` : '',
@@ -91,56 +97,73 @@ export async function shapeDays(all: Candidate[], count: number, wish: Wish): Pr
 /* -------------------------------------------------------------- the bedroom */
 
 const BED_SYSTEM = `You are choosing where someone sleeps on a trip. You are given a list of real
-places from OpenStreetMap — everything it knows within walking distance of the
-places they will be visiting — and, for each, its distance from the centre of
-those places and whatever tags it carries.
+places from OpenStreetMap — everything it knows within reach of the places they
+will be visiting — and, for each, its distance from the centre of those places
+and whatever tags it carries.
 
-Choose up to three, best first. Judge only on what you are shown:
+Choose exactly three, ranked, best first. Judge only on what you are shown:
 - How central it is to the days they will actually be having. That is the one
-  thing you can measure and the one thing that matters most.
-- The sort of bed they asked for, and who is travelling.
-- Tags that genuinely bear on the choice: stars, wheelchair access, the street
-  it stands on.
+  thing you can measure and the one thing that matters most; say the distance.
+- The sort of bed they asked for, and who is travelling. A hostel for a family
+  with children needs a reason; an apartment for one night is odd.
+- What the budget says. "Free things only" is not about the bed, but a
+  self-declared five-star hotel is the wrong pick for someone who said the odd
+  ticket is fine.
+- Tags that genuinely bear on the choice: stars (self-declared), wheelchair
+  access, the street it stands on, whether it is a chain.
+
+Make the three genuinely different from one another — nearest, quietest,
+best-appointed, whatever the list supports — so the choice is a real one.
 
 HARD RULES
 - Choose only from the list. Never name a hotel that is not in it.
 - Say nothing about price, quality, breakfast, service, views or atmosphere.
   You have not been told any of those and OpenStreetMap does not know them. A
   self-declared star count may be mentioned as self-declared.
-- The reason must cite something you were actually shown.
+- Each reason must cite something you were actually shown, and say in a few
+  words what makes this one different from the other two.
 
-Reply with a JSON object: {"picks":[{"id":"<id>","why":"<max 16 words, citing what you were shown>"}]}`
+Reply with a JSON object: {"picks":[{"id":"<id>","why":"<max 22 words>"}]}`
 
+export type BedChoice = { stays: Stay[]; looked: number }
+
+/** Three beds, ranked, with reasons. `exclude` are ids already offered — the
+    shuffle — so a new batch is a genuinely new batch. */
 export async function chooseBeds(
-  centre: LatLon, wish: Wish, dayNames: string[], signal?: AbortSignal,
-): Promise<{ stays: Stay[]; looked: number }> {
+  centre: LatLon, wish: Wish, context: string[], exclude: string[] = [], signal?: AbortSignal,
+): Promise<BedChoice> {
   const kinds = wish.lodging === 'any'
     ? ['hotel', 'hostel', 'guest_house', 'apartment']
     : [wish.lodging === 'guesthouse' ? 'guest_house' : wish.lodging]
-  let found = await beds(centre, 1600, kinds, signal)
-  if (found.length < 4) found = await beds(centre, 3000, ['hotel', 'hostel', 'guest_house', 'apartment'], signal)
-  if (!found.length) return { stays: [], looked: 0 }
+  let found = await beds(centre, 1800, kinds, signal)
+  if (found.length < 6) found = await beds(centre, 3200, ['hotel', 'hostel', 'guest_house', 'apartment'], signal)
+  const fresh = found.filter(p => !exclude.includes(p.id))
+  if (!fresh.length) return { stays: [], looked: found.length }
 
-  const shortlist = found.slice(0, 40)
+  const shortlist = fresh.slice(0, 40)
   const user = [
     `They asked for: ${LODGING_LABEL[wish.lodging]}. Who: ${PARTY_LABEL[wish.party]}. Budget: ${BUDGET_LABEL[wish.budget]}.`,
-    `Distances are from the centre of everywhere they are going over ${dayNames.length} day${dayNames.length === 1 ? '' : 's'}: ${dayNames.join('; ')}.`,
+    `${wish.days} night${wish.days === 1 ? '' : 's'}. Distances are from the centre of the places they are likely to visit: ${context.slice(0, 8).join('; ')}.`,
+    exclude.length ? `They have already seen ${exclude.length} suggestions and asked for different ones.` : '',
     '',
     shortlist.map(describe).join('\n'),
-  ].join('\n')
+  ].filter(Boolean).join('\n')
 
-  const r = await askJson<{ picks: { id: string; why: string }[] }>('critic', BED_SYSTEM, user, 1500)
+  const r = await askJson<{ picks: { id: string; why: string }[] }>('critic', BED_SYSTEM, user, 1800)
     .catch(() => ({ picks: [] as { id: string; why: string }[] }))
   const byId = new Map(shortlist.map(p => [p.id, p]))
   const stays: Stay[] = (r.picks ?? []).flatMap(p => {
     const hit = byId.get(p.id)
-    if (!hit) return []
-    return [toStay(hit, String(p.why ?? '').trim())]
+    return hit ? [toStay(hit, String(p.why ?? '').trim())] : []
   }).slice(0, 3)
 
-  // If the model gave nothing usable, the nearest named bed of the right sort
-  // is still a better answer than an empty page, and it is honest about why.
-  if (!stays.length) stays.push(toStay(shortlist[0], 'the nearest place to sleep to the middle of your days'))
+  // Fill to three from the nearest, honestly labelled, so the page is never
+  // a single card pretending to be a choice.
+  for (const p of shortlist) {
+    if (stays.length >= 3) break
+    if (stays.some(s => s.id === p.id)) continue
+    stays.push(toStay(p, `${Math.round(p.distM)} m from the middle of your days — the nearest the crew did not otherwise rank`))
+  }
   return { stays, looked: found.length }
 }
 
@@ -173,17 +196,21 @@ HARD RULES
 Reply with a JSON object: {"meals":[{"meal":"lunch"|"dinner","id":"<id>","why":"<max 14 words>"}]}`
 
 export async function chooseTables(
-  day: { number: number; title: string; stops: { id: string; name: string; lat: number; lon: number; arrival: string }[] },
+  day: { number: number; title: string; stops: { id: string; name: string; lat: number; lon: number; arrival: string; visitMin?: number }[] },
   wish: Wish, signal?: AbortSignal,
 ): Promise<Table[]> {
   const wanted = wish.meals
   if (!wanted.length || !day.stops.length) return []
 
-  /* Lunch is looked for around the stop they will be at in the middle of the
-     day, dinner around the last one — which is the whole reason these are
-     per-day rather than per-trip. */
-  const anchorFor = (meal: Meal) =>
-    meal === 'lunch' ? day.stops[Math.floor((day.stops.length - 1) / 2)] : day.stops[day.stops.length - 1]
+  /* Lunch is looked for around the stop they leave nearest a quarter to one —
+     the same rule the Timekeeper used to place the gap, so the table is where
+     the clock says they will be hungry, not at the arithmetic middle of the
+     list. Dinner is around the last stop. */
+  const leaving = (st: typeof day.stops[number]) => MINS(st.arrival) + (st.visitMin ?? 30)
+  const anchorFor = (meal: Meal) => {
+    if (meal !== 'lunch') return day.stops[day.stops.length - 1]
+    return [...day.stops].sort((a, b) => Math.abs(leaving(a) - (12 * 60 + 45)) - Math.abs(leaving(b) - (12 * 60 + 45)))[0]
+  }
 
   const lists = await Promise.all(wanted.map(async meal => {
     const anchor = anchorFor(meal)

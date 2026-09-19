@@ -1,4 +1,4 @@
-import type { Budget, Party, Transport, Wish } from '../types'
+import type { Budget, Party, TransportWish, Wish } from '../types'
 import type { Article } from './wikipedia'
 import { askJson } from './json'
 import { metresBetween } from './geo'
@@ -14,7 +14,7 @@ import { metresBetween } from './geo'
 
 export const KINDS = ['viewpoint', 'monument', 'plaza', 'street', 'bridge', 'church', 'park', 'market', 'museum', 'other'] as const
 export type Kind = typeof KINDS[number]
-export type ScoutPick = { article: Article; why: string; kind: Kind }
+export type ScoutPick = { article: Article; why: string; kind: Kind; minutes?: number }
 
 const SYSTEM = `You are the scout for a flight over a real city. A camera will fly to each
 place you choose, hold above it while a guide speaks, then fly on to the next.
@@ -50,6 +50,14 @@ what they said interests them, and what the day may cost. Use them:
 - Short hours mean the set has to be small enough to be unhurried; you are not
   told to fill the day.
 
+HOW LONG EACH TAKES
+For every pick, say how many minutes a visitor actually spends there on a real
+day: a cathedral is forty-five minutes to an hour, a big museum is two to
+three hours, a viewpoint is twenty minutes, a market is an hour with lunch.
+Be honest rather than generous — the day has to fit, and a plan that gives
+fifteen minutes to the Louvre is not a plan. Your estimates are checked
+against a table and clamped, so a wild number simply gets ignored.
+
 HONESTY
 - Choose only ids from the catalogue. Never invent a place, a name or an id.
 - The "why" must be specific to this place and drawn from what the catalogue
@@ -58,14 +66,14 @@ HONESTY
   asked. A padded day is worse than a short one.
 
 Reply with a JSON object:
-{"picks":[{"id":"<catalogue id>","why":"<max 12 words, specific>","kind":"<one of: ${KINDS.join(', ')}>"}]}`
+{"picks":[{"id":"<catalogue id>","why":"<max 12 words, specific>","kind":"<one of: ${KINDS.join(', ')}>","minutes":<integer>}]}`
 
 /** The parts of the desk the scout is shown. Everything here changes what it
     should choose; nothing here is passed on for decoration. */
 export type ScoutWish = {
   interests?: string[]
   pace?: Wish['pace']
-  transport?: Transport
+  transport?: TransportWish
   party?: Party
   budget?: Budget
   startAt?: string
@@ -92,8 +100,9 @@ const BUDGET_LINE: Record<Budget, string> = {
   modest: 'the odd ticket is fine',
   any: 'cost is not a consideration',
 }
-const MOVE: Record<Transport, string> = {
+const MOVE: Record<TransportWish, string> = {
   walk: 'on foot', cycle: 'by bicycle', transit: 'by public transport', drive: 'driving',
+  auto: 'on foot where it is close, otherwise by whatever the budget allows',
 }
 
 export async function scout(catalogue: Article[], brief: ScoutBrief): Promise<ScoutPick[]> {
@@ -122,7 +131,7 @@ export async function scout(catalogue: Article[], brief: ScoutBrief): Promise<Sc
       ? `\n\nYour previous set (${previous.join(', ')}) was rejected for:\n- ${complaints.join('\n- ')}\nFix these; keep what was not complained about.`
       : '')
 
-  const { picks } = await askJson<{ picks: { id: string; why: string; kind: string }[] }>('scout', SYSTEM, user, 4000)
+  const { picks } = await askJson<{ picks: { id: string; why: string; kind: string; minutes?: number }[] }>('scout', SYSTEM, user, 4000)
 
   /* The spread rule is checked here rather than trusted. A model asked not to
      cluster will still cluster, and this is three lines of arithmetic. */
@@ -139,6 +148,7 @@ export async function scout(catalogue: Article[], brief: ScoutBrief): Promise<Sc
     keep.push({
       article, why: String(p.why ?? '').trim(),
       kind: (KINDS as readonly string[]).includes(p.kind) ? p.kind as Kind : 'other',
+      minutes: Number.isFinite(Number(p.minutes)) ? Number(p.minutes) : undefined,
     })
   }
   if (!keep.length) throw new Error('The scout could not find enough good places nearby.')

@@ -4,8 +4,8 @@ import { markFor } from './decor'
 import MapSheet, { type MapPin } from './MapSheet'
 import { locate, reverseGeocode, suggest, type Place } from '../geocode'
 import {
-  BUDGET_LABEL, LODGING_LABEL, PARTY_LABEL, TRANSPORT_LABEL,
-  type Budget, type Lodging, type Meal, type Pace, type Party, type Transport, type Wish,
+  BUDGET_LABEL, LODGING_LABEL, PARTY_LABEL, TRANSPORT_WISH_LABEL,
+  type Budget, type Lodging, type Meal, type Pace, type Party, type TransportWish, type Wish,
 } from '../../types'
 
 /* The desk.
@@ -28,7 +28,7 @@ export const STOP_COLOURS = ['#3f7fd6', '#8e5fc9', '#3f9d63', '#e37d2d', '#d94a5
 const colourAt = (i: number) => STOP_COLOURS[i % STOP_COLOURS.length]
 
 const INTERESTS = ['Art and museums', 'History', 'Food and markets', 'Parks and green space', 'Views', 'Music and theatre', 'Architecture', 'Nightlife']
-const TRANSPORTS: Transport[] = ['walk', 'cycle', 'transit', 'drive']
+const TRANSPORTS: TransportWish[] = ['auto', 'walk', 'cycle', 'transit', 'drive']
 const PACES: Pace[] = ['gentle', 'steady', 'full']
 const PARTIES: Party[] = ['solo', 'couple', 'family', 'easy']
 const BUDGETS: Budget[] = ['free', 'modest', 'any']
@@ -63,7 +63,7 @@ export default function Desk({ seedCity, onCity, onPlan, onHome, error }: {
 
   const [wish, setWish] = useState<Omit<Wish, 'city' | 'wants' | 'from'>>({
     startAt: '09:30', endAt: '18:00', interests: ['History'], pace: 'steady',
-    transport: 'walk', party: 'solo', budget: 'modest', meals: ['lunch', 'dinner'],
+    transport: 'auto', party: 'solo', budget: 'modest', meals: ['lunch', 'dinner'],
     days: 3, lodging: 'any', diet: '',
   })
 
@@ -242,10 +242,10 @@ export default function Desk({ seedCity, onCity, onPlan, onHome, error }: {
             ))}
           </fieldset>
 
-          <fieldset className="jr-chips"><legend>Getting about</legend>
+          <fieldset className="jr-chips"><legend>Getting about <em>“whatever suits” walks short legs and takes the bus, or a car, for long ones — by budget</em></legend>
             {TRANSPORTS.map(t => (
               <button key={t} type="button" aria-pressed={wish.transport === t}
-                onClick={() => setWish({ ...wish, transport: t })}>{TRANSPORT_LABEL[t]}</button>
+                onClick={() => setWish({ ...wish, transport: t })}>{TRANSPORT_WISH_LABEL[t]}</button>
             ))}
           </fieldset>
 
