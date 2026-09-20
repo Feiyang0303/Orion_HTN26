@@ -205,6 +205,25 @@ namespace Orion.Tests
         }
 
         [Test]
+        public void OnlyTheCityTouchesTheTileset()
+        {
+            // Most of Cesium3DTileset's setters reload it, and a reload is a billed request to Google. One set in a per-frame
+            // loop once spent a day's quota in two minutes. So the type may be named in one file only.
+            foreach (string file in Directory.GetFiles($"{Application.dataPath}/Orion/Runtime", "*.cs", SearchOption.AllDirectories))
+                if (Path.GetFileName(file) != "City.cs") StringAssert.DoesNotContain("Cesium3DTileset", File.ReadAllText(file), Path.GetFileName(file));
+        }
+
+        [Test]
+        public void TheCitySetsTheTilesetUpInOnePlace()
+        {
+            string city = File.ReadAllText($"{Application.dataPath}/Orion/Runtime/World/City.cs");
+            int make = city.IndexOf("public static City Make", System.StringComparison.Ordinal), end = city.IndexOf("return city;", make, System.StringComparison.Ordinal);
+            var assignments = System.Text.RegularExpressions.Regex.Matches(city, @"\b(t|tiles)\.[a-zA-Z]+\s*=[^=]");
+            Assert.Greater(assignments.Count, 5);
+            foreach (System.Text.RegularExpressions.Match m in assignments) Assert.IsTrue(m.Index > make && m.Index < end, $"'{m.Value.Trim()}' is set outside Make");
+        }
+
+        [Test]
         public void TheDirectorNeverComesCloserThanPhotogrammetryAllows()
         {
             foreach (float h in new[] { 0f, 25f, 60f, 120f, 250f })

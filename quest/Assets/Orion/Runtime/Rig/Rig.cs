@@ -18,7 +18,7 @@ namespace Orion
         /// <summary>Where a head is taken to be above the floor of the person's space.</summary>
         public const float HeadHeight = 1.6f;
         /// <summary>How far the city is drawn, and fetched. Beyond it is haze: a headset cannot afford the tiles all the way to the horizon.</summary>
-        public const float Far = 4500;
+        public const float Far = 3000;
         const float Foveation = .66f;                          // 0 none, 1 the most the headset offers
 
         public Camera Head { get; private set; }

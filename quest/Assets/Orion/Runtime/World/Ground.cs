@@ -12,32 +12,41 @@ namespace Orion.World
      * Height is a downward ray onto the tiles' physics meshes. Rays are drained a few per frame
      * from a queue that never restarts, and re-queued as finer tiles arrive, because the surface
      * refines under the anchors. A point no ray has landed on yet sits at the height of the
-     * nearest thing that has been found: the ellipsoid itself can be a long way below a city. */
+     * nearest thing that has been found: the ellipsoid itself can be a long way below a city.
+     *
+     * The first tiles to arrive are the coarsest, slabs of the globe whose surface can be kilometres
+     * from the real one. So a landing is only believed (`Grounded`) once a second ray, a couple of
+     * seconds later, lands at the same height. Once believed it stays believed, and keeps refining. */
 
     public class Ground
     {
         public readonly struct Placed
         {
-            public readonly Vector3 Pos; public readonly bool Grounded;
-            public Placed(Vector3 pos, bool grounded) { Pos = pos; Grounded = grounded; }
+            public readonly Vector3 Pos;
+            /// <summary>A ray has landed here, and landed at the same height again a while later.</summary>
+            public readonly bool Grounded;
+            /// <summary>When a ray first landed at this height, or -1 if none has landed at all.</summary>
+            public readonly float Since;
+            public Placed(Vector3 pos, bool grounded, float since) { Pos = pos; Grounded = grounded; Since = since; }
         }
 
         const int RaysPerFrame = 4;
         const float RayStartHeight = 1500, RayRange = 5000, RecheckSec = 2.5f;
+        const float ConfirmSec = 2, ConfirmWithin = 3;         // a height is believed once rays this far apart in time land within this many metres
 
         readonly CesiumGeoreference georeference;
-        readonly Cesium3DTileset tileset;
+        readonly City city;
         readonly int mask;
         readonly Dictionary<string, Placed> cells = new Dictionary<string, Placed>();
         readonly Queue<Anchor> queue = new Queue<Anchor>();
         List<Anchor> anchors = new List<Anchor>();
         float lastFull = -RecheckSec, lastProgress = -1, knownGround;
 
-        public Ground(CesiumGeoreference georeference, Cesium3DTileset tileset)
+        public Ground(City city)
         {
-            this.georeference = georeference;
-            this.tileset = tileset;
-            mask = 1 << tileset.gameObject.layer;
+            this.city = city;
+            georeference = city.Georeference;
+            mask = 1 << city.Layer;
         }
 
         public bool TryGet(string key, out Placed placed) => cells.TryGetValue(key, out placed);
@@ -70,7 +79,7 @@ namespace Orion.World
             // cheap), and a stale one corrects itself. When nothing is arriving, only the unlanded are retried.
             if (queue.Count == 0)
             {
-                float progress = tileset.ComputeLoadProgress();
+                float progress = city.LoadProgress;
                 if (progress != lastProgress && now - lastFull > RecheckSec) { lastFull = now; lastProgress = progress; Requeue(); }
                 else foreach (var a in anchors) if (!IsGrounded(a)) queue.Enqueue(a);
             }
@@ -83,10 +92,14 @@ namespace Orion.World
                 Placed next;
                 if (Physics.Raycast(new Vector3(p.x, p.y + RayStartHeight, p.z), Vector3.down, out var hit, RayRange, mask))
                 {
-                    next = new Placed(new Vector3(p.x, hit.point.y, p.z), true);
-                    knownGround = hit.point.y;
+                    var at = new Vector3(p.x, hit.point.y, p.z);
+                    bool same = had && prev.Since >= 0 && Mathf.Abs(prev.Pos.y - hit.point.y) < ConfirmWithin;
+                    if (had && prev.Grounded) next = new Placed(at, true, prev.Since);
+                    else if (same) next = new Placed(at, now - prev.Since >= ConfirmSec, prev.Since);
+                    else next = new Placed(at, false, now);
+                    if (next.Grounded) knownGround = hit.point.y;
                 }
-                else next = had && prev.Grounded ? prev : new Placed(new Vector3(p.x, p.y + knownGround, p.z), false);
+                else next = had && prev.Since >= 0 ? prev : new Placed(new Vector3(p.x, p.y + knownGround, p.z), false, -1);
                 cells[a.Key] = next;
                 if (!had || prev.Grounded != next.Grounded || (prev.Pos - next.Pos).sqrMagnitude > .25f) changed = true;
             }

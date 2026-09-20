@@ -6,8 +6,8 @@ plays the trip you last sent to VR from the web (`GET /api/vr/current`).
 
 Unity 6.3 LTS (`6000.3.24f1`) · Cesium for Unity 1.25 · URP · OpenXR with Meta Quest Support.
 
-> **Status: compiles outside the editor; not yet opened in it.** Unity will not start without a
-> licence (sign in to Unity Hub). See "What has been verified" at the bottom.
+> **Status: builds and boots; the city itself has not been seen yet.** See "What has been verified" at
+> the bottom.
 
 ## How it is put together
 
@@ -33,14 +33,31 @@ console (Prev · Pause/Play · Next · Ride: smooth/blinks · Day › · Leave) 
   its first stop (the web's `/vr` also skips the dive).
 - **An ungrounded point takes the height of the last ground found**, not the ellipsoid, which can be
   a long way under a city.
-- Tile detail: Cesium has one screen-space error per tileset (12 px at a stop, 24 px on a leg),
-  64 px for what is out of view, fog culling beyond 4.5 km, a 512 MB tile cache.
+- Tile detail: one screen-space error for the whole flight (12 px), 64 px for what is out of view, fog culling beyond 4.5 km, a 512 MB tile cache.
+
+## Never set a Cesium3DTileset property in a loop
+
+Most of `Cesium3DTileset`'s setters (`maximumScreenSpaceError`, `url`, …) **reload the whole tileset**, and
+each reload is a billable root request to Google (10,000 a day by default, then HTTP 429 for everyone
+using the key, the web app included). An early version loosened the screen-space error on legs every
+frame, and one headless play-mode run used the entire day's quota in under two minutes. `City` now sets
+every property once, the app caps its frame rate outside a headset, a refusal is shown on the caption
+panel, and `./build.sh smoke` stops at the first refusal.
+
+Guards against a repeat, in order of how much they are worth:
+1. **On the key, in Google Cloud (do this):** cap "3D Tiles root requests per day" (Map Tiles API → Quotas) at a few
+   hundred, and add a Billing budget alert. Only this protects the web app too, and only this cannot be got round.
+2. `City` keeps the `Cesium3DTileset` private; a test fails if any other runtime file names the type, or if `City` sets a
+   tileset property outside `Make`. There is one `City` per run, enforced.
+3. `TileBudget`: each device loads Google's tileset at most 40 times a (Pacific) day, counted before the request is made.
+   Past that the app says so and does not ask. A normal run spends one.
 
 ## The Google tiles key
 
 The build reads `VITE_GOOGLE_MAPS_KEY` from the web app's `.env` one directory up (or
 `ORION_GOOGLE_TILES_KEY` if set) and writes it to `Assets/Orion/Resources/OrionConfig.json`, which is
-gitignored. It is never logged or committed. Be aware it ships inside the APK, and the key is
+gitignored. The build never logs or commits it. Cesium itself writes the tileset's address, key
+included, into the Unity log when a load fails (`Logs/` is gitignored; `adb logcat` on the headset shows it too). Be aware it ships inside the APK, and the key is
 currently unrestricted: keep the APK to yourselves, and cap the key's quota in Google Cloud.
 
 Terms: Google's Map Tiles API policies list Cesium for Unity as a supported renderer. Tiles may not
@@ -79,15 +96,24 @@ In the editor (no headset), press Play: the view is taken from where the head wo
 `ORION_FIXTURE=paris-short-v1` in the environment to fly the offline fixture instead of the trip
 last sent.
 
+```sh
+./build.sh smoke     # plays the flight headless; state in the log, Logs/smoke-N.png from the head camera; stops if the tile server refuses
+# the same without touching Google at all: a synthetic trip over a public sample tileset
+ORION_FIXTURE=sample-block ORION_TILESET_URL=https://raw.githubusercontent.com/CesiumGS/3d-tiles-samples/main/1.0/TilesetWithRequestVolume/city/tileset.json ./build.sh smoke
+```
+
 ## What has been verified
 
 | | |
 |---|---|
 | Google key works without a Referer (so from a native app) | **Checked** with curl, 2026-09-19 |
 | Map Tiles terms allow Cesium for Unity | **Read** on Google's policy page |
-| API shape (`/api/vr/current`, fixture plan) | **Checked** against the live endpoint and the fixture |
-| Runtime C# compiles | **Yes, outside the editor**: built with `dotnet` against Unity 6000.3.24f1's own DLLs and the Cesium 1.25.1, TextMeshPro, Input System and Mathematics sources (a deliberate mistake is caught, so the check is real). `Editor/Build.cs` is covered the same way **except** its URP method (checked by reading URP 17.3's source) and one OpenXR editor call (`FeatureHelpers.RefreshFeatures`, signature read from source) |
-| Logic tests pass | **8 of 12** under `dotnet` (timeline, ride limits, mid-leg blink, follower caps, yaw, height smoothing, paths, director). The other 4 read the fixture with `JsonUtility`, which only exists inside the editor |
-| Editor play mode: city loads, flight plays | not yet |
-| APK builds | not yet |
-| Anything in the headset | only you can |
+| API shape (`/api/vr/current`, trips, fixture) | **Checked** against the live endpoint (a Toronto trip: no clips, two silent stops, a 3.7 km leg) and the fixture |
+| Project opens and compiles in Unity 6000.3.24f1 | **Yes**, from the command line (`./build.sh setup`) |
+| Logic tests | **15 of 15 pass** in the editor (`./build.sh test`) |
+| APK builds | **Yes**: 47 MB, arm64, IL2CPP, Vulkan, OpenXR loader + Meta Quest feature + Touch profile + foveation, multiview, `com.oculus.intent.category.VR`, INTERNET, Cesium's native library inside, all four Orion shaders compiled |
+| Editor play mode: app boots, trip parses, rig waits over the first stop, captions and route draw | **Yes** (`./build.sh smoke`, screenshots in `Logs/`) |
+| Editor play mode: a refusal from Google is shown and nothing retries | **Yes**: one request, "Google would not serve the city … (HTTP 429)", 72 fps |
+| Editor play mode: **tiles load and the whole flight plays** | **Yes, over a public sample tileset** (Cesium's `3d-tiles-samples` city block, no key) with the `sample-block` fixture: tiles and their colliders load, stops are found by ray, the rig is placed behind a blink, captions/beam/pins/beads/ribbon draw, the guide turns to a target and the rig is moved behind a blink, both legs are ridden behind the guide orb with the vignette closing, the day ends at stop 3. 72 fps, no errors. Screenshots in `Logs/smoke-*.png` |
+| Editor play mode: the same over **Google's** tiles | **Yes** (Paris fixture, `./build.sh smoke`, one root request a run): 500–700 tiles with colliders, ground believed only once two rays agree (the first, coarse tiles are kilometres off), placement at Les Invalides, the move to the Army Museum's vantage behind a blink, leg 1 ridden behind the guide, Faubourg Saint-Germain and its target, leg 2. Sharp photogrammetry, haze into the horizon, Google's and the data providers' attribution on the strip under the captions. 72 fps in the editor, no refusals |
+| Anything in the headset | only you can (`TESTING.md`) |

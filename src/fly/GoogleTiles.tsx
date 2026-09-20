@@ -75,7 +75,7 @@ export default function GoogleTiles({ lat, lon, onLoadEnd, tilesRef, plain = fal
     // Anisotropic filtering, on every tile texture as it arrives. Streets and facades
     // are seen at a slant from the chase camera, and without it they smear to mush
     // a short way from the lens; this is the cheapest sharpness there is.
-    const aniso = Math.min(8, gl.capabilities.getMaxAnisotropy())
+    const aniso = gl.capabilities.getMaxAnisotropy()
     handle?.addEventListener('load-model', ((e: { scene: THREE.Object3D }) => {
       e.scene.traverse(o => {
         const m = (o as Mesh).material as MeshStandardMaterial | undefined

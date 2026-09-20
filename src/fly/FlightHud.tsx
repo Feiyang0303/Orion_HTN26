@@ -1,4 +1,5 @@
 import type { MutableRefObject } from 'react'
+import type { Quality } from './quality'
 
 /* The only chrome during the flight: where you are, what the guide is saying,
    and three controls. Everything else stays out of the way of the city. */
@@ -11,8 +12,10 @@ export type Hud = {
 }
 export type Control = { paused: boolean; skip: boolean; restart: boolean }
 
-export default function FlightHud({ hud, control, onExit, onAsk }: {
+export default function FlightHud({ hud, control, quality, onQuality, onExit, onAsk }: {
   hud: Hud; control: MutableRefObject<Control>; onExit?: () => void
+  /** How sharp the city is asked to be (see quality.ts), and the switch for it. */
+  quality: Quality; onQuality: () => void
   /** Hold the flight and talk to the guide. */
   onAsk?: () => void
 }) {
@@ -54,6 +57,10 @@ export default function FlightHud({ hud, control, onExit, onAsk }: {
           </button>
         )}
         {done && <button onClick={() => { control.current.restart = true }}>Fly it again</button>}
+        <button className="quiet" onClick={onQuality} aria-pressed={quality === 'high'}
+          title={quality === 'high' ? 'The sharpest the map has, and more of it kept in memory. Switch to standard if the flight stutters.' : 'Lighter on the machine. Switch to high for the sharpest the map has.'}>
+          Detail · {quality === 'high' ? 'high' : 'standard'}
+        </button>
         {onExit && <button className="quiet" onClick={onExit}>{done ? 'Back to the book' : 'End tour'}</button>}
       </div>
       <div className="hud-progress" style={{ ['--p' as string]: hud.progress }} />

@@ -1,0 +1,8 @@
+<linker>
+  <!-- Credits reads Cesium's credits by name, because Cesium keeps them internal: they must survive code stripping. -->
+  <assembly fullname="CesiumForUnity">
+    <type fullname="CesiumForUnity.CesiumCreditSystem" preserve="all" />
+    <type fullname="CesiumForUnity.CesiumCredit" preserve="all" />
+    <type fullname="CesiumForUnity.CesiumCreditComponent" preserve="all" />
+  </assembly>
+</linker>

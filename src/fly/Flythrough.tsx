@@ -7,7 +7,7 @@ import GoogleTiles, { probeTiles, type TilesHandle } from './GoogleTiles'
 import { GroundPlacer } from './ground'
 import { anchorsFor, keyStop, keyTarget } from './anchors'
 import RouteLine from './RouteLine'
-import { Governor, type Shot as Detail } from './quality'
+import { Governor, PROFILE, storeQuality, storedQuality, type Quality, type Shot as Detail } from './quality'
 import { activeBeat, buildTimeline, type Segment } from './timeline'
 import { smootherstep } from './geo'
 import { Preloader, Shots, routeOn, type Shot } from './shots'
@@ -30,9 +30,9 @@ const PRELOAD_AHEAD_SEC = 30       // tiles for shots this far ahead are fetched
 const PRELOAD_ON = new URLSearchParams(location.search).get('preload') !== '0'
 const noHit = () => null
 
-type RigProps = FlyProps & { plan: Plan; onHud: (h: Hud) => void; control: React.MutableRefObject<Control>; tiles: React.MutableRefObject<TilesHandle | null>; loadTick: number }
+type RigProps = FlyProps & { quality: Quality; plan: Plan; onHud: (h: Hud) => void; control: React.MutableRefObject<Control>; tiles: React.MutableRefObject<TilesHandle | null>; loadTick: number }
 
-function Rig({ plan, begin, onStopReached, onFinish, onHud, control, tiles, loadTick }: RigProps) {
+function Rig({ plan, begin, quality, onStopReached, onFinish, onHud, control, tiles, loadTick }: RigProps) {
   const { camera } = useThree()
   const ground = useMemo(() => new GroundPlacer(), [])
   const [version, setVersion] = useState(0)
@@ -42,10 +42,11 @@ function Rig({ plan, begin, onStopReached, onFinish, onHud, control, tiles, load
   // A flight holds much more than the default tile budget: the cache is what lets the
   // sharp tiles at a stop stay resident while the camera moves on and comes back.
   useEffect(() => {
-    const c = tiles.current?.lruCache
-    if (c) { c.minSize = 12000; c.maxSize = 20000; c.minBytesSize = .7e9; c.maxBytesSize = 1.0e9 }
-  }, [tiles, loadTick])
+    const c = tiles.current?.lruCache, p = PROFILE[quality]
+    if (c) { [c.minSize, c.maxSize] = p.cacheTiles; [c.minBytesSize, c.maxBytesSize] = p.cacheBytes }
+  }, [tiles, loadTick, quality])
   const governor = useRef(new Governor())
+  governor.current.quality = quality
   useEffect(() => { ground.setAnchors(anchorsFor(plan)) }, [ground, plan])
   useEffect(() => { ground.requeue() }, [ground, loadTick])
 
@@ -134,6 +135,7 @@ function Rig({ plan, begin, onStopReached, onFinish, onHud, control, tiles, load
       'flight.tile_settle_ms_max': settled.length ? Math.max(...settled) : 0,
       'flight.tile_cache_mb': t ? Math.round(t.lruCache.cachedBytes / 1e6) : 0,
       'flight.detail': +governor.current.detail.toFixed(2),
+      'flight.quality': governor.current.quality,
     }
     flight.current.end(result)
     log.info(`flight ${outcome}`, result)
@@ -292,6 +294,8 @@ export default function Flythrough(props: FlyProps & { map?: MapView }) {
   const [probe, setProbe] = useState<'checking' | 'ok' | { why: string }>('checking')
   const [loadTick, setLoadTick] = useState(0)
   const [hud, setHud] = useState<Hud | null>(null)
+  const [quality, setQuality] = useState(storedQuality)
+  const toggleQuality = useCallback(() => setQuality(q => { const next = q === 'high' ? 'standard' : 'high'; storeQuality(next); return next }), [])
   const tiles = useRef<TilesHandle | null>(null)
   const control = useRef<Control>({ paused: false, skip: false, restart: false })
   /* Talking to the guide holds the flight, and letting the panel go lets it on
@@ -355,18 +359,18 @@ export default function Flythrough(props: FlyProps & { map?: MapView }) {
   return (
     <div className={`fly ${revealed ? 'is-revealed' : ''}${asking ? ' is-asking' : ''}`} data-ground="night">
       {origin && probe === 'ok' && (
-        <Canvas dpr={plan ? [1, 2] : [1, 1.5]} camera={{ fov: 50, near: 1, far: 20000, position: [0, 900, 700] }} gl={{ antialias: true, toneMapping: THREE.NeutralToneMapping, preserveDrawingBuffer: true }}>
+        <Canvas dpr={plan ? [1, PROFILE[quality].dpr] : [1, 1.5]} camera={{ fov: 50, near: 1, far: 20000, position: [0, 900, 700] }} gl={{ antialias: true, toneMapping: THREE.NeutralToneMapping, preserveDrawingBuffer: true }}>
           <color attach="background" args={['#0a0806']} />
           <ambientLight intensity={1.6} />
           <directionalLight position={[300, 800, 400]} intensity={1.2} color="#ffe6b8" />
           <GoogleTiles lat={origin.lat} lon={origin.lon} onLoadEnd={onLoadEnd} tilesRef={tilesRef} />
           {plan
-            ? <Rig key={cityKey} {...props} plan={plan} onHud={setHud} control={control} tiles={tiles} loadTick={loadTick} />
+            ? <Rig key={cityKey} {...props} plan={plan} quality={quality} onHud={setHud} control={control} tiles={tiles} loadTick={loadTick} />
             : <MapRig key={cityKey} view={map} origin={origin} tiles={tiles} loadTick={loadTick} />}
         </Canvas>
       )}
       {probe === 'checking' && <div className="fly-status">Connecting to the map…</div>}
-      {begin && hud && <FlightHud hud={hud} control={control} onExit={onExit} onAsk={plan ? openAsk : undefined} />}
+      {begin && hud && <FlightHud hud={hud} control={control} quality={quality} onQuality={toggleQuality} onExit={onExit} onAsk={plan ? openAsk : undefined} />}
       {begin && asking && plan && (
         <GuideTalk day={plan} city={plan.wish.city} stopIndex={Math.max(0, hud?.stopIndex ?? 0)}
           caption={hud?.caption ?? ''} onClose={closeAsk} />
