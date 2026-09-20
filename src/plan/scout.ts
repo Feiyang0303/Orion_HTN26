@@ -93,6 +93,8 @@ export type ScoutWish = {
 
 export type ScoutBrief = {
   count: number
+  /** How many days these places are for. Absent or 1: a single day. */
+  days?: number
   wish?: ScoutWish
   /** Places the person named themselves; already in the day, never re-picked. */
   fixed?: { name: string; lat: number; lon: number }[]
@@ -125,10 +127,12 @@ export type ScoutResult = { picks: ScoutPick[]; rejected: Rejected[] }
     the first `count` that pass and stand apart, and ask once more for the
     shortfall, saying what was thrown away and why. */
 export async function scout(brief: ScoutBrief & { city: string; origin: LatLon; radiusM: number }): Promise<ScoutResult> {
-  const { count, wish = {}, fixed = [], complaints = [], previous = [], city, origin, radiusM } = brief
+  const { count, days = 1, wish = {}, fixed = [], complaints = [], previous = [], city, origin, radiusM } = brief
 
   const day = [
-    wish.startAt && wish.endAt ? `Hours: ${wish.startAt} to ${wish.endAt}.` : '',
+    // Its brief speaks of "the day you are choosing for", and it was asked for thirty names under one day's hours.
+    days > 1 ? `This is a trip of ${days} days, not one: these places are divided into ${days} days afterwards, about ${Math.ceil(count / days)} a day, so the set as a whole should have enough variety to make ${days} different days. The hours below are each day's.` : '',
+    wish.startAt && wish.endAt ? `Hours: ${wish.startAt} to ${wish.endAt}${days > 1 ? ' each day' : ''}.` : '',
     wish.transport ? `Getting about: ${MOVE[wish.transport]}.` : '',
     wish.party ? `Who: ${PARTY_LINE[wish.party]}.` : '',
     wish.pace ? `Pace: ${wish.pace}.` : '',

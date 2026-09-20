@@ -56,6 +56,8 @@ const MEAL: Record<Meal, { after: number; min: number; label: string }> = {
   dinner: { after: 18 * 60 + 30, min: 75, label: 'dinner' },
 }
 export const mealMinutes = (meals: Meal[]) => meals.reduce((s, m) => s + MEAL[m].min, 0)
+/** The meals that cost the day's hours anything: dinner after a day that ends at six is the evening's business. */
+export const mealsInside = (meals: Meal[], w: { endMin: number }) => meals.filter(m => MEAL[m].after < w.endMin - 30)
 
 /** How long a single leg may be before it is not a compact day any more. */
 const LEG_CEILING_SEC: Record<Transport, number> = {
@@ -180,6 +182,6 @@ export function visitBudgetMin(wish: Wish, travelGuessMin = 90) {
   const w = windowOf(wish)
   // Only a meal that falls inside the hours costs the hours anything: dinner
   // after a day that ends at six is the evening's business, not the day's.
-  const inside = wish.meals.filter(m => MEAL[m].after < w.endMin - 30)
+  const inside = mealsInside(wish.meals, w)
   return Math.max(60, w.endMin - w.startMin - mealMinutes(inside) - travelGuessMin)
 }

@@ -4,7 +4,7 @@ import { verdict } from './events'
 import { notable, type Article } from './wikipedia'
 import { nearestWorthIt, scout, type Kind, type NearChoice, type ScoutPick } from './scout'
 import { critic } from './critic'
-import { audit, visitMinutes, windowOf } from './timekeeper'
+import { audit, mealsInside, visitMinutes, windowOf } from './timekeeper'
 import { metresBetween, slug } from './geo'
 
 /* The half of the crew that decides *what the day is*, pulled out of the
@@ -161,7 +161,10 @@ export async function findStops(opts: {
   const days = Math.max(1, wish.days || 1)
   const day = windowOf(wish)
   const window = { startMin: day.startMin, endMin: day.startMin + (day.endMin - day.startMin) * days }
-  const meals = Array.from({ length: days }).flatMap(() => wish.meals)
+  // Only the meals that fall inside the hours. The day is sized without dinner (timekeeper.visitBudgetMin: a day that
+  // ends at six does not pay for a dinner at half past), but it was judged with it: seventy-five minutes a day the
+  // places never had, which was enough on its own to send nearly every first set back to the Scout to be cut.
+  const meals = Array.from({ length: days }).flatMap(() => mealsInside(wish.meals, day))
   let picks: ScoutPick[] = []
   let complaints: string[] = []
 
@@ -172,7 +175,7 @@ export async function findStops(opts: {
     say('Scout', 'agent', attempt ? 'reworking' : 'working',
       attempt ? 'Choosing again to fix: ' + complaints.join('; ') : `Naming ${count} well-known place${count === 1 ? '' : 's'} in ${city}`)
     const chosen = await scout({
-      count, wish, city, origin, radiusM,
+      count, wish, city, origin, radiusM, days,
       fixed: fixed.map(f => ({ name: f.name, lat: f.lat, lon: f.lon })),
       complaints, previous: picks.map(p => p.article.title),
     })
@@ -185,6 +188,9 @@ export async function findStops(opts: {
     const all = [...fixed, ...picks.map(p => fromPick(p, wish))]
     const secs = legSecs ? await legSecs(all).catch(() => []) : []
     const t = audit(all.map(c => c.visitMin), secs, window, wish.transport === 'auto' ? 'transit' : wish.transport, meals)
+    // The sum is over every day of the trip, and said "the day takes 1,480 min": to the person, and to the Scout it is
+    // sent back to, that read as three days of places being held to one day's hours.
+    if (days > 1) t.complaints = t.complaints.map(c => c.replace('the day takes', `the ${days} days take`).replace('but the window is', `but their hours come to`))
     const clockIssues = t.complaints.map((text, i) => ({ id: `time-${i}`, text, owner: 'Scout' as const }))
     onEvent(verdict('Timekeeper', 'day', clockIssues))
     say('Timekeeper', 'tool', t.complaints.length ? 'failed' : 'done',
@@ -198,7 +204,7 @@ export async function findStops(opts: {
     }
 
     say('Critic', 'agent', 'working', 'Judging the day')
-    const review = await critic(summarise(all, secs, wish, mode))
+    const review = await critic(summarise(all, secs, wish, mode, days))
     // A place the person named is not the Judger's to reject.
     const fair = review.complaints.filter(c => !all.some(s => s.asked && c.text.toLowerCase().includes(s.name.toLowerCase())))
     onEvent(verdict('Critic', 'day', fair.map((c, i) => ({ id: `judge-${i}`, text: c.text, owner: c.owner }))))
@@ -209,18 +215,24 @@ export async function findStops(opts: {
   return picks.map(p => fromPick(p, wish))
 }
 
-function summarise(all: Candidate[], legSecs: number[], wish: Wish, mode: 'full' | 'short') {
+function summarise(all: Candidate[], legSecs: number[], wish: Wish, mode: 'full' | 'short', days: number) {
   const lines = all.map((c, i) =>
     `${i + 1}. ${c.id} | ${c.name} | kind: ${c.kind} | ${c.visitMin} min there | ` +
-    (c.asked ? 'ASKED FOR BY NAME — not yours to reject' : c.why) +
-    (legSecs[i] ? `\n   then ${Math.round(legSecs[i] / 60)} min ${wish.transport} to the next` : ''))
+    (c.asked ? 'ASKED FOR BY NAME — not yours to reject' : c.why))
+  // The journeys are those of the best order found, which is not the order of this list: written after each place as
+  // "then 12 min to the next", they described trips nobody would make. Their sum is true of any order, and is what is said.
+  const travelMin = Math.round(legSecs.reduce((a, b) => a + b, 0) / 60)
   return [
+    // The Judger reviews "a proposed day", and was shown all twenty-one places of a three-day trip under one day's hours
+    // with nothing to say it was three days: it rejected them as exhausting, every time, and the Scout cut the trip down.
+    ...(days > 1 ? [`This is NOT one day. It is the pool of places for a TRIP OF ${days} DAYS, about ${Math.ceil(all.length / days)} places a day; they are divided into days afterwards, by where they are. The hours below are EACH day's hours. Judge the set as a whole: whether it answers what they asked for, whether the places differ, whether each is worth flying to. Do not object that it is too much for one day, or too long: it is ${days} days, and the clock has already been checked.`] : []),
     // Asked for, not an oversight: without this the Judger sends a quick tour back for being short, every time.
     ...(mode === 'short' ? ['This is a QUICK TOUR: a few stops on purpose, however many hours there are. Do not object that the day is short, light, or has time to spare, and do not ask for more places.'] : []),
-    `Hours: ${wish.startAt} to ${wish.endAt}. Getting about: ${wish.transport}. Pace: ${wish.pace}.`,
+    `Hours: ${wish.startAt} to ${wish.endAt}${days > 1 ? ' each day' : ''}. Getting about: ${wish.transport}. Pace: ${wish.pace}.`,
     `Who: ${wish.party}. Budget: ${wish.budget}.`,
-    wish.meals.length ? `Keeping time clear for: ${wish.meals.join(' and ')}.` : 'No meal breaks asked for.',
+    wish.meals.length ? `Keeping time clear for: ${wish.meals.join(' and ')}${days > 1 ? ' each day' : ''}.` : 'No meal breaks asked for.',
     wish.interests.length ? `They asked for: ${wish.interests.join(', ')}.` : 'No interests given.',
+    ...(travelMin ? [`Getting between them, in the best order found: about ${travelMin} min${days > 1 ? ` over the ${days} days` : ''}.`] : []),
     '',
     lines.join('\n'),
   ].join('\n')
