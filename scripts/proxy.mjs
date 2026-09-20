@@ -20,7 +20,11 @@ import { tripRoutes } from './trips.mjs'
 loadEnv()   // also done by instrument.mjs when preloaded; harmless twice
 const env = name => process.env[name] || ''
 const PORT = Number(env('PORT') || 8787)
-const DEFAULT_MODELS = { scout: 'gpt-4o', critic: 'gpt-4o', narrator: 'gpt-4o', director: 'gpt-4o' }     // the director is shown pictures: its model must see
+/* Who thinks with what, unless LLM_MODEL_<ROLE> says otherwise. The crew that chooses, judges and writes is on the
+   better writer. The Director stays on gpt-4o on purpose: it is shown pictures, so its model must see, and it looks at
+   fifteen things or so against the clock while a person waits; asked the same question about the same pictures, 4o
+   answered in a third of the time and ranked them the same. */
+const DEFAULT_MODELS = { scout: 'gpt-5.6-luna', critic: 'gpt-5.6-luna', narrator: 'gpt-5.6-luna', director: 'gpt-4o' }
 const routesKey = () => env('GOOGLE_ROUTES_KEY') || env('VITE_GOOGLE_MAPS_KEY')
 
 class HttpError extends Error {
@@ -50,8 +54,10 @@ async function llm(req, res) {
   const content = images.length ? [{ type: 'text', text: user }, ...images.map(url => ({ type: 'image_url', image_url: { url, detail: 'low' } }))] : user
   const model = env(`LLM_MODEL_${String(role).toUpperCase()}`) || DEFAULT_MODELS[role] || ''
   if (!model) throw new HttpError(501, `LLM_MODEL_${String(role).toUpperCase()} is not set on the proxy.`)
-  // Reasoning models only: gpt-4o rejects reasoning_effort. Narrator stays low on those models.
-  const effort = env(`LLM_EFFORT_${String(role).toUpperCase()}`) || (role === 'narrator' && /(?:^o\d|gpt-5)/i.test(model) ? 'low' : '')
+  // Reasoning models only: gpt-4o rejects reasoning_effort. Every role asks for little of it unless LLM_EFFORT_<ROLE>
+  // says otherwise: these are short, well-specified jobs with a person watching, and left to think as long as it
+  // liked the crew took over two minutes to choose and judge a day before a word of it was written.
+  const effort = env(`LLM_EFFORT_${String(role).toUpperCase()}`) || (/(?:^o\d|gpt-5)/i.test(model) ? 'low' : '')
   // One model call, in Sentry's AI conventions, with what it cost: this is what
   // the AI Agents view and the token dashboards read.
   // The response is sent after the span ends: the request's own transaction closes
