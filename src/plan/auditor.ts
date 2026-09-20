@@ -1,4 +1,5 @@
 import type { Claim, Source } from '../types'
+import { sentences } from './sentences'
 
 /* AUDITOR (code, not a model). The Narrator may only say what the supplied text
  * says; narrator.validate() enforces the easy half of that (no number the
@@ -30,7 +31,6 @@ const words = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g
 const stem = (w: string) => w.length > 4 ? w.replace(/(ies)$/, 'y').replace(/(es|s|ed|ing)$/, '') : w
 const content = (s: string) => new Set(words(s).filter(w => !STOP.has(w) && (w.length > 2 || /\d/.test(w))).map(stem))
 
-const sentences = (s: string) => s.replace(/\s+/g, ' ').trim().split(/(?<=[.!?])\s+(?=[A-ZÀ-Ý"“‘'(])/).map(x => x.trim()).filter(Boolean)
 
 const SUPPORT = 0.5          // share of a sentence's content words that must sit together in one source sentence
 const QUOTE_MAX = 240

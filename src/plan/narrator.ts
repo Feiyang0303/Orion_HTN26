@@ -332,8 +332,9 @@ You are given the legs of one day, in order. Write one line for each leg, in
 the same order.
 
 WHAT A LINE IS
-Two sentences, three where a leg has directions to give — twenty to fifty
-words. It is not an introduction. They will see where they are going and you
+One sentence, two where a leg has directions to give — twelve to thirty
+words. The move takes as long as the line does, so every word is time in
+transit. It is not an introduction. They will see where they are going and you
 will tell them about it when they get there; this line exists so the two
 places feel related, and so they know how they are getting there.
 
@@ -405,7 +406,9 @@ function styleProblem(text: string): string | null {
   if (ANNOUNCING.test(text)) return 'it announces the arrival instead of connecting the two places'
   /* A leg is as long as the line said on it, so a line of eight words is a leg
      flown in silence. Length is not a style here, it is the pacing. */
-  if (text.split(/\s+/).length < 16) return 'it is too short — the crossing would be flown in silence around it; give it a second sentence'
+  const words = text.split(/\s+/).length
+  if (words < 9) return 'it is too short — the crossing would be flown in silence around it'
+  if (words > 36) return `it is ${words} words — the crossing lasts as long as the line, so keep it under thirty`
   return beatStyleProblem(text)
 }
 
@@ -464,10 +467,9 @@ export async function writeBridges(city: string, legs: BridgeLeg[]): Promise<str
  * guide is allowed to address the listener directly: to say hello, and to say
  * that was the day.
  *
- * Everything in them is a fact of the plan or a number from the forecast, and
- * the forecast is the reason the opening exists at all — it is the one thing
- * the listener could not have read in the book beforehand, because it was not
- * known when the book was written.
+ * Everything in them is a fact of the plan. Both are short, because both are
+ * said over a camera that holds still until they finish: the opening once
+ * carried the forecast and what to wear, and was the longest wait of the day.
  */
 
 export type OpeningFacts = {
@@ -483,32 +485,28 @@ export type OpeningFacts = {
   party: Party
   interests: string[]
   from?: string
-  /** Straight from weatherLine(): the day it is a forecast for and its numbers. */
-  weather?: string
-  /** Straight from wearLine(). */
-  wear?: string
 }
 
 const OPENING_SYSTEM = `You are a guide, and the person listening has just lifted off over a real
 city for a day you planned together. This is the first thing you say to them.
 Reply with JSON.
 
-WHAT IT CONTAINS, in this order and all of it:
-1. A greeting that names the city, and says who you are — their guide for the
-   day. Warm, brief, not a compere. If you are given a day number out of
+WHAT IT CONTAINS, in this order, and nothing else:
+1. A greeting that names the city. If you are given a day number out of
    several, say which day of the trip this is.
-2. The shape of the day in one breath: how many places, roughly when it starts
-   and ends, and how they are getting about.
-3. The weather, in the words you are given, said as weather and not as a
-   readout. If you are told which day the forecast is for, say so plainly,
-   because it is a forecast and not a promise.
-4. What to wear, from the line you are given. This is the useful part — an
-   umbrella, a layer for the evening, shoes. Say it like someone at the door.
-5. One sentence that hands over to the first place, naming it.
+2. The shape of the day in one breath: how many places and how they are
+   getting about.
+3. A few words that hand over to the first place, naming it.
+
+HOW LONG
+Short. They are in the air with a city under them and want to get to it: two
+or three sentences, forty words at the very most. Every sentence past the
+third is time they spend waiting for the day to start. No weather, nothing
+about what to wear, no list of the places, no clock times unless the day
+starts or ends at an unusual hour.
 
 HOW IT SOUNDS
-Spoken. Six to nine sentences, and they run on into each other the way someone
-talks — not a list read aloud. Contractions. Warm and unhurried, no
+Spoken, the way someone talks — not a list read aloud. Contractions. Warm, no
 exclamation marks, no "get ready", no "buckle up", no "without further ado".
 You may say "we" here, and only here: you are setting off together.
 
@@ -516,8 +514,6 @@ HARD RULES
 - Use ONLY the facts given. Never a number that is not in them. Say nothing
   about any of the places beyond naming the first one — you have not arrived
   yet and the pages will do that work.
-- If no forecast was given, say plainly that the forecast does not reach this
-  day yet and to check the sky the night before. Never invent weather.
 - Say clock times the way a person says them out loud — "half nine", "just
   after two", "around five" — never "09:30" or "17:40". This is read aloud,
   and a spoken "fourteen thirty-four" is nobody's idea of an afternoon.
@@ -552,7 +548,8 @@ WHICH ENDING THIS IS — you are told, and they are not the same:
   back across the days here; that is the whole point of being at the end.
 
 HOW IT SOUNDS
-Spoken. Four to six sentences, running on into each other. Contractions. Warm,
+Spoken. Two or three sentences, fifty words at the very most, running on into
+each other. Contractions. Warm,
 a little slower than the rest of the day, and plain — this is the one moment
 that sounds false if it strains, and the way it strains is always the same:
 reaching for feeling instead of saying what happened. Say what they actually
@@ -579,9 +576,8 @@ Bad:  "What a day. Four incredible places and 7.3 kilometres of charm and
        history — I hope Paris lingers sweetly in your memory."
 Bad:  "As the sun dips towards 17:40, our journey ends. Safe travels."
 Good: "That's the four of them, and about seven kilometres of Paris under you.
-       The tower's the last of it — and honestly, it's the one that takes the
-       longest to get bored of. We're done a little after twenty to six, which
-       is earlier than I'd have guessed this morning. That's the day."
+       The tower's the last of it, and we're done a little after twenty to
+       six. That's the day."
 Good: "Day two done. The river and the left bank, four stops, and you're back
        at the hotel from here. Tomorrow is Montmartre, and it's a slower one —
        which after today's walking is not an accident."
@@ -593,7 +589,17 @@ Reply with a JSON object: {"say":"<the whole thing, as one paragraph>"}`
    days linger in your memory", so the phrases are checked here as well. */
 const FAREWELL = /\b(i hope|hope you|memor(?:y|ies)|linger|journey|adventure|safe travels|take care|until next time|thanks? (?:you )?for|stay with you|cherish)\b/i
 
+/* The two ends are said over a held camera: nothing else happens until they finish, so their length is the person's
+   wait. The prompt asks for less than this; this is where asking stops and it is sent back. */
+const OPENING_MAX_WORDS = 55, CLOSING_MAX_WORDS = 65
+const tooLong = (text: string, max: number): string | null => {
+  const n = text.split(/\s+/).length
+  return n > max ? `it is ${n} words and must be under ${max} — cut it to the essentials` : null
+}
+
 function farewellProblem(text: string): string | null {
+  const long = tooLong(text, CLOSING_MAX_WORDS)
+  if (long) return long
   const m = text.match(FAREWELL)
   if (m) return `it says "${m[0]}", which is a greetings card and not a guide`
   return beatStyleProblem(text.replace(TOUR_TALK, 'x'))    // "we head back" is fine at the end
@@ -634,10 +640,8 @@ export const writeOpening = (f: OpeningFacts): Promise<string> => saySomething(O
   f.from ? `They set out from ${f.from}.` : '',
   `Who is travelling: ${f.party}.`,
   f.interests.length ? `They said they are interested in ${f.interests.join(', ')}.` : '',
-  f.weather ? `Forecast — ${f.weather}. (That is the day the forecast is for, which may not be the day they travel.)` : 'No forecast reaches this day.',
-  f.wear ? `What to wear: ${f.wear}.` : '',
   `The first place is ${f.stops[0] ?? ''}.`,
-].filter(Boolean).join('\n'), 700, t => beatStyleProblem(t.replace(TOUR_TALK, 'x')))
+].filter(Boolean).join('\n'), 400, t => tooLong(t, OPENING_MAX_WORDS) ?? (t.includes('!') ? 'it has an exclamation mark — say it, do not announce it' : null) ?? beatStyleProblem(t.replace(TOUR_TALK, 'x')))
 
 export const writeClosing = (f: ClosingFacts): Promise<string> => saySomething(CLOSING_SYSTEM, [
   `City: ${f.city}.`,

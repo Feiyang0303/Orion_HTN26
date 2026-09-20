@@ -218,10 +218,8 @@ export type Plan = {
   /** The way back from the last stop to `from` at the end of the day, so the
       day is a loop from the bed and not a line that stops in the street. */
   back: Leg | null
-  /** The welcome, spoken over the city before the day begins: who is speaking,
-      what the day holds, the forecast and what to wear — the one thing that
-      could not be in the book, because it was not known when the book was
-      written. Absent when it could not be written. */
+  /** The welcome, spoken over the city before the day begins: the city, the shape of the day, and the first place.
+      Kept to two or three sentences, because nothing else happens until it is said. Absent when it could not be written. */
   opening?: Beat
   /** The goodbye, spoken over the last place. Different for a day on its own,
       a day with more to come, and the last day of a trip. */

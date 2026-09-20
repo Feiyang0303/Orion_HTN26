@@ -22,11 +22,16 @@ export const HOLD_LEAD_SEC = 0.4     // before the welcome and the goodbye
 export const BRIDGE_LEAD_SEC = 0.15  // the camera is visibly under way before the bridge begins
 export const FLY_MPS = 35      // cruising speed between stops (eased, so peak is higher)
 export const MIN_TRAVEL_SEC = 4
-/* A leg with nothing to say is crossed quickly; a leg with a line to say takes
-   as long as the line, and no longer. The old ceiling of sixteen seconds was
-   set when legs were silent, and it left the guide finishing mid-river and the
-   rest of the crossing in silence. */
+/* A leg with nothing to say is crossed quickly. */
 export const MAX_TRAVEL_SEC = 9
+/* A leg with a line to say takes as long as the line, unless that would be a rush. For a while it took exactly as
+   long as the line and no longer, to be rid of the silence after a short one; but the line is ten seconds whether
+   the leg is nine hundred metres or six and a half kilometres, and the long one was then flown down its streets at
+   over six hundred metres a second, corners and all. So a leg is also given the time its length needs at a speed
+   that can be watched, up to a ceiling. The few seconds that leaves after the line on a long crossing are the
+   arrival, and are quiet on purpose. */
+export const WATCHABLE_MPS = 260
+export const MAX_SPOKEN_TRAVEL_SEC = 18
 
 export type BeatSlot = { index: number; t0: number; t1: number; beat: Beat }
 
@@ -51,6 +56,8 @@ export type Timeline = {
 
 /** How long the flat flight takes over a leg: quick, because a screen can take it. */
 const flatTravelSec = (distanceM: number) => Math.min(MAX_TRAVEL_SEC, Math.max(MIN_TRAVEL_SEC, distanceM / FLY_MPS))
+/** The least a leg with a line on it may take, however short the line: see WATCHABLE_MPS. */
+const unhurriedSec = (distanceM: number) => Math.min(MAX_SPOKEN_TRAVEL_SEC, distanceM / WATCHABLE_MPS)
 
 /** `travelSec` is how long a leg of a given length takes; a headset, which has to be gentler, brings its own. */
 export function buildTimeline(plan: Plan, travelSec = flatTravelSec): Timeline {
@@ -87,11 +94,9 @@ export function buildTimeline(plan: Plan, travelSec = flatTravelSec): Timeline {
       const flat = travelSec(leg.distanceM)
       const bridge = leg.bridge
       if (!bridge) return { kind: 'travel', leg: i, t0, t1: t0 + flat, beats: [] }
-      /* When there is a bridge, its voice paces the move. Keeping the old
-         distance-based duration after a short clip left several silent
-         seconds before the next stop; the camera can simply travel faster. */
+      /* When there is a bridge, its voice paces the move, and the leg's own length keeps that from being a rush. */
       const slot: BeatSlot = { index: 0, t0: t0 + BRIDGE_LEAD_SEC, t1: t0 + BRIDGE_LEAD_SEC + bridge.durationSec, beat: bridge }
-      return { kind: 'travel', leg: i, t0, t1: Math.max(t0 + MIN_TRAVEL_SEC, slot.t1 + TAIL_SEC), beats: [slot] }
+      return { kind: 'travel', leg: i, t0, t1: Math.max(t0 + MIN_TRAVEL_SEC, slot.t1 + TAIL_SEC, t0 + unhurriedSec(leg.distanceM)), beats: [slot] }
     })
   })
 

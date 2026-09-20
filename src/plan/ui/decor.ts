@@ -1,5 +1,6 @@
 import type { MarkName } from './Marks'
 import type { Plan, Stop } from '../../types'
+import { sentences } from '../sentences'
 
 /* What goes in the margins, and why.
  *
@@ -108,23 +109,10 @@ export function scatter(seed: string, n: number) {
 /** How a stop is illustrated when Wikipedia has no photograph: its own sketch. */
 export const illustrationFor = (stop: Stop, index: number): MarkName => markFor(stop.name, index)
 
-/** The browser's own sentence segmenter knows that "553.3 m (1,815.3 ft)" is
-    not three sentences. The regex it replaces did not, and printed a page that
-    began "3 ft) communications and observation tower". */
-export function firstSentences(text: string, n: number) {
-  const clean = (text ?? '').replace(/\s+/g, ' ').trim()
-  const Seg = (Intl as unknown as { Segmenter?: new (l: string, o: { granularity: string }) =>
-    { segment(t: string): Iterable<{ segment: string }> } }).Segmenter
-  if (Seg) {
-    const out: string[] = []
-    for (const { segment } of new Seg('en', { granularity: 'sentence' }).segment(clean)) {
-      out.push(segment)
-      if (out.length >= n) break
-    }
-    return out.join('').trim()
-  }
-  return clean.split(/(?<=[.!?])\s+(?=[A-Z"“(])/).slice(0, n).join(' ').trim()
-}
+/** The first `n` sentences, split by plan/sentences: "553.3 m (1,815.3 ft)" is not three of them, and neither is
+    "the Basilica of St. Mary" two. A cruder split once printed a page that began "3 ft) communications and
+    observation tower". */
+export const firstSentences = (text: string, n: number) => sentences(text ?? '').slice(0, n).join(' ')
 
 /* ------------------------------------------------------------- the palette */
 

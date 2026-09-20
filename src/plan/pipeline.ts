@@ -8,11 +8,11 @@ import { notable, photoFor, warmStopSources, wikiSource, type Article } from './
 import { bestOrder, legsFor, travelSecs } from './router'
 import { schedule, windowOf } from './timekeeper'
 import { narrate, withAudio, writeBridges, writeClosing, writeOpening, writePreface, type Draft, type Mode, type StopContext } from './narrator'
-import { forecast, wearLine, weatherLine } from './weather'
 import { estimateSec, speak } from './tts'
 import { auditText, repair, tally, unsupportedIn } from './auditor'
 import { findStops, matchWant, roomFor, tripRadius, type Candidate, type Skeleton } from './crew'
 import { slug } from './geo'
+import { sentences } from './sentences'
 
 /* The second half of the crew: reading up on each place, writing what the
  * guide will say, and speaking it. It runs on a Skeleton — a day whose stops,
@@ -85,13 +85,6 @@ export async function writePages(skeleton: Skeleton, opts: PipelineOptions): Pro
   } else if (clock.overruns) {
     say('Timekeeper', 'tool', 'failed', `The day runs to ${clock.endsAt}, past the ${wish.endAt} you asked for`)
   }
-
-  /* The forecast for THIS day of the trip, read as the journal reads it: the
-     days from tomorrow, in order, and honest about not reaching far ahead. It
-     is fetched alongside the pages because nothing else waits on it. */
-  const weatherP = forecast(origin, Math.max(1, dayNumber), opts.signal)
-    .then(f => f[dayNumber - 1])
-    .catch(() => undefined)
 
   say('Narrator', 'agent', 'working', `Writing ${chosen.length} pages`)
   let voiceFailed = false
@@ -248,11 +241,8 @@ export async function writePages(skeleton: Skeleton, opts: PipelineOptions): Pro
       written ? `${written} of ${legs.length} legs have something said on the way` : 'The legs are flown in silence')
   }
 
-  /* The two ends. The opening carries the forecast, which is the one thing in
-     the whole day that the book could not already have told them. */
-  const onFootKm = [...legs, ...(approach ? [approach] : []), ...(back ? [back] : [])]
-    .filter(l => l.transport === 'walk').reduce((n, l) => n + l.distanceM, 0) / 1000
-  const weather = await weatherP
+  /* The two ends. Both are said over a held camera, so both are kept short: the opening used to carry the forecast and
+     what to wear, and it was the longest wait of the day. The journal has the weather, for anyone who wants it. */
   const transportWords = [...new Set([...(approach ? [approach] : []), ...legs, ...(back ? [back] : [])]
     .map(l => TRANSPORT_LABEL[l.transport].toLowerCase()))].join(' and ') || TRANSPORT_LABEL[wish.transport === 'auto' ? 'walk' : wish.transport].toLowerCase()
 
@@ -262,8 +252,6 @@ export async function writePages(skeleton: Skeleton, opts: PipelineOptions): Pro
       city: origin.name, number: dayNumber, count: dayCount, title: day?.title,
       stops: stops.map(st => st.name), startAt: HHMM(window.startMin), endsAt: clock.endsAt,
       transport: transportWords, party: wish.party, interests: wish.interests, from: from?.name,
-      weather: weather ? weatherLine(weather) : undefined,
-      wear: wearLine(weather, onFootKm),
     }).catch(() => ''),
     writeClosing({
       city: origin.name, number: dayNumber, count: dayCount, title: day?.title,
@@ -285,7 +273,7 @@ export async function writePages(skeleton: Skeleton, opts: PipelineOptions): Pro
   }
   const [opening, closing] = await Promise.all([voiceEnd(openingText, 'opening.mp3'), voiceEnd(closingText, 'closing.mp3')])
   say('Narrator', 'agent', opening || closing ? 'done' : 'failed',
-    opening && closing ? `The day opens with the forecast for ${weather?.label ?? 'a day no forecast reaches'} and closes ${dayCount > 1 ? `as day ${dayNumber} of ${dayCount}` : 'on its own'}`
+    opening && closing ? `The day has its welcome, and closes ${dayCount > 1 ? `as day ${dayNumber} of ${dayCount}` : 'on its own'}`
       : 'One of the two ends could not be written')
 
   const preface = await prefaceP
@@ -360,15 +348,9 @@ const toTarget = (a: Article): Target => ({
   id: `w${a.pageId}`, name: a.title, lat: a.lat, lon: a.lon, summary: a.extract, source: wikiSource(a),
 })
 
-const firstSentence = (s: string) => {
-  const clean = s.replace(/\s+/g, ' ').trim()
-  /* The browser's sentence segmenter knows "St. Mary" and "553.3 m (1,815 ft)"
-     are not sentence ends; the regex it replaces did not, and printed pages
-     that ended at "Basilica of St." */
-  const Seg = (Intl as unknown as { Segmenter?: new (l: string, o: { granularity: string }) => { segment(t: string): Iterable<{ segment: string }> } }).Segmenter
-  if (Seg) { for (const { segment } of new Seg('en', { granularity: 'sentence' }).segment(clean)) return segment.trim() || clean }
-  return clean.split(/(?<=[.!?])\s+(?=[A-Z"“(])/)[0] || clean
-}
+/* Split by plan/sentences, which knows "St. Mary" and "U.S. Route 9" are not sentence ends; printed pages used to
+   end at "the Basilica of St." */
+const firstSentence = (s: string) => sentences(s)[0] ?? s.replace(/\s+/g, ' ').trim()
 
 /** One line under the title, counted rather than written: every number in it
     is a field of this plan. */
