@@ -5,6 +5,7 @@
 /[Bb]uild/
 /[Ll]ogs/
 /[Uu]ser[Ss]ettings/
+/.utmp/
 /*.csproj
 /*.sln
 .DS_Store
