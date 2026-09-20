@@ -41,8 +41,23 @@
 .jl-chapters > li { position: relative; min-width: 0; }
 .jl-chapter { position: relative; width: 100%; min-height: 230px; padding: 35px 29px 27px; overflow: hidden; display: flex; flex-direction: column; align-items: flex-start; text-align: left; color: #4a3824; border: 0; border-radius: 3px 10px 6px 3px; cursor: pointer; background: linear-gradient(145deg, rgba(255,255,255,.62), transparent 36%), hsl(calc(37 + var(--chapter) * 13) 42% 84%); box-shadow: 2px 5px 12px rgba(69,46,23,.17), -5px 0 0 hsl(calc(20 + var(--chapter) * 19) 33% 61%); transform-origin: 0 50%; transition: transform .45s var(--ease), box-shadow .45s var(--ease); }
 .jl-chapter::before { content: ''; position: absolute; inset: 10px; border: 1px solid rgba(91,64,34,.17); border-radius: 2px 8px 4px 2px; pointer-events: none; }
-.jl-chapter::after { content: ''; position: absolute; right: -28px; bottom: -42px; width: 120px; height: 120px; border: 18px double rgba(126,62,43,.15); border-radius: 50%; transform: rotate(-14deg); }
+/* The embossed ring used to fill this corner; the landmark does it better, so
+   the ring moves up behind the date stamp and thins out. */
+.jl-chapter::after { content: ''; position: absolute; right: -34px; bottom: -52px; width: 120px; height: 120px; border: 18px double rgba(126,62,43,.07); border-radius: 50%; transform: rotate(-14deg); }
 .jl-chapter:hover:not(:disabled) { transform: translateY(-5px) rotate(-.6deg); box-shadow: 4px 13px 24px rgba(69,46,23,.22), -6px 1px 0 hsl(calc(20 + var(--chapter) * 19) 33% 61%); }
+/* The city's landmark, sitting where the embossed ring already was — low in
+   the corner, behind the writing, part of the cover rather than an illustration
+   stuck on it. It is decoration, so it is not announced to a screen reader; the
+   city's name is right there in text. */
+.jl-mark {
+  position: absolute; right: 12px; bottom: 6px; z-index: 0;
+  opacity: .85; pointer-events: none;
+  transform: rotate(-3deg);
+  transition: transform .45s var(--ease);
+}
+.jl-chapter:hover:not(:disabled) .jl-mark { transform: rotate(-3deg) translateY(-3px) scale(1.03); }
+.jl-meta, .jl-date, .jl-open { position: relative; z-index: 1; }
+
 .jl-tab { position: absolute; left: 22px; top: 0; padding: 7px 11px 6px; border-radius: 0 0 6px 6px; background: rgba(111,66,38,.16); color: #7c5837; font: 600 9px/1 var(--ui); letter-spacing: .13em; text-transform: uppercase; }
 .jl-stamp { position: absolute; right: 24px; top: 25px; display: grid; place-items: center; width: 47px; height: 47px; border: 1px dashed rgba(139,71,52,.5); border-radius: 50%; color: rgba(139,71,52,.7); font: 700 11px/1 'Caveat', cursive; transform: rotate(8deg); }
 .jl-city { position: relative; z-index: 1; max-width: calc(100% - 48px); margin-top: 22px; font: 700 clamp(31px, 3.3vw, 44px)/.96 'Caveat', cursive; color: #4c3522; overflow-wrap: anywhere; }

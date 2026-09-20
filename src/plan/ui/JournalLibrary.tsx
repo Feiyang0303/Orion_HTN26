@@ -5,6 +5,7 @@ import type { Day } from '../../types'
 import Icon from '../../ui/Icon'
 import { vrLink } from '../../vr/share'
 import Journal from './Journal'
+import { Sketch, SketchDefs, cityMark } from './Sketches'
 import './journal-library.css'
 
 const NAME_KEY = 'orion.journal-name'
@@ -106,6 +107,9 @@ export default function JournalLibrary({ onClose, onPlan, onOpenTrip, onFly, onC
 
   return (
     <section className="jl" aria-label="Travel journal">
+      {/* The sketches' filters live once, in a hidden svg, and the covers draw
+          from them the same way the pages do. */}
+      <SketchDefs />
       <div className="jl-scrim" />
       <motion.div className="jl-volume" initial={{ opacity: 0, y: 28, rotateX: 5 }} animate={{ opacity: 1, y: 0, rotateX: 0 }} exit={{ opacity: 0, y: 18 }} transition={{ duration: .75, ease: [.22, .9, .24, 1] }}>
         <div className="jl-spine" aria-hidden><span>Orion</span></div>
@@ -153,6 +157,11 @@ export default function JournalLibrary({ onClose, onPlan, onOpenTrip, onFly, onC
                 {trips.map((trip, index) => (
                   <motion.li key={trip.id} layout initial={{ opacity: 0, y: 22 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, x: 30 }} transition={{ delay: Math.min(index * .07, .35), duration: .5 }} style={{ ['--chapter' as string]: index }}>
                     <button type="button" className="jl-chapter" onClick={() => void openChapter(trip.id)} disabled={opening === trip.id}>
+                      {/* The city, drawn. A shelf of chapters that differ only in
+                          the word at the top is a list; a landmark is what makes
+                          one of them findable at a glance. */}
+                      <Sketch name={cityMark(trip.city, index)} size={126} className="jl-mark"
+                        wash="rgba(150,101,61,.30)" wash2="rgba(126,62,43,.20)" ink="rgba(74,56,36,.55)" />
                       <span className="jl-tab">Journey {String(index + 1).padStart(2, '0')}</span>
                       <span className="jl-stamp">{new Date(trip.updatedAt).getFullYear()}</span>
                       <span className="jl-city">{trip.city}</span>

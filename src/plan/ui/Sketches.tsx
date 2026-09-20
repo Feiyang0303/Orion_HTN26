@@ -38,6 +38,35 @@ export function sketchFor(name: string, fallback: number = 0): SketchName {
   return spares[fallback % spares.length]
 }
 
+/* The one thing a city is drawn as, for a cover. Not the same question as
+ * `sketchFor`, which is about a place's own name: nothing in the word "Tokyo"
+ * says tower, and nothing in "Rome" says colosseum. This is the shape a person
+ * pictures when the city is named, so it has to be looked up rather than
+ * matched. An unlisted city falls through to whatever its name suggests, and
+ * then to the spares, so every cover gets something. */
+const CITY_MARK: [RegExp, SketchName][] = [
+  [/^tokyo|^paris\b|^toronto|^seattle|^shanghai|^dubai|^kuala/i, 'lattice'],
+  [/^kyoto|^nara\b|^athens|^bangkok|^beijing|^chiang|^luang/i, 'temple'],
+  [/^rome|^roma\b|^verona|^sydney/i, 'theatre'],
+  [/^london|^washington|^pisa\b|^bologna|^hong kong|^taipei/i, 'tower'],
+  [/^new york|^rio\b|^copenhagen|^buenos/i, 'statue'],
+  [/^barcelona|^florence|^firenze|^milan|^cologne|^köln|^istanbul|^seville|^helsinki|^reykjav/i, 'cathedral'],
+  [/^venice|^venezia|^amsterdam|^budapest|^prague|^praha|^dublin|^san francisco|^bruges|^brugge|^porto/i, 'bridge'],
+  [/^edinburgh|^moscow|^osaka|^himeji|^salzburg|^heidelberg|^windsor/i, 'castle'],
+  [/^vienna|^wien\b|^madrid|^seoul|^st\.? petersburg|^versailles|^stockholm|^bangkok/i, 'palace'],
+  [/^berlin|^munich|^münchen|^delhi|^agra\b|^mumbai/i, 'arch'],
+  [/^lisbon|^lisboa|^cape town|^naples|^napoli|^bergen|^wellington/i, 'hill'],
+  [/^marrakech|^marrakesh|^fez|^fès|^jerusalem|^hanoi|^tunis/i, 'market'],
+  [/^brussels|^bruxelles|^krak|^warsaw|^boston|^philadelphia|^siena/i, 'square'],
+  [/^vancouver|^singapore|^portland|^christchurch|^ottawa/i, 'park'],
+  [/^geneva|^zurich|^zürich|^chicago|^dubrovnik|^nice\b|^split\b/i, 'fountain'],
+]
+export function cityMark(city: string, fallback = 0): SketchName {
+  const name = city.split(',')[0].trim()
+  for (const [r, s] of CITY_MARK) if (r.test(name)) return s
+  return sketchFor(name, fallback)
+}
+
 /* The filters live once, in a hidden svg the page mounts. */
 export function SketchDefs() {
   return (
