@@ -1,12 +1,12 @@
-/* Saved trips: the trip, the narration that was recorded for it, and who saved it.
+/* Saved trips: the trip and the narration that was recorded for it.
  *
  * MongoDB (MONGODB_URI) when it is configured, so a trip outlives the laptop that
  * planned it and opens from any device. Without it, the same routes are served from
  * memory, so everything (including sending a trip to a headset) works in development,
  * it just forgets when the proxy restarts. The page is told which one it got.
  *
- * Whoever holds a trip's link can read it; only the device that saved it can change
- * or remove it. There are no accounts, so "owner" is a random id the browser keeps.
+ * For now the journal is deliberately global: every client connected to this
+ * service sees and can change the same collection of trips.
  */
 import { MongoClient, Binary } from 'mongodb'
 
@@ -34,7 +34,7 @@ function memoryBackend() {
       trips.set(doc._id, { ...doc, createdAt: prev?.createdAt ?? doc.updatedAt })
       if (trips.size > 200) trips.delete(trips.keys().next().value)
     },
-    async list(owner) { return [...trips.values()].filter(d => d.owner === owner).sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 50) },
+    async list() { return [...trips.values()].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 50) },
     async remove(id) { trips.delete(id); for (const k of clips.keys()) if (k.startsWith(`${id}/`)) clips.delete(k) },
     async putClip(id, name, buf) { clips.set(`${id}/${name}`, buf) },
     async getClip(id, name) { return clips.get(`${id}/${name}`) ?? null },
@@ -46,7 +46,7 @@ function mongoBackend(uri) {
   let ready
   const db = () => ready ??= client.connect().then(async () => {
     const d = client.db(process.env.MONGODB_DB || 'orion')
-    await d.collection('trips').createIndex({ owner: 1, updatedAt: -1 })
+    await d.collection('trips').createIndex({ updatedAt: -1 })
     await d.collection('clips').createIndex({ tripId: 1 })
     return d
   }).catch(e => { ready = undefined; throw e })
@@ -57,8 +57,8 @@ function mongoBackend(uri) {
       const { createdAt: _c, ...rest } = doc
       await (await db()).collection('trips').updateOne({ _id: doc._id }, { $set: rest, $setOnInsert: { createdAt: doc.updatedAt } }, { upsert: true })
     },
-    async list(owner) {
-      return (await db()).collection('trips').find({ owner }, { projection: { body: 0 } }).sort({ updatedAt: -1 }).limit(50).toArray()
+    async list() {
+      return (await db()).collection('trips').find({}, { projection: { body: 0 } }).sort({ updatedAt: -1 }).limit(50).toArray()
     },
     async remove(id) {
       const d = await db()
@@ -86,21 +86,18 @@ export function tripRoutes({ json, readJson, readBuf, HttpError }) {
 
   const q = req => new URL(req.url, 'http://x').searchParams
   const idOf = req => { const id = q(req).get('id') ?? ''; if (!ID.test(id)) throw new HttpError(400, 'bad trip id'); return id }
-  const ownerOf = req => { const o = q(req).get('owner') ?? ''; if (!ID.test(o)) throw new HttpError(400, 'bad owner'); return o }
 
   return {
     persistent: store.persistent,
     routes: {
       /** Save (create or replace) a trip. Body: { trip, mode, origin }. */
       'POST /api/trips/save': async (req, res) => {
-        const id = idOf(req), owner = ownerOf(req)
+        const id = idOf(req)
         const body = await readJson(req, MAX_TRIP_BYTES)
         if (!body.trip?.days || !Array.isArray(body.trip.days)) throw new HttpError(400, 'not a trip')
-        const prev = await store.get(id)
-        if (prev && prev.owner !== owner) throw new HttpError(403, 'this trip belongs to someone else')
         const updatedAt = Date.now()
         await store.put({
-          _id: id, owner, updatedAt,
+          _id: id, updatedAt,
           city: String(body.trip.city ?? ''), days: body.trip.days.length,
           places: body.trip.days.reduce((n, d) => n + (d.stops?.length ?? 0), 0),
           body: { trip: body.trip, mode: body.mode, origin: body.origin },
@@ -113,12 +110,11 @@ export function tripRoutes({ json, readJson, readBuf, HttpError }) {
         if (!d) throw new HttpError(404, 'no such trip')
         json(res, 200, { id: d._id, updatedAt: d.updatedAt, ...d.body })
       },
-      'GET /api/trips/list': async (req, res) => {
-        json(res, 200, { persistent: store.persistent, trips: (await store.list(ownerOf(req))).map(summary) })
+      'GET /api/trips/list': async (_req, res) => {
+        json(res, 200, { persistent: store.persistent, trips: (await store.list()).map(summary) })
       },
       'DELETE /api/trips/delete': async (req, res) => {
         const id = idOf(req), d = await store.get(id)
-        if (d && d.owner !== ownerOf(req)) throw new HttpError(403, 'this trip belongs to someone else')
         if (d) await store.remove(id)
         json(res, 200, { ok: true })
       },
