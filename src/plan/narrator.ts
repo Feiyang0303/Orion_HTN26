@@ -19,7 +19,9 @@ import { askJson } from './json'
 export type Draft = { text: string; targetId?: string }
 export type Mode = 'full' | 'short'
 
-const LIMITS = { short: { beats: 3, words: 30 }, full: { beats: 4, words: 46 } }
+/* How much is said at a place. With nothing cut from a page any more, four beats of forty-odd words was a minute over
+   one roof; three of about thirty is a little over half that, and is the length a stop was when people liked it. */
+const LIMITS = { short: { beats: 2, words: 26 }, full: { beats: 3, words: 32 } }
 
 const SYSTEM = `You are the guide on a flight over a real city. The listener is in the air,
 perhaps fifty metres above the place you are describing, looking down and
@@ -36,7 +38,7 @@ glad to be up here. No exclamation marks. No "welcome to", no "as you can see",
 no "imagine". Speak in the present. Contractions are fine; you are talking.
 
 WHAT A BEAT IS
-Each beat is two or three spoken sentences and holds the camera for as long as
+Each beat is one or two spoken sentences and holds the camera for as long as
 it takes to say, so a thin beat is a silence with a view. Give each one a small
 arc: something seen, then something understood.
 
