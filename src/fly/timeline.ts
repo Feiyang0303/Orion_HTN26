@@ -15,11 +15,11 @@ import type { Beat, Plan } from '../types'
  */
 
 export const DIVE_SEC = 5      // planning view → first stop
-export const LEAD_SEC = 0.7    // camera settles before the guide speaks
-export const BEAT_GAP = 0.12   // breath between beats: a breath, not a pause
-export const TAIL_SEC = 0.5    // hold after the last beat before moving on
-export const HOLD_LEAD_SEC = 0.6     // before the welcome and the goodbye
-export const BRIDGE_LEAD_SEC = 0.35  // the camera is under way before the line on the way is spoken
+export const LEAD_SEC = 0.4    // just enough for the new view to read before the guide speaks
+export const BEAT_GAP = 0.04   // the clips already contain a natural sentence-ending breath
+export const TAIL_SEC = 0.2    // let the last word land, then keep moving
+export const HOLD_LEAD_SEC = 0.4     // before the welcome and the goodbye
+export const BRIDGE_LEAD_SEC = 0.15  // the camera is visibly under way before the bridge begins
 export const FLY_MPS = 35      // cruising speed between stops (eased, so peak is higher)
 export const MIN_TRAVEL_SEC = 4
 /* A leg with nothing to say is crossed quickly; a leg with a line to say takes
@@ -87,11 +87,11 @@ export function buildTimeline(plan: Plan, travelSec = flatTravelSec): Timeline {
       const flat = travelSec(leg.distanceM)
       const bridge = leg.bridge
       if (!bridge) return { kind: 'travel', leg: i, t0, t1: t0 + flat, beats: [] }
-      /* A leg is never cut short of its own line: if the words outlast the
-         flight, the flight takes longer and the camera cruises to the end of
-         the sentence. */
+      /* When there is a bridge, its voice paces the move. Keeping the old
+         distance-based duration after a short clip left several silent
+         seconds before the next stop; the camera can simply travel faster. */
       const slot: BeatSlot = { index: 0, t0: t0 + BRIDGE_LEAD_SEC, t1: t0 + BRIDGE_LEAD_SEC + bridge.durationSec, beat: bridge }
-      return { kind: 'travel', leg: i, t0, t1: Math.max(t0 + flat, slot.t1 + TAIL_SEC), beats: [slot] }
+      return { kind: 'travel', leg: i, t0, t1: Math.max(t0 + MIN_TRAVEL_SEC, slot.t1 + TAIL_SEC), beats: [slot] }
     })
   })
 

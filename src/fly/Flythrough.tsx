@@ -201,13 +201,14 @@ function Rig({ plan, begin, quality, onStopReached, onFinish, onHud, control, ti
       st.t = tl.dwellStart.find(x => x > st.t + 0.05) ?? tl.total
     }
     if (st.started && !ctl.paused && !st.finished) {
-      let next = Math.min(tl.total, st.t + dt)
       const current = tl.at(st.t)
       const spoken = activeBeat(current.seg, st.t)
-      /* durationSec is measured when the clip is made, but decoding, browser
-         startup and rounding can make real playback finish later. Never cross
-         the end of a spoken beat until the media element itself has ended;
-         otherwise changing camera shots pauses and discards the last words. */
+      /* The media element is the authority in both directions. If the real
+         clip ends before its stored duration, skip the stale remainder rather
+         than leaving dead air. If it runs long, hold the shot until the last
+         word instead of letting the next camera move cut it off. */
+      if (spoken && st.audio && !st.audioFailed && st.audio.ended) st.t = spoken.t1
+      let next = Math.min(tl.total, st.t + dt)
       if (spoken && st.audio && !st.audioFailed && !st.audio.ended && next >= spoken.t1)
         next = spoken.t1 - 0.001
       st.t = next
