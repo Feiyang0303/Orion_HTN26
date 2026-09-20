@@ -23,7 +23,7 @@ import { sentences, withoutNameAsides } from './sentences'
 
 const TARGET_RADIUS_M = 300  // what a guide can point at from a stop
 const PLAN_VERSION = 3
-const MAX_TTS_CONCURRENT = 6
+const MAX_TTS_CONCURRENT = 4      // the voice account allows only a few at once; the proxy waits out the rest, but asking for fewer means less waiting
 
 export type PipelineOptions = {
   onEvent?: (e: CrewEvent) => void

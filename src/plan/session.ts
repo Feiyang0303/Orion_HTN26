@@ -1,5 +1,5 @@
 import { observeCrew, traced } from '../telemetry'
-import type { Day, Stay, Stop, Trip, Waypoint, Wish } from '../types'
+import type { Day, Direction, Stay, Stop, Trip, Waypoint, Wish } from '../types'
 import { HHMM, MINS } from '../types'
 import type { Agent, CrewEvent } from './events'
 import { locate, type Place } from './geocode'
@@ -221,6 +221,26 @@ async function buildDay(s: Session, draft: DayDraft, number: number, opts: Pipel
    with what was chosen, and the rest is looked at when the day is first flown. A person is waiting. */
 const DIRECTOR_GRACE_SEC = 40
 
+/* A guide who says "just north of it, the old theatre" while the camera turns to a wall of trees is worse than one who
+   says nothing. Where the Director, having looked from every side at a loaded city, could not pick a nearby thing
+   out, what was to be said about it is left out of the day: its line, and the clip already recorded for it, which is
+   the price of finding out after the page was written (looking first would hold every page up for it).
+
+   Only the things a stop points at, never the stop: a stop holds the route, the clock and the lines either side of it
+   together, and taking one out is the editor's work, asked for by a person. And never a stop's last word: a place
+   with nothing said at it is a silence with a view. */
+function withoutTheUnseen(day: Day, direction: Direction): { day: Day; left: string[] } {
+  const left: string[] = []
+  const stops = day.stops.map((stop, i) => {
+    const unseen = (id?: string) => !!id && direction.choices[`${i}:${id}`]?.usable === false
+    const beats = stop.beats.filter(b => !unseen(b.targetId))
+    if (beats.length === stop.beats.length || !beats.length) return stop
+    for (const id of new Set(stop.beats.filter(b => unseen(b.targetId)).map(b => b.targetId!))) left.push(stop.targets.find(t => t.id === id)?.name ?? 'something nearby')
+    return { ...stop, beats }
+  })
+  return { day: left.length ? { ...day, stops } : day, left }
+}
+
 async function directDay(s: Session, day: Day, opts: PipelineOptions, until: Promise<unknown>): Promise<Day> {
   if (!opts.direct) return day
   const wanted = day.stops.reduce((n, st) => n + 1 + new Set(st.beats.map(b => b.targetId ?? 'stop')).size, 0)
@@ -230,6 +250,9 @@ async function directDay(s: Session, day: Day, opts: PipelineOptions, until: Pro
     note: (subject, nth, total) => say(s, 'Director', 'agent', 'working', `Day ${day.number}: walking round ${subject} (${nth} of ${total})`),
   })
   const chosen = Object.keys(direction?.choices ?? {}).length
+  const { day: shown, left } = direction ? withoutTheUnseen(day, direction) : { day, left: [] as string[] }
+  if (left.length) say(s, 'Director', 'agent', 'working', `Day ${day.number}: leaving out ${left.join(' and ')}, which cannot be picked out from the air`)
+  day = shown
   say(s, 'Director', 'agent', chosen ? 'done' : 'failed', chosen
     ? `Day ${day.number}: ${chosen >= wanted ? `all ${chosen} shots` : `${chosen} of ${wanted} shots`} chosen by looking${chosen >= wanted ? '' : '; the rest when it is flown'}`
     : `Day ${day.number}: the city could not be looked at, so its shots are chosen when it is flown`)

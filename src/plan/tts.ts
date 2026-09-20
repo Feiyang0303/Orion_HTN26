@@ -9,7 +9,7 @@ import type { Beat, Leg, Stop } from '../types'
 
 const BITRATE = 128_000
 const WORDS_PER_SEC = 2.6
-const CONCURRENT = 6
+const CONCURRENT = 4
 
 export const estimateSec = (text: string) => text.trim().split(/\s+/).length / WORDS_PER_SEC
 

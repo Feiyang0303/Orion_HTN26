@@ -318,6 +318,8 @@ const v3Stability = mood => {
    pitch is wanted more than the pace. */
 let speedTakes = true
 
+const TTS_BUSY_RETRIES = 6      // about fifteen seconds of patience, spread out so the waiting lines do not all come back at once
+
 async function speak(key, voice, text, model, mood, withStyle, speed = 1) {
   const m = MOOD[mood] || MOOD.warm
   const v3 = /_v3/.test(model)
@@ -325,10 +327,15 @@ async function speak(key, voice, text, model, mood, withStyle, speed = 1) {
   const goose = speed !== 1 || gooseIsDuck
   const stability = goose ? Math.max(m.stability, 0.6) : m.stability
   const style = goose ? Math.min(m.style, 0.2) : m.style
-  const r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voice}?output_format=mp3_44100_128`, {
+  /* "Too many concurrent requests" is not a refusal, it is a queue: a plan voices its lines several at a time, a second
+     tab or a teammate doubles that, and the account allows only so many at once. It used to be taken for the model
+     saying no, so those lines were spoken by another model (a day in two voices) or not at all. It is waited out. */
+  const send = () => fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voice}?output_format=mp3_44100_128`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'xi-api-key': key, accept: 'audio/mpeg' },
-    body: JSON.stringify({
+    body,
+  })
+  const body = JSON.stringify({
       text: text.trim().slice(0, 5000),
       model_id: model,
       voice_settings: v3
@@ -338,8 +345,13 @@ async function speak(key, voice, text, model, mood, withStyle, speed = 1) {
             ...(withStyle ? { style } : {}),
             ...pace,
           },
-    }),
   })
+  let r = await send()
+  for (let attempt = 1; r.status === 429 && attempt <= TTS_BUSY_RETRIES; attempt++) {
+    await r.arrayBuffer().catch(() => {})
+    await new Promise(done => setTimeout(done, 500 * attempt + Math.random() * 600))
+    r = await send()
+  }
   if (!r.ok && pace.speed && (r.status === 400 || r.status === 422)) {
     console.warn(`[tts] ${model} would not take a speed (${r.status}); the goose will speak at its own pace from here`)
     speedTakes = false
