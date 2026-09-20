@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import { Html } from '@react-three/drei'
 import * as THREE from 'three'
@@ -10,8 +10,10 @@ import { legStyle, type LegStyle } from './legStyle'
  *
  * It is a ribbon, not a line: flat on the ground, as wide as the street it follows (and
  * never thinner on screen than a line would be, so it still reads from two kilometres up),
- * soft at its edges, with light flowing along it the way the leg is travelled and a comet
- * that runs its length: the traveller. Each way of travelling has its own manner (legStyle),
+ * soft at its edges, with light flowing slowly along it the way the leg is travelled. Nothing
+ * rides it for show. When the flight is on a leg, the ribbon itself says where: it burns
+ * brightest just behind the traveller and cools to an ember where they have already been,
+ * so the way ahead is the bright part. Each way of travelling has its own manner (legStyle),
  * and a leg by transit is drawn as what it is made of: a walk to the platform, the ride in
  * the line's own colour between two marked stations, a walk out. Where a roof or a tree
  * stands over the street the ribbon shows through it faintly rather than breaking, and a
@@ -61,12 +63,15 @@ const fragmentShader = /* glsl */`
       marks = mix(between, 1., mix(mark, dashOn / period, clamp(fwidth(vAlong) / period * 2.5, 0., 1.)));
     }
 
-    // The comet: bright at its head, fading behind it.
+    // Where the flight is on this leg, if it is: a wake of light just behind the traveller, cooling to an
+    // ember over the ground already covered. Ahead of them the ribbon is as bright as it ever is.
     float behind = head - vAlong;
-    float comet = head >= 0. && behind >= 0. ? exp(-behind / trail) : 0.;
+    float travelled = head >= 0. && behind > 0. ? 1. : 0.;
+    float wake = travelled * exp(-behind / trail);
+    float ember = mix(1., .38, travelled * smoothstep(0., trail * 2.5, behind));
 
-    vec3 c = colour * (.78 + .3 * flow) + warm * (core * .22 + comet * 1.1);
-    float a = opacity * body * marks * (.78 + .22 * flow) + comet * body * .85;
+    vec3 c = colour * (.78 + .3 * flow) + warm * (core * .22 + wake * .9);
+    float a = (opacity * body * marks * (.78 + .22 * flow)) * ember + wake * body * .6;
     gl_FragColor = vec4(c, clamp(a, 0., 1.));
     #include <colorspace_fragment>
   }`
@@ -116,7 +121,7 @@ function Stretch({ geometry, part, lift, dim, floating, shared }: { geometry: TH
         colour: { value: new THREE.Color(shadow ? '#000' : part.colour) }, warm: { value: shadow ? new THREE.Color(0, 0, 0) : WARM },
         widthM: { value: part.style.widthM * width }, minPx: { value: part.style.minPx * width * (dim ? .6 : 1) },
         lift: { value: lift }, opacity: { value: opacity }, soft: { value: soft },
-        flowMps: { value: dim ? 0 : part.style.flowMps }, trail: { value: Math.max(60, part.style.flowMps * 1.6) },
+        flowMps: { value: dim ? 0 : part.style.flowMps }, trail: { value: 70 },
         dashOn: { value: part.style.dash?.on ?? 0 }, dashOff: { value: part.style.dash?.off ?? 0 }, between: { value: floating ? 0 : .42 },
         time: shared.time, head: shadow ? { value: -1 } : shared.head, pxScale: shared.pxScale,
       },
@@ -140,17 +145,6 @@ function Stretch({ geometry, part, lift, dim, floating, shared }: { geometry: TH
   )
 }
 
-let glowTexture: THREE.Texture | null = null
-/** A soft disc of light, drawn once: the head of the comet. */
-function glow() {
-  if (glowTexture) return glowTexture
-  const c = document.createElement('canvas'); c.width = c.height = 128
-  const g = c.getContext('2d')!, r = g.createRadialGradient(64, 64, 0, 64, 64, 64)
-  r.addColorStop(0, 'rgba(255,248,230,1)'); r.addColorStop(.18, 'rgba(255,226,160,.85)'); r.addColorStop(.5, 'rgba(240,180,94,.22)'); r.addColorStop(1, 'rgba(240,180,94,0)')
-  g.fillStyle = r; g.fillRect(0, 0, 128, 128)
-  return glowTexture = new THREE.CanvasTexture(c)
-}
-
 export default function RouteLine({ pts: ground, colour, transport, estimated, dim = false, lift = 3, label, steps, head }: {
   /** Already on the ground and smoothed (legStyle.smoothHeights). */
   pts: THREE.Vector3[]
@@ -162,8 +156,7 @@ export default function RouteLine({ pts: ground, colour, transport, estimated, d
   label?: string
   /** A transit leg's parts, if the router gave them. */
   steps?: LegStep[]
-  /** Where the traveller is, in metres along the leg, when something is actually travelling it
-      (the flight); null or absent and the comet runs the leg by itself, over and over. */
+  /** Where the traveller is, in metres along the leg, while the flight is on it; null or absent otherwise. */
   head?: () => number | null
 }) {
   // A leg that could not be routed is two points and a guess. It is lifted into an arc over the
@@ -203,8 +196,6 @@ export default function RouteLine({ pts: ground, colour, transport, estimated, d
   useEffect(() => () => geometries.forEach(g => g.dispose()), [geometries])
 
   const shared = useMemo<Shared>(() => ({ time: { value: 0 }, head: { value: -1 }, pxScale: { value: .001 } }), [])
-  const comet = useRef<THREE.Sprite>(null)
-  const flowMps = legStyle(transport, estimated).flowMps
   const camera = useThree(s => s.camera) as THREE.PerspectiveCamera
   const height = useThree(s => s.size.height)
 
@@ -216,13 +207,7 @@ export default function RouteLine({ pts: ground, colour, transport, estimated, d
   useFrame(({ clock }) => {
     shared.time.value = clock.elapsedTime
     shared.pxScale.value = 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) / height
-    const own = (clock.elapsedTime * flowMps * 2.2) % (total + flowMps * 3)       // runs the leg, rests a moment, runs it again
-    const s = dim || total < 1 ? -1 : head?.() ?? (own > total ? -1 : own)
-    shared.head.value = s
-    const m = comet.current
-    if (!m) return
-    m.visible = s >= 0
-    if (s >= 0) { where(s, m.position); m.position.y += lift + 2 }
+    shared.head.value = dim ? -1 : head?.() ?? -1
   })
 
   if (pts.length < 2) return null
@@ -230,12 +215,6 @@ export default function RouteLine({ pts: ground, colour, transport, estimated, d
   return (
     <>
       {parts.map((part, i) => geometries[i] && <Stretch key={i} geometry={geometries[i]} part={part} lift={lift} dim={dim} floating={!!estimated} shared={shared} />)}
-
-      {!dim && (
-        <sprite ref={comet} visible={false} scale={[.05, .05, 1]} raycast={noHit} renderOrder={5}>
-          <spriteMaterial map={glow()} transparent depthTest={false} depthWrite={false} sizeAttenuation={false} blending={THREE.AdditiveBlending} toneMapped={false} />
-        </sprite>
-      )}
 
       {/* the two stations of a ride, and which line it is */}
       {!dim && parts.map((part, i) => part.step?.mode === 'transit' && [part.from, part.to].map((s, end) => {

@@ -13,7 +13,7 @@
 export type Shot = 'map' | 'hold' | 'dive' | 'travel' | 'dwell'
 
 /** Screen-space error targets, in pixels. The tile renderer's own default is 16. */
-export const TARGET: Record<Shot, number> = { map: 30, hold: 24, dive: 9, travel: 8, dwell: 4 }
+export const TARGET: Record<Shot, number> = { map: 30, hold: 10, dive: 9, travel: 8, dwell: 4 }
 
 /* The governor looks after a machine that is struggling; this is for one that is not. "High" asks
  * for the last level of detail wherever the camera holds still, keeps twice as many tiles (so the
@@ -22,9 +22,9 @@ export const TARGET: Record<Shot, number> = { map: 30, hold: 24, dive: 9, travel
  * is there for one that visibly cannot, or is short of memory. The choice is the person's and is
  * remembered on their machine. */
 export type Quality = 'high' | 'standard'
-export const PROFILE: Record<Quality, { dwell: number; dpr: number; cacheTiles: [min: number, max: number]; cacheBytes: [min: number, max: number] }> = {
-  high: { dwell: 3, dpr: 2, cacheTiles: [20000, 30000], cacheBytes: [1.4e9, 2.0e9] },
-  standard: { dwell: TARGET.dwell, dpr: 1.5, cacheTiles: [12000, 20000], cacheBytes: [.7e9, 1.0e9] },
+export const PROFILE: Record<Quality, { dwell: number; hold: number; dpr: number; cacheTiles: [min: number, max: number]; cacheBytes: [min: number, max: number] }> = {
+  high: { dwell: 3, hold: 6, dpr: 2, cacheTiles: [20000, 30000], cacheBytes: [1.4e9, 2.0e9] },
+  standard: { dwell: TARGET.dwell, hold: TARGET.hold, dpr: 1.5, cacheTiles: [12000, 20000], cacheBytes: [.7e9, 1.0e9] },
 }
 const STORED = 'orion.quality'
 export const storedQuality = (): Quality => { try { return localStorage.getItem(STORED) === 'standard' ? 'standard' : 'high' } catch { return 'high' } }
@@ -42,7 +42,7 @@ export class Governor {
 
   /** Call once per frame; returns the error target to give the renderer. */
   step(dt: number, shot: Shot): number {
-    const target = shot === 'dwell' ? PROFILE[this.quality].dwell : TARGET[shot]
+    const target = shot === 'dwell' || shot === 'hold' ? PROFILE[this.quality][shot] : TARGET[shot]
     if (dt > 0.25) return target * this.scale               // a stall or a hidden tab says nothing about the machine
     this.frame += (dt - this.frame) * Math.min(1, dt * 2)   // ~half-second smoothing
     if (this.frame > SLOW) this.scale = Math.min(MAX_BACKOFF, this.scale * (1 + dt * .9))

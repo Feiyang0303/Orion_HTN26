@@ -41,7 +41,7 @@ export type LegStyle = {
   /** A wider, fainter one under it. */
   glow: boolean
   opacity: number
-  /** How fast light moves along it in the direction of travel, and the comet with it, metres a second. */
+  /** How fast light moves along it in the direction of travel, metres a second. */
   flowMps: number
   /** For 3D tubes: radius as a fraction of the drawing unit, and bead spacing if drawn as beads. */
   tube: number
@@ -52,10 +52,10 @@ export type LegStyle = {
     A leg that is only an estimate is drawn broken and faint, so a guess never looks like a route. */
 export function legStyle(transport: Transport, estimated = false): LegStyle {
   const base: Record<Transport, LegStyle> = {
-    walk: { widthM: 5, minPx: 5.5, dash: { on: 8, off: 5 }, glow: false, opacity: .95, flowMps: 18, tube: .0022, beads: .0075 },
-    cycle: { widthM: 5, minPx: 5.8, dash: { on: 30, off: 8 }, glow: false, opacity: .95, flowMps: 45, tube: .0026, beads: .016 },
-    transit: { widthM: 9, minPx: 8.5, dash: null, glow: true, opacity: .95, flowMps: 90, tube: .0034, beads: null },
-    drive: { widthM: 11, minPx: 9.5, dash: null, glow: true, opacity: .95, flowMps: 70, tube: .0042, beads: null },
+    walk: { widthM: 5, minPx: 5.5, dash: { on: 8, off: 5 }, glow: false, opacity: .95, flowMps: 9, tube: .0022, beads: .0075 },
+    cycle: { widthM: 5, minPx: 5.8, dash: { on: 30, off: 8 }, glow: false, opacity: .95, flowMps: 14, tube: .0026, beads: .016 },
+    transit: { widthM: 9, minPx: 8.5, dash: null, glow: true, opacity: .95, flowMps: 24, tube: .0034, beads: null },
+    drive: { widthM: 11, minPx: 9.5, dash: null, glow: true, opacity: .95, flowMps: 20, tube: .0042, beads: null },
   }
   const s = base[transport] ?? base.walk      // old plans on disk predate the field
   return estimated ? { ...s, dash: { on: 14, off: 16 }, glow: false, opacity: .45, beads: s.beads ?? .012 } : s

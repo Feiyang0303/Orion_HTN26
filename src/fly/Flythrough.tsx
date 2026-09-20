@@ -115,7 +115,12 @@ function Rig({ plan, begin, quality, onStopReached, onFinish, onHud, control, ti
     const push = (t: number, eye: THREE.Vector3, look: THREE.Vector3) => out.push({ t, eye: eye.clone(), look: look.clone() })
     const e = new THREE.Vector3(), l = new THREE.Vector3()
     for (const seg of tl.segments) {
-      if (seg.kind === 'dwell') {
+      if (seg.kind === 'hold') {
+        // The welcome and the goodbye are said over the whole city, and are looked at for as long as they take to
+        // say. They are fetched at the sharpness they will be drawn at before they begin: the opening one while the
+        // book is still being read over a coarse map.
+        planPose(0, e, l); out.push({ t: seg.t0, eye: e.clone(), look: l.clone(), target: PROFILE[quality].hold })
+      } else if (seg.kind === 'dwell') {
         shots.dwell(seg.stop, null, undefined, 0, 0, e, l, false); push(seg.t0, e, l)
         for (const b of seg.beats) { shots.dwell(seg.stop, b.index, b.beat.targetId, b.t0 - seg.t0, 0, e, l, false); push(b.t0, e, l) }
       } else if (seg.kind === 'travel') {
@@ -129,6 +134,7 @@ function Rig({ plan, begin, quality, onStopReached, onFinish, onHud, control, ti
     const t = tiles.current, p = pre.current
     if (!t || !PRELOAD_ON) return
     if (p.built !== version) { p.shots = buildShots(); p.built = version }
+    for (const sh of p.shots) if (sh.target && sh.t >= now) planPose(0, sh.eye, sh.look)      // the orbit keeps turning until it is used
     p.loader.sweep(t, p.shots, now, PRELOAD_AHEAD_SEC, () => new THREE.PerspectiveCamera(mainCam.fov, mainCam.aspect, mainCam.near, mainCam.far), size.width, size.height)
   }
 

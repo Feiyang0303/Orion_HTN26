@@ -145,7 +145,9 @@ export class Shots {
   }
 }
 
-export type Shot = { t: number; eye: THREE.Vector3; look: THREE.Vector3 }
+/** `target` is the error target the shot will be drawn at, when that is sharper than what is being drawn while it
+    is fetched: the day's opening orbit, fetched while the map is still being shown coarsely. */
+export type Shot = { t: number; eye: THREE.Vector3; look: THREE.Vector3; target?: number }
 
 /* Tiles are chosen for the cameras the renderer knows about. Registering
  * invisible cameras at the shots coming up (or the opening ones, while the
@@ -163,7 +165,10 @@ export class Preloader {
       let cam = this.cams.get(i)
       if (!cam) { cam = make(); this.cams.set(i, cam); t.setCamera(cam) }
       cam.position.copy(shots[i].eye); cam.lookAt(shots[i].look); cam.updateMatrixWorld(true)
-      t.setResolution(cam, width, height)
+      // The loader has one error target for every camera. A shot that wants better than that is given a camera with
+      // more pixels instead, which asks for exactly the same tiles.
+      const finer = Math.max(1, t.errorTarget / (shots[i].target ?? Infinity))
+      t.setResolution(cam, width * finer, height * finer)
     }
   }
 
