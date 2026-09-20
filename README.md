@@ -38,11 +38,7 @@ Your guide is a small magic goose. It talks you through each stop, and you can i
 
 ![On the route](docs/screenshots/07-flight-route.jpg)
 
-![Iolani Palace](docs/screenshots/08-iolani-palace.jpg)
-
 ![Ask the guide](docs/screenshots/09-guide.jpg)
-
-![End of the day](docs/screenshots/10-flight-end.jpg)
 
 As a plus, you also get an exportable travel journal that looks hand-drawn, with routes, arrival times, food, and a place to sleep.
 
