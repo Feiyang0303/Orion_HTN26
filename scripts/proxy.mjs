@@ -20,7 +20,7 @@ import { tripRoutes } from './trips.mjs'
 loadEnv()   // also done by instrument.mjs when preloaded; harmless twice
 const env = name => process.env[name] || ''
 const PORT = Number(env('PORT') || 8787)
-const DEFAULT_MODELS = { scout: 'gpt-4o', critic: 'gpt-4o', narrator: 'gpt-4o' }
+const DEFAULT_MODELS = { scout: 'gpt-4o', critic: 'gpt-4o', narrator: 'gpt-4o', director: 'gpt-4o' }     // the director is shown pictures: its model must see
 const routesKey = () => env('GOOGLE_ROUTES_KEY') || env('VITE_GOOGLE_MAPS_KEY')
 
 class HttpError extends Error {
@@ -51,7 +51,10 @@ function lan(_req, res) {
 /* ---- LLM ---------------------------------------------------------------- */
 async function llm(req, res) {
   const key = requireEnv('OPENAI_API_KEY')
-  const { role, system, user, maxTokens = 2000 } = await readJson(req)
+  const { role, system, user, maxTokens = 2000, images = [] } = await readJson(req)
+  // Pictures to look at (the flight's director chooses between views of a place): small JPEGs, as data URLs.
+  if (!Array.isArray(images) || images.length > 8 || images.some(u => typeof u !== 'string' || !u.startsWith('data:image/'))) throw new HttpError(400, 'images must be at most 8 image data URLs')
+  const content = images.length ? [{ type: 'text', text: user }, ...images.map(url => ({ type: 'image_url', image_url: { url, detail: 'low' } }))] : user
   const model = env(`LLM_MODEL_${String(role).toUpperCase()}`) || DEFAULT_MODELS[role] || ''
   if (!model) throw new HttpError(501, `LLM_MODEL_${String(role).toUpperCase()} is not set on the proxy.`)
   // Reasoning models only: gpt-4o rejects reasoning_effort. Narrator stays low on those models.
@@ -77,7 +80,7 @@ async function llm(req, res) {
           model, max_completion_tokens: budget,
           response_format: { type: 'json_object' },
           ...(effort ? { reasoning_effort: effort } : {}),
-          messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
+          messages: [{ role: 'system', content: system }, { role: 'user', content }],
         }),
       })
       return { upstream: r, data: await r.json() }

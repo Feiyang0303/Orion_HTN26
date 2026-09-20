@@ -40,11 +40,19 @@ export function routeOn(plan: Plan, ground: GroundPlacer): Route {
   return { legPaths, route: new Path(legPaths.flatMap(p => p.pts)), legStart }
 }
 
+/** The sides a shot is taken from when nobody has chosen, in turn; and the ones a director is offered. */
+const SIDES = [0, 0.7, -0.7, 1.4]
+export const CANDIDATE_SIDES = [0, 0.8, -0.8, 1.6, -1.6, Math.PI]
+export const shotKey = (stop: number, beatIndex: number | null) => `${stop}:${beatIndex ?? 'wide'}`
+
 export class Shots {
   route: Route = { legPaths: [], route: new Path([]), legStart: [] }
   readonly lastHeading = new THREE.Vector3(0, 0, -1)
   private sizes = new Map<string, { h: number | null; at: number }>()
   private vantage = new Map<string, { scale: number; lift: number; at: number }>()
+  /** Which side a shot is taken from, where someone has looked and chosen (the director): radians round from
+      behind the way the route arrived, keyed like the shot. Anything not chosen takes its turn round a fixed cycle. */
+  readonly chosen = new Map<string, number>()
   private a = new THREE.Vector3()
   private b = new THREE.Vector3()
 
@@ -67,7 +75,7 @@ export class Shots {
   /** A vantage on a stop (or one target at it) that can see it: start at the pan distance and
       climb / back off until the line of sight is clear. Re-checked every 1.5 s
       because the surface refines under us as tiles stream in. */
-  dwell(stop: number, beatIndex: number | null, beatTarget: string | undefined, tIn: number, now: number, eye: THREE.Vector3, look: THREE.Vector3, check = true) {
+  dwell(stop: number, beatIndex: number | null, beatTarget: string | undefined, tIn: number, now: number, eye: THREE.Vector3, look: THREE.Vector3, check = true, from?: number) {
     const key = beatTarget ? keyTarget(stop, beatTarget) : keyStop(stop)
     const tg = this.cell(key, keyStop(stop)).clone()
     const wide = beatIndex === null
@@ -77,13 +85,14 @@ export class Shots {
     if (!size || size.h === null || now - size.at > 4) { size = { h: this.ground.measure(this.tiles.current, tg.x, tg.y, tg.z), at: now }; this.sizes.set(key, size) }
     const fr = frameFor(size.h, wide)
     look.set(tg.x, tg.y + fr.lookUp, tg.z)
-    const offset = [0, 0.7, -0.7, 1.4][(beatIndex ?? 0) % 4]
+    const shot = shotKey(stop, beatIndex)
+    const offset = from ?? this.chosen.get(shot) ?? SIDES[(beatIndex ?? 0) % 4]
     const hd = this.headingIn(stop)
     const ang = Math.atan2(-hd.z, -hd.x) + offset + tIn * 0.04    // behind the way we came, slowly drifting
     const place = (scale: number, lift: number) =>
       eye.set(tg.x + Math.cos(ang) * fr.dist * scale, tg.y + fr.up + lift, tg.z + Math.sin(ang) * fr.dist * scale)
 
-    const vk = `${stop}:${beatIndex ?? 'wide'}`
+    const vk = `${shot}@${offset}`
     let v = this.vantage.get(vk)
     if (check && (!v || now - v.at > 1.5)) {
       v = { scale: 1, lift: 0, at: now }

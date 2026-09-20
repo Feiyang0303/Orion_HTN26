@@ -8,6 +8,8 @@ export type Hud = {
   phase: 'idle' | 'hold' | 'dive' | 'dwell' | 'travel' | 'done'
   stopIndex: number; stopCount: number; stopName: string
   caption: string; targetName: string; targetSource: string
+  /** Why this shot is taken from where it is, when the director that looks chose it. */
+  direction: string
   paused: boolean; progress: number
 }
 export type Control = { paused: boolean; skip: boolean; restart: boolean }
@@ -35,6 +37,7 @@ export default function FlightHud({ hud, control, quality, onQuality, onExit, on
         <div className="hud-caption" aria-live="polite">
           {hud.targetName && <small>Look at · {hud.targetName}</small>}
           <p>{hud.caption}</p>
+          {hud.direction && <small className="hud-direction">Shot chosen by the director · {hud.direction}</small>}
         </div>
       )}
       <div className="hud-controls">

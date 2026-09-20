@@ -10,8 +10,9 @@ import RouteLine from './RouteLine'
 import { Governor, PROFILE, storeQuality, storedQuality, type Quality, type Shot as Detail } from './quality'
 import { activeBeat, buildTimeline, type Segment } from './timeline'
 import { smootherstep } from './geo'
-import { Preloader, Shots, routeOn, type Shot } from './shots'
-import { startFlight, tag, log, lastFault } from '../telemetry'
+import { Preloader, Shots, routeOn, shotKey, type Shot } from './shots'
+import { VisionDirector } from './director.vision'
+import { startFlight, tag, log, lastFault, report } from '../telemetry'
 import Fault from '../ui/Fault'
 import FlightHud, { type Control, type Hud } from './FlightHud'
 import GuideTalk from './GuideTalk'
@@ -28,12 +29,14 @@ import './fly.css'
 
 const PRELOAD_AHEAD_SEC = 30       // tiles for shots this far ahead are fetched at full detail in advance
 const PRELOAD_ON = new URLSearchParams(location.search).get('preload') !== '0'
+const DIRECTOR_ON = new URLSearchParams(location.search).get('director') !== '0'      // the director that looks (director.vision.ts)
 const noHit = () => null
 
 type RigProps = FlyProps & { quality: Quality; plan: Plan; onHud: (h: Hud) => void; control: React.MutableRefObject<Control>; tiles: React.MutableRefObject<TilesHandle | null>; loadTick: number }
 
 function Rig({ plan, begin, quality, onStopReached, onFinish, onHud, control, tiles, loadTick }: RigProps) {
   const { camera } = useThree()
+  const gl = useThree(st => st.gl), scene = useThree(st => st.scene)
   const ground = useMemo(() => new GroundPlacer(), [])
   const [version, setVersion] = useState(0)
   const settled = useRef(0)
@@ -108,6 +111,12 @@ function Rig({ plan, begin, quality, onStopReached, onFinish, onHud, control, ti
   const size = useThree(st => st.size)
   const mainCam = camera as THREE.PerspectiveCamera
   const pre = useRef({ loader: new Preloader(), shots: [] as Shot[], built: -1 })
+  const director = useMemo(() => {
+    const d = new VisionDirector(plan, tl, shots, ground)
+    d.onChoice = () => { pre.current.built = -1 }          // the shots to fetch ahead have moved
+    if (import.meta.env.DEV) (window as unknown as { __director: unknown }).__director = d
+    return d
+  }, [plan, tl, shots, ground])
   const metrics = useRef({ frames: 0, pendingFrames: 0, longFrames: 0, activeSec: 0, worstMs: 0, events: [] as { t: number; label: string; pending: number; settleMs?: number }[], awaiting: null as null | { rec: { settleMs?: number }; at: number }, last: '' })
 
   function buildShots() {
@@ -221,6 +230,16 @@ function Rig({ plan, begin, quality, onStopReached, onFinish, onHud, control, ti
     if (st.started && !st.finished && st.t >= tl.total) { st.finished = true; endFlight('finished'); onFinish() }
 
     // ---- tile preloading + metrics (dev) ---------------------------------
+    // ---- the director looks at the places coming up, and chooses sides -----
+    // While the book is read the tiles are arriving anyway; once the flight is on, only when its own are in.
+    if (DIRECTOR_ON && tiles.current && director.waiting) {
+      const ts = tiles.current.stats
+      const here = st.started && (seg.kind === 'dwell' ? seg.stop : seg.kind === 'dive' ? 0 : null)
+      // It is an extra: if looking ever fails, the flight carries on without it, shot the old way.
+      try { director.step(gl, scene, tiles.current, camera as THREE.PerspectiveCamera, performance.now() / 1000, st.t, !st.started || ts.queued + ts.downloading + ts.parsing < 40, here === false ? null : here) }
+      catch (e) { report(e, 'fly.director', { level: 'warning' }); director.dispose(tiles.current) }
+    }
+
     st.sweep = (st.sweep ?? 0) + dt
     if (st.sweep > 0.4) { st.sweep = 0; sweepPreload(st.started ? st.t : 0) }
     if (tiles.current) {
@@ -311,6 +330,7 @@ function Rig({ plan, begin, quality, onStopReached, onFinish, onHud, control, ti
       phase: !st.started ? 'idle' : st.finished ? 'done' : seg.kind,
       stopIndex: stopIdx, stopCount: plan.stops.length, stopName: plan.stops[Math.min(stopIdx, plan.stops.length - 1)]?.name ?? '',
       caption: beat?.beat.text ?? '', targetName: target?.name ?? '', targetSource: target?.source.url ?? '',
+      direction: beat && dwellStop >= 0 ? director.reasons.get(shotKey(dwellStop, beat.index)) ?? '' : '',
       paused: ctl.paused, progress: st.started ? st.t / tl.total : 0,
     }
     const sig = JSON.stringify([hud.phase, hud.stopIndex, hud.caption, hud.paused, Math.round(hud.progress * 200)])
@@ -323,6 +343,7 @@ function Rig({ plan, begin, quality, onStopReached, onFinish, onHud, control, ti
     audioCache.current.clear()
     endFlight('left')
     pre.current.loader.clear(tiles.current)
+    director.dispose(tiles.current)
   }, [])
 
   const curLeg = Math.max(0, Math.min(plan.legs.length - 1, hudLeg(s.current.hud)))

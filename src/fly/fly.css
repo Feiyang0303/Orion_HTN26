@@ -134,3 +134,6 @@
 @media (max-width: 900px) {
   .fly.is-asking .hud-caption { display: none; }
 }
+
+/* why the shot is from where it is, when the director that looks chose it: said quietly, under the line */
+.hud-caption .hud-direction { display: block; margin-top: 8px; font-size: 11px; letter-spacing: .02em; text-transform: none; color: #9a8763; font-style: italic; }
