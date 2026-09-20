@@ -48,6 +48,7 @@ const FOOT = '#1a1411'
 const INK = '#0f0b09'
 const LINE = '#1c1410'
 const BLUSH = '#d99a8a'
+const EYE_RING = '#b8a98a'
 const HAT = '#6b4326'
 const HAT_BAND = '#f0b45e'
 const STAR = '#ffd98a'
@@ -104,14 +105,14 @@ function Bird({ state }: { state: GooseState }) {
     strap: new THREE.SphereGeometry(0.2, 16, 12),
     wing: new THREE.SphereGeometry(0.5, 20, 14),
     neck: new THREE.TubeGeometry(new THREE.CatmullRomCurve3([
-      new THREE.Vector3(0, 0.2, 0.3), new THREE.Vector3(0, 0.48, 0.58), new THREE.Vector3(0, 0.8, 0.48), new THREE.Vector3(0, 1.06, 0.62),
-    ]), 24, 0.135, 12, false),
-    head: new THREE.SphereGeometry(0.29, 32, 24),
-    billTop: new THREE.ConeGeometry(0.13, 0.42, 8),
-    billBottom: new THREE.ConeGeometry(0.11, 0.34, 8),
-    eye: new THREE.SphereGeometry(0.055, 14, 10),
+      new THREE.Vector3(0, 0.2, 0.3), new THREE.Vector3(0, 0.46, 0.56), new THREE.Vector3(0, 0.76, 0.46), new THREE.Vector3(0, 0.98, 0.6),
+    ]), 24, 0.12, 12, false),
+    head: new THREE.SphereGeometry(0.33, 32, 24),
+    billTop: new THREE.SphereGeometry(0.16, 20, 14).scale(0.95, 0.34, 1.5),
+    billBottom: new THREE.SphereGeometry(0.14, 20, 14).scale(0.9, 0.3, 1.4),
+    eye: new THREE.SphereGeometry(0.075, 16, 12),
     glint: new THREE.SphereGeometry(0.017, 8, 6),
-    lid: new THREE.SphereGeometry(0.064, 14, 10, 0, Math.PI * 2, 0, Math.PI / 2),
+    lid: new THREE.SphereGeometry(0.086, 14, 10, 0, Math.PI * 2, 0, Math.PI / 2),
     cheek: new THREE.SphereGeometry(0.085, 12, 8),
     foot: new THREE.SphereGeometry(0.1, 10, 8),
     brim: new THREE.CylinderGeometry(0.31, 0.31, 0.04, 24),
@@ -128,6 +129,13 @@ function Bird({ state }: { state: GooseState }) {
     size: 0.028 + Math.random() * 0.03,
   })), [])
   const dummy = useMemo(() => new THREE.Object3D(), [])
+  // each eye is turned a little outward and up, the way a face is drawn rather than modelled
+  const eyeTurn = useMemo(() => [-1, 1].map(side => {
+    const o = new THREE.Object3D()
+    o.position.set(side * 0.17, 0.06, 0.27)
+    o.lookAt(side * 0.9, 0.3, 2)
+    return [o.rotation.x, o.rotation.y, o.rotation.z] as [number, number, number]
+  }), [])
   const blink = useRef({ next: 2 + Math.random() * 3, until: 0 })
 
   useFrame(({ clock }, dt) => {
@@ -197,41 +205,44 @@ function Bird({ state }: { state: GooseState }) {
       </group>
       {/* the neck: an S from the chest to the head */}
       <Part geometry={geo.neck} color={HEAD} ramp={ramp} line={1.06} />
-      {/* the head, forward on the neck */}
-      <group ref={head} position={[0, 1.12, 0.64]}>
-        <Part geometry={geo.head} color={HEAD} ramp={ramp} scale={[1, 0.96, 1.1]} />
-        {/* the chinstrap: a white patch sweeping from behind each eye down under the chin, blushed a little */}
-        <Part geometry={geo.strap} color={CHINSTRAP} ramp={ramp} position={[-0.2, -0.07, -0.01]} rotation={[0.15, -0.35, 0.45]} scale={[0.5, 0.8, 1.1]} line={0} />
-        <Part geometry={geo.strap} color={CHINSTRAP} ramp={ramp} position={[0.2, -0.07, -0.01]} rotation={[0.15, 0.35, -0.45]} scale={[0.5, 0.8, 1.1]} line={0} />
-        <Part geometry={geo.strap} color={CHINSTRAP} ramp={ramp} position={[0, -0.2, 0.04]} scale={[0.85, 0.45, 0.8]} line={0} />
-        <Part geometry={geo.cheek} color={BLUSH} ramp={ramp} position={[-0.27, -0.07, 0.06]} rotation={[0, -0.9, 0]} scale={[0.7, 0.45, 0.25]} line={0} opacity={0.5} />
-        <Part geometry={geo.cheek} color={BLUSH} ramp={ramp} position={[0.27, -0.07, 0.06]} rotation={[0, 0.9, 0]} scale={[0.7, 0.45, 0.25]} line={0} opacity={0.5} />
+      {/* the head, forward on the neck: big, because it is the face that has to carry the character at this size */}
+      <group ref={head} position={[0, 1.04, 0.62]}>
+        <Part geometry={geo.head} color={HEAD} ramp={ramp} scale={[1, 0.95, 1.06]} />
+        {/* the chinstrap: one white sphere set low and forward inside the head, so where it comes through it
+            is a smooth band under the chin and up both cheeks, with a clean curved edge, as on the bird */}
+        <Part geometry={geo.head} color={CHINSTRAP} ramp={ramp} position={[0, -0.1, 0.04]} scale={[1.06, 0.78, 1]} line={0} />
+        <Part geometry={geo.cheek} color={BLUSH} ramp={ramp} position={[-0.3, -0.13, 0.14]} rotation={[0, -0.8, 0]} scale={[0.8, 0.5, 0.3]} line={0} opacity={0.45} />
+        <Part geometry={geo.cheek} color={BLUSH} ramp={ramp} position={[0.3, -0.13, 0.14]} rotation={[0, 0.8, 0]} scale={[0.8, 0.5, 0.3]} line={0} opacity={0.45} />
+        {/* the eyes: big, ink, turned a little outward, with two glints — the thing that makes it cute */}
         {[-1, 1].map(side => (
-          <group key={side} position={[side * 0.16, 0.07, 0.235]}>
-            <mesh geometry={geo.eye} scale={1.45}>
-              <meshBasicMaterial color={CHINSTRAP} />
+          <group key={side} position={[side * 0.17, 0.06, 0.27]} rotation={eyeTurn[side < 0 ? 0 : 1]}>
+            <mesh geometry={geo.eye} position={[0, 0, -0.02]} scale={[1.14, 1.28, 0.6]}>
+              <meshBasicMaterial color={EYE_RING} />
             </mesh>
-            <Part geometry={geo.eye} color={INK} ramp={ramp} line={0} position={[0, 0, 0.03]} />
-            <mesh geometry={geo.glint} position={[side * -0.02, 0.025, 0.075]} scale={1.5}>
+            <Part geometry={geo.eye} color={INK} ramp={ramp} line={0} scale={[1, 1.15, 0.8]} />
+            <mesh geometry={geo.glint} position={[-0.025, 0.03, 0.07]} scale={1.6}>
               <meshBasicMaterial color="#ffffff" />
             </mesh>
-            <mesh ref={side < 0 ? lidL : lidR} geometry={geo.lid} position={[0, 0.015, 0.004]} scale={[1.2, 0, 1.2]}>
+            <mesh geometry={geo.glint} position={[0.03, -0.03, 0.07]} scale={0.8}>
+              <meshBasicMaterial color="#ffffff" />
+            </mesh>
+            <mesh ref={side < 0 ? lidL : lidR} geometry={geo.lid} position={[0, 0.02, 0]} scale={[1.2, 0, 1.2]}>
               <meshToonMaterial color={HEAD} gradientMap={ramp} />
             </mesh>
           </group>
         ))}
-        {/* the bill: flat and forward, in two halves */}
-        <group position={[0, -0.04, 0.26]}>
-          <Part geometry={geo.strap} color={MOUTH} ramp={ramp} position={[0, 0, 0.08]} scale={[0.42, 0.2, 0.7]} line={0} />
+        {/* the bill: a rounded duck's, in two halves, dark inside */}
+        <group position={[0, -0.06, 0.3]}>
+          <Part geometry={geo.strap} color={MOUTH} ramp={ramp} position={[0, 0, 0.06]} scale={[0.5, 0.2, 0.8]} line={0} />
           <group ref={billTop}>
-            <Part geometry={geo.billTop} color={BILL} ramp={ramp} position={[0, 0.035, 0.21]} rotation={[Math.PI / 2, 0, 0]} scale={[1.2, 1, 0.62]} line={1.07} />
+            <Part geometry={geo.billTop} color={BILL} ramp={ramp} position={[0, 0.03, 0.1]} line={1.06} />
           </group>
           <group ref={billBottom}>
-            <Part geometry={geo.billBottom} color={BILL} ramp={ramp} position={[0, -0.035, 0.17]} rotation={[Math.PI / 2, 0, 0]} scale={[1.1, 1, 0.55]} line={1.07} />
+            <Part geometry={geo.billBottom} color={BILL} ramp={ramp} position={[0, -0.03, 0.08]} line={1.06} />
           </group>
         </group>
         {/* the hat, in the ink of the pages, banded in the app's amber */}
-        <group position={[0.02, 0.27, -0.05]} rotation={[0.14, 0, -0.2]}>
+        <group position={[0.02, 0.3, -0.06]} rotation={[0.14, 0, -0.2]}>
           <Part geometry={geo.brim} color={HAT} ramp={ramp} position={[0, 0.02, 0]} line={1.03} />
           <Part geometry={geo.cone} color={HAT} ramp={ramp} position={[0, 0.33, 0]} line={1.04} />
           <Part geometry={geo.band} color={HAT_BAND} ramp={ramp} position={[0, 0.08, 0]} line={0} />
