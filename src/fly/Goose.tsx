@@ -20,7 +20,8 @@ import * as THREE from 'three'
  * mostly a neck: a long S-curve from a low body up to a small head, ink-dark
  * from the bill to the shoulders with the white chinstrap across the cheeks,
  * a brown back, a pale breast, black feet, white under the tail, and — the one
- * liberty taken — an amber bill, so the mouth can be seen chattering,
+ * liberty taken — a glossy black bill, lit rather than cel-shaded, so it
+ * shines and can be seen chattering against the ink head,
  * wings folded along the back. Everything is a sphere, a cone or a tube;
  * nothing has to be downloaded for it to turn up.
  *
@@ -42,8 +43,8 @@ const BACK = '#8a7156'
 const BACK_SHADE = '#6e5843'
 const BREAST = '#d9c8a9'
 const UNDERTAIL = '#f0e4cc'
-const BILL = '#e9a04e'       // the one bright thing on the dark head: the mouth has to be seen moving
-const MOUTH = '#4a1f1a'
+const BILL = '#15100e'       // black, and the one glossy thing on the bird: it is lit, not cel-shaded, so it shines
+const MOUTH = '#3a1b17'
 const FOOT = '#1a1411'
 const INK = '#0f0b09'
 const LINE = '#1c1410'
@@ -65,15 +66,19 @@ function useToonRamp() {
 }
 
 /** One part of the goose: the toon-shaded mesh and its ink outline. */
-function Part({ geometry, color, ramp, line = 1.045, position, rotation, scale, meshRef, opacity }: {
+function Part({ geometry, color, ramp, line = 1.045, position, rotation, scale, meshRef, opacity, shiny }: {
   geometry: THREE.BufferGeometry; color: string; ramp: THREE.Texture; line?: number
   position?: [number, number, number]; rotation?: [number, number, number]; scale?: [number, number, number] | number
   meshRef?: React.Ref<THREE.Mesh>; opacity?: number
+  /** lit with a real highlight instead of the flat ramp: for the one wet, glossy part */
+  shiny?: boolean
 }) {
   return (
     <group position={position} rotation={rotation} scale={scale}>
       <mesh ref={meshRef} geometry={geometry}>
-        <meshToonMaterial color={color} gradientMap={ramp} transparent={opacity !== undefined} opacity={opacity ?? 1} />
+        {shiny
+          ? <meshPhongMaterial color={color} specular="#9a9a9a" shininess={70} />
+          : <meshToonMaterial color={color} gradientMap={ramp} transparent={opacity !== undefined} opacity={opacity ?? 1} />}
       </mesh>
       {line > 0 && (
         <mesh geometry={geometry} scale={line}>
@@ -231,14 +236,17 @@ function Bird({ state }: { state: GooseState }) {
             </mesh>
           </group>
         ))}
-        {/* the bill: a rounded duck's, in two halves, dark inside */}
+        {/* the bill: a rounded duck's, in two halves, glossy black with a wet glint on top, dark inside */}
         <group position={[0, -0.06, 0.3]}>
           <Part geometry={geo.strap} color={MOUTH} ramp={ramp} position={[0, 0, 0.06]} scale={[0.5, 0.2, 0.8]} line={0} />
           <group ref={billTop}>
-            <Part geometry={geo.billTop} color={BILL} ramp={ramp} position={[0, 0.03, 0.1]} line={1.06} />
+            <Part geometry={geo.billTop} color={BILL} ramp={ramp} position={[0, 0.03, 0.1]} line={1.06} shiny />
+            <mesh geometry={geo.glint} position={[-0.05, 0.085, 0.2]} scale={[2.2, 0.9, 1.6]}>
+              <meshBasicMaterial color="#ffffff" transparent opacity={0.85} />
+            </mesh>
           </group>
           <group ref={billBottom}>
-            <Part geometry={geo.billBottom} color={BILL} ramp={ramp} position={[0, -0.03, 0.08]} line={1.06} />
+            <Part geometry={geo.billBottom} color={BILL} ramp={ramp} position={[0, -0.03, 0.08]} line={1.06} shiny />
           </group>
         </group>
         {/* the hat, in the ink of the pages, banded in the app's amber */}
