@@ -23,7 +23,7 @@ import { sentences, withoutNameAsides } from './sentences'
 
 const TARGET_RADIUS_M = 300  // what a guide can point at from a stop
 const PLAN_VERSION = 3
-const MAX_TTS_CONCURRENT = 6
+const MAX_TTS_CONCURRENT = 4      // the voice account allows only a few at once; the proxy waits out the rest, but asking for fewer means less waiting
 
 export type PipelineOptions = {
   onEvent?: (e: CrewEvent) => void
@@ -218,15 +218,18 @@ export async function writePages(skeleton: Skeleton, opts: PipelineOptions): Pro
   const transportWords = [...new Set([...(approach ? [approach] : []), ...legs, ...(back ? [back] : [])]
     .map(l => TRANSPORT_LABEL[l.transport].toLowerCase()))].join(' and ') || TRANSPORT_LABEL[wish.transport === 'auto' ? 'walk' : wish.transport].toLowerCase()
 
+  // A day on its own has no name, only the placeholder "The day", and a guide handed it as a name says it as one: the
+  // goodbye ended "…and that's The day." Only a day of a longer trip has a title worth saying.
+  const spokenTitle = dayCount > 1 ? day?.title : undefined
   say('Narrator', 'agent', 'working', 'Writing the welcome and the goodbye')
   const [openingText, closingText] = await Promise.all([
     writeOpening({
-      city: origin.name, number: dayNumber, count: dayCount, title: day?.title,
+      city: origin.name, number: dayNumber, count: dayCount, title: spokenTitle,
       stops: stops.map(st => st.name), startAt: HHMM(window.startMin), endsAt: clock.endsAt,
       transport: transportWords, party: wish.party, interests: wish.interests, from: from?.name,
     }).catch(() => ''),
     writeClosing({
-      city: origin.name, number: dayNumber, count: dayCount, title: day?.title,
+      city: origin.name, number: dayNumber, count: dayCount, title: spokenTitle,
       last: stops[stops.length - 1]?.name ?? '', stopCount: stops.length,
       km: totalKm, endsAt: clock.endsAt, nextTitle: day?.nextTitle, back: back ? from?.name : undefined,
     }).catch(() => ''),

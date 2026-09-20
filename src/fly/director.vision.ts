@@ -21,6 +21,9 @@ import { log, report } from '../telemetry'
  * model ranks them. The best is the side the shot is taken from; a second line about the same
  * thing takes the next best, so the camera still moves.
  *
+ * It also says when looking was no use: when even the best side does not show the thing. Planning leaves out what
+ * was to be said about a nearby thing nobody could pick out (session.withoutTheUnseen); a stop itself is never dropped.
+ *
  * It is one of the crew, and does this in the planning stage with the rest of them: the city is
  * already loading behind the crew, and DirectorDesk runs this there, one day at a time, as each is
  * written. What it chooses is kept on the plan (`direction`) and so with the trip, because it costs
@@ -34,13 +37,20 @@ import { log, report } from '../telemetry'
 
 const W = 448, H = 288                        // a picture a model is shown: enough to judge a view, small enough to send six
 const SETTLE_MIN_SEC = 1.2, SETTLE_MAX_SEC = 4.5, SETTLED_AT = 25
+const FILLED = .7                             // the share of a picture that must be city and not empty background for it to count as seen
 const TAU = Math.PI * 2, NEAR_SIDE = 1.7     // radians: a quarter turn and a little
 const ASKING_AT_ONCE = 2, SIDES_USED = 3      // lines about one thing share out its best few sides, not its worst
 
 const SYSTEM = `You are the cinematographer for a guided aerial tour flown over a photorealistic 3D model of a real city.
 You are shown several candidate camera views of the SAME subject, numbered from 0 in the order given. The subject is at
 the centre of every view. Rank the views for the moment described, best first. Reply with JSON:
-{"ranking": [indices, best first, every index exactly once], "reason": "one short plain sentence on why the best view is best"}
+{"ranking": [indices, best first, every index exactly once], "reason": "one short plain sentence on why the best view is best",
+ "usable": true or false}
+
+"usable" is about your BEST view only: would a viewer told "look at <the subject>" find it in that picture? Say false when,
+even there, it is hidden behind other buildings or trees, is too small or too lost in its surroundings to pick out, or the
+3D model of it is melted past recognising. Say true if it can be picked out, even if the view is ordinary. If the pictures
+are mostly blank, black or unloaded, you cannot tell: say true.
 
 Judge only what you can see:
 - The subject should be clearly visible and unobstructed, recognisable, and a good size in the frame.
@@ -115,10 +125,13 @@ export class VisionDirector {
     if (s) {
       const st = tiles.stats, pending = st.queued + st.downloading + st.parsing, waited = now - s.at
       if (waited < SETTLE_MIN_SEC || (pending > SETTLED_AT && waited < SETTLE_MAX_SEC)) return
-      const images = s.poses.map(p => this.picture(gl, scene, main, p))
+      const shots = s.poses.map(p => this.picture(gl, scene, main, p))
       s.cams.forEach(c => tiles.deleteCamera(c))
       this.staged = null
-      void this.ask(s.job, images)
+      // "It cannot be seen" is only believed of pictures that are pictures. Whether tiles were still arriving says
+      // little (with six more cameras on the loader some always are, and it threw out a true verdict on a sharp picture
+      // of forest); what the pictures hold says it directly: a city that has not arrived is the dark of the background.
+      void this.ask(s.job, shots.map(x => x.url), shots.map(x => x.filled))
       return
     }
     if (!quiet || this.asking >= ASKING_AT_ONCE) return
@@ -158,15 +171,18 @@ export class VisionDirector {
     gl.setRenderTarget(before)
     // What comes back is upside down and in linear light; a picture is neither.
     const ctx = this.canvas.getContext('2d')!, img = ctx.createImageData(W, H)
+    let lit = 0
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
       const from = ((H - 1 - y) * W + x) * 4, to = (y * W + x) * 4
-      img.data[to] = this.toSrgb[this.pixels[from]]; img.data[to + 1] = this.toSrgb[this.pixels[from + 1]]; img.data[to + 2] = this.toSrgb[this.pixels[from + 2]]; img.data[to + 3] = 255
+      const r = this.toSrgb[this.pixels[from]], g = this.toSrgb[this.pixels[from + 1]], b = this.toSrgb[this.pixels[from + 2]]
+      img.data[to] = r; img.data[to + 1] = g; img.data[to + 2] = b; img.data[to + 3] = 255
+      if (r + g + b > 60) lit++                       // the scene's background is nearly black; a tile, even in shade, is not
     }
     ctx.putImageData(img, 0, 0)
-    return this.canvas.toDataURL('image/jpeg', .72)
+    return { url: this.canvas.toDataURL('image/jpeg', .72), filled: lit / (W * H) }
   }
 
-  private async ask(job: Job, images: string[]) {
+  private async ask(job: Job, images: string[], filled: number[]) {
     this.asking++
     try {
       const user = `City: ${this.plan.city}\nSubject: ${job.name}${job.about ? `\nAbout it: ${job.about}` : ''}${job.line ? `\nThe guide will be saying: "${job.line}"` : ''}\nThere are ${images.length} views, numbered 0 to ${images.length - 1}.`
@@ -174,9 +190,12 @@ export class VisionDirector {
       const said = JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1)) as Partial<Verdict>
       const ranking = [...new Set((said.ranking ?? []).filter(i => Number.isInteger(i) && i >= 0 && i < images.length))]
       if (!ranking.length) throw new Error('the director ranked nothing')
-      const verdict: Verdict = { ranking, reason: String(said.reason ?? '').slice(0, 160) }
+      const loaded = filled[ranking[0]] >= FILLED && filled.filter(f => f >= FILLED).length >= Math.ceil(filled.length * .66)
+      const verdict: Verdict = { ranking, reason: String(said.reason ?? '').slice(0, 160), ...(said.usable === false && loaded ? { usable: false } : {}) }
       try { localStorage.setItem(this.store, JSON.stringify({ ...JSON.parse(localStorage.getItem(this.store) ?? '{}'), [job.key]: verdict })) } catch { /* it will be asked again next time */ }
-      log.info('director chose a side', { stop: job.stop, subject: job.name, side: ranking[0], reason: verdict.reason })
+      // In development, what it could not see is kept to be looked at: the judgement is only as good as the pictures.
+      if (import.meta.env.DEV && said.usable === false) ((window as unknown as { __unseen?: unknown[] }).__unseen ??= []).push({ subject: job.name, loaded, reason: verdict.reason, best: images[ranking[0]] })
+      log.info('director chose a side', { stop: job.stop, subject: job.name, side: ranking[0], reason: verdict.reason, usable: verdict.usable !== false, loaded })
       if (this.at !== job.stop) { this.apply(job, verdict); this.onChoice() }        // never under the viewer: it holds from the next visit
     } catch (e) {
       report(e, 'fly.director', { level: 'warning', extra: { subject: job.name } })   // the shot is simply taken the old way

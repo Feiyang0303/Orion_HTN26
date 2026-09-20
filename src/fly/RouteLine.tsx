@@ -88,12 +88,19 @@ const fragmentShader = /* glsl */`
 
 /** A flat strip along `pts` between `from` and `to` metres, carrying for every vertex which way is
     sideways and how far along the whole leg it is; the shader gives it its width. */
+/** Where `s` metres along the line falls. Past the end is the end: a stretch's far end is a sum of its steps' shares of
+    the leg, which rounding can leave a hair over the leg's length, and no point is "at least" that far along. Taken for
+    the first segment instead, the stretch's last vertex was the leg's second point, and a straight ribbon ran from the
+    end of the leg back to its start: there or not as the rounding fell, each time the ground refined and the line was re-laid. */
+function pointAt(pts: THREE.Vector3[], cum: number[], s: number, out: THREE.Vector3): THREE.Vector3 {
+  let hi = cum.findIndex(v => v >= s)
+  if (hi < 0) hi = cum.length - 1
+  if (hi < 1) hi = 1
+  return out.lerpVectors(pts[hi - 1], pts[hi], THREE.MathUtils.clamp((s - cum[hi - 1]) / Math.max(1e-6, cum[hi] - cum[hi - 1]), 0, 1))
+}
+
 function ribbon(pts: THREE.Vector3[], cum: number[], from: number, to: number): THREE.BufferGeometry {
-  const at = (s: number) => {
-    let hi = cum.findIndex(v => v >= s); if (hi < 1) hi = 1
-    const t = (s - cum[hi - 1]) / Math.max(1e-6, cum[hi] - cum[hi - 1])
-    return new THREE.Vector3().lerpVectors(pts[hi - 1], pts[hi], THREE.MathUtils.clamp(t, 0, 1))
-  }
+  const at = (s: number) => pointAt(pts, cum, s, new THREE.Vector3())
   const line: { p: THREE.Vector3; s: number }[] = [{ p: at(from), s: from }]
   pts.forEach((p, i) => { if (cum[i] > from + .5 && cum[i] < to - .5) line.push({ p, s: cum[i] }) })
   line.push({ p: at(to), s: to })
@@ -210,10 +217,7 @@ export default function RouteLine({ pts: ground, colour, transport, estimated, d
   const camera = useThree(s => s.camera) as THREE.PerspectiveCamera
   const height = useThree(s => s.size.height)
 
-  const where = (s: number, out: THREE.Vector3) => {
-    let hi = cum.findIndex(v => v >= s); if (hi < 1) hi = 1
-    return out.lerpVectors(pts[hi - 1], pts[hi], THREE.MathUtils.clamp((s - cum[hi - 1]) / Math.max(1e-6, cum[hi] - cum[hi - 1]), 0, 1))
-  }
+  const where = (s: number, out: THREE.Vector3) => pointAt(pts, cum, s, out)
 
   useFrame(({ clock }) => {
     shared.time.value = clock.elapsedTime

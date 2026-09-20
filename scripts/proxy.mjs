@@ -20,7 +20,11 @@ import { tripRoutes } from './trips.mjs'
 loadEnv()   // also done by instrument.mjs when preloaded; harmless twice
 const env = name => process.env[name] || ''
 const PORT = Number(env('PORT') || 8787)
-const DEFAULT_MODELS = { scout: 'gpt-4o', critic: 'gpt-4o', narrator: 'gpt-4o', director: 'gpt-4o' }     // the director is shown pictures: its model must see
+/* Who thinks with what, unless LLM_MODEL_<ROLE> says otherwise. The crew that chooses, judges and writes is on the
+   better writer. The Director stays on gpt-4o on purpose: it is shown pictures, so its model must see, and it looks at
+   fifteen things or so against the clock while a person waits; asked the same question about the same pictures, 4o
+   answered in a third of the time and ranked them the same. */
+const DEFAULT_MODELS = { scout: 'gpt-5.6-luna', critic: 'gpt-5.6-luna', narrator: 'gpt-5.6-luna', director: 'gpt-4o' }
 const routesKey = () => env('GOOGLE_ROUTES_KEY') || env('VITE_GOOGLE_MAPS_KEY')
 
 class HttpError extends Error {
@@ -50,8 +54,10 @@ async function llm(req, res) {
   const content = images.length ? [{ type: 'text', text: user }, ...images.map(url => ({ type: 'image_url', image_url: { url, detail: 'low' } }))] : user
   const model = env(`LLM_MODEL_${String(role).toUpperCase()}`) || DEFAULT_MODELS[role] || ''
   if (!model) throw new HttpError(501, `LLM_MODEL_${String(role).toUpperCase()} is not set on the proxy.`)
-  // Reasoning models only: gpt-4o rejects reasoning_effort. Narrator stays low on those models.
-  const effort = env(`LLM_EFFORT_${String(role).toUpperCase()}`) || (role === 'narrator' && /(?:^o\d|gpt-5)/i.test(model) ? 'low' : '')
+  // Reasoning models only: gpt-4o rejects reasoning_effort. Every role asks for little of it unless LLM_EFFORT_<ROLE>
+  // says otherwise: these are short, well-specified jobs with a person watching, and left to think as long as it
+  // liked the crew took over two minutes to choose and judge a day before a word of it was written.
+  const effort = env(`LLM_EFFORT_${String(role).toUpperCase()}`) || (/(?:^o\d|gpt-5)/i.test(model) ? 'low' : '')
   // One model call, in Sentry's AI conventions, with what it cost: this is what
   // the AI Agents view and the token dashboards read.
   // The response is sent after the span ends: the request's own transaction closes
@@ -318,6 +324,8 @@ const v3Stability = mood => {
    pitch is wanted more than the pace. */
 let speedTakes = true
 
+const TTS_BUSY_RETRIES = 6      // about fifteen seconds of patience, spread out so the waiting lines do not all come back at once
+
 async function speak(key, voice, text, model, mood, withStyle, speed = 1) {
   const m = MOOD[mood] || MOOD.warm
   const v3 = /_v3/.test(model)
@@ -325,10 +333,15 @@ async function speak(key, voice, text, model, mood, withStyle, speed = 1) {
   const goose = speed !== 1 || gooseIsDuck
   const stability = goose ? Math.max(m.stability, 0.6) : m.stability
   const style = goose ? Math.min(m.style, 0.2) : m.style
-  const r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voice}?output_format=mp3_44100_128`, {
+  /* "Too many concurrent requests" is not a refusal, it is a queue: a plan voices its lines several at a time, a second
+     tab or a teammate doubles that, and the account allows only so many at once. It used to be taken for the model
+     saying no, so those lines were spoken by another model (a day in two voices) or not at all. It is waited out. */
+  const send = () => fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voice}?output_format=mp3_44100_128`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'xi-api-key': key, accept: 'audio/mpeg' },
-    body: JSON.stringify({
+    body,
+  })
+  const body = JSON.stringify({
       text: text.trim().slice(0, 5000),
       model_id: model,
       voice_settings: v3
@@ -338,8 +351,13 @@ async function speak(key, voice, text, model, mood, withStyle, speed = 1) {
             ...(withStyle ? { style } : {}),
             ...pace,
           },
-    }),
   })
+  let r = await send()
+  for (let attempt = 1; r.status === 429 && attempt <= TTS_BUSY_RETRIES; attempt++) {
+    await r.arrayBuffer().catch(() => {})
+    await new Promise(done => setTimeout(done, 500 * attempt + Math.random() * 600))
+    r = await send()
+  }
   if (!r.ok && pace.speed && (r.status === 400 || r.status === 422)) {
     console.warn(`[tts] ${model} would not take a speed (${r.status}); the goose will speak at its own pace from here`)
     speedTakes = false

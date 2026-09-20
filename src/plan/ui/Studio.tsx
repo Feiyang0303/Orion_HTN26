@@ -56,7 +56,9 @@ export default function Studio({ wish, mode, origin, saved: given, onTrip, onFly
   const [drafts, setDrafts] = useState<DayDraft[]>([])
   const [stay, setStay] = useState<Stay | null>(null)
   const [partial, setPartial] = useState<Day[]>([])
-  const [trip, setTrip] = useState<Trip | null>(null)
+  // A trip that was handed in is on screen from the first frame: it used to wait for the session to open, and the crew's
+  // stage ("Waiting for the crew…") flashed up over a trip nobody was planning.
+  const [trip, setTrip] = useState<Trip | null>(given?.trip ?? null)
   const [error, setError] = useState('')
   const [eventId, setEventId] = useState<string | undefined>()
   const [attempt, setAttempt] = useState(0)
@@ -78,7 +80,7 @@ export default function Studio({ wish, mode, origin, saved: given, onTrip, onFly
 
   useEffect(() => {
     const ctl = new AbortController()
-    setEvents([]); setDrafts([]); setStay(null); setPartial([]); setTrip(null); setError(''); setEventId(undefined)
+    setEvents([]); setDrafts([]); setStay(saved?.trip.stays[0] ?? null); setPartial([]); setTrip(saved?.trip ?? null); setError(''); setEventId(undefined)
     void (async () => {
       try {
         const s = await openSession(wish, mode, origin, onEvent, ctl.signal)

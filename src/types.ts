@@ -228,7 +228,12 @@ export type Plan = {
 /** The Director's choices for one day. `for` is the stops they were made for, in order: the choices are keyed by a
     stop's position, so they hold only for as long as the day is still those stops in that order. Each choice ranks
     the sides a shot could be taken from (indices into shots.CANDIDATE_SIDES), best first, and says why. */
-export type Direction = { for: string; choices: Record<string, { ranking: number[]; reason: string }> }
+export type Direction = { for: string; choices: Record<string, {
+  ranking: number[]; reason: string
+  /** False when even the best view does not show the thing: it is hidden, a smear, or too small to make out. Only
+      ever false on the strength of pictures of a loaded city; absent or true means it may be pointed at. */
+  usable?: boolean
+}> }
 
 /* ---- the trip ------------------------------------------------------------ */
 
