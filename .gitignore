@@ -10,3 +10,4 @@ scripts/.out/
 # Cached Wikipedia/Wikidata answers (scripts/wiki.mjs)
 .cache/
 .vercel
+_to_delete/
