@@ -39,10 +39,15 @@ async function playable(url: string): Promise<boolean> {
 }
 
 /** Speak every beat that still has no clip. Used when a day is about to fly,
-    not when the journal is drawn. The legs' bridge lines are beats too: they
-    are what the day sounds like between the places, and a day flown with the
-    pages spoken and the seams silent is worse than either. */
-export async function voiceDay<T extends { id: string; stops: Stop[]; legs?: Leg[] }>(
+    not when the journal is drawn.
+
+    Every beat means every beat. The pages are the obvious ones, but the legs'
+    bridge lines and the day's opening and closing are beats too, and each one
+    that is missed is a stretch of flight with a caption on screen and nothing
+    coming out of the speakers — which is worse than having written nothing,
+    because the timeline still holds the camera there for as long as the words
+    would have taken. */
+export async function voiceDay<T extends { id: string; stops: Stop[]; legs?: Leg[]; opening?: Beat; closing?: Beat }>(
   day: T,
   saveAudio: (planId: string, name: string, bytes: ArrayBuffer) => Promise<string>,
 ): Promise<T> {
@@ -59,13 +64,20 @@ export async function voiceDay<T extends { id: string; stops: Stop[]; legs?: Leg
       return stale ? { ...b, audioUrl: null } : b
     }
   }
-  const [stops, legs] = await Promise.all([
+  const [stops, legs, opening, closing] = await Promise.all([
     Promise.all(day.stops.map(async (st): Promise<Stop> => ({
       ...st,
       beats: await Promise.all(st.beats.map((b, i) => queue(() => voice(b, `${st.id}-${i}.mp3`)))),
     }))),
     Promise.all((day.legs ?? []).map(async (l, i): Promise<Leg> =>
       l.bridge ? { ...l, bridge: await queue(() => voice(l.bridge!, `leg-${i}.mp3`)) } : l)),
+    day.opening ? queue(() => voice(day.opening!, 'opening.mp3')) : Promise.resolve(undefined),
+    day.closing ? queue(() => voice(day.closing!, 'closing.mp3')) : Promise.resolve(undefined),
   ])
-  return { ...day, stops, ...(day.legs ? { legs } : {}) }
+  return {
+    ...day, stops,
+    ...(day.legs ? { legs } : {}),
+    ...(opening ? { opening } : {}),
+    ...(closing ? { closing } : {}),
+  }
 }

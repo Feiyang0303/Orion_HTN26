@@ -71,6 +71,8 @@ export async function saveTrip(id: string, trip: Trip, mode: Saved['mode'], orig
   for (const day of copy.days) {
     for (const stop of day.stops) for (const beat of stop.beats) await upload(beat)
     for (const leg of day.legs ?? []) await upload(leg.bridge)
+    await upload(day.opening)
+    await upload(day.closing)
   }
   if (lost) report(new Error(`${lost} clip${lost === 1 ? '' : 's'} could not be saved with the trip`), 'trips.save.clip', { level: 'warning' })
   const r = await call(`/api/trips/save?id=${id}&owner=${owner()}`, { method: 'POST', body: JSON.stringify({ trip: copy, mode, origin }) })
