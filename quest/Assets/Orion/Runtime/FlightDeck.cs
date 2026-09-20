@@ -295,6 +295,7 @@ namespace Orion
             if (!travelling && beat != null)
                 lit = !string.IsNullOrEmpty(beat.Beat.targetId) && targets.TryGetValue((seg.Index, beat.Beat.targetId), out var tg) ? tg : stops[seg.Index];
             marks.Show(cur, !travelling, t, guide, lit);
+            rig.Captions.Progress = t / timeline.Total;
 
             /* narration: one clip per beat, started where the clock says it should be */
             narration.Tick(beat, t, playing && placed);
@@ -307,7 +308,7 @@ namespace Orion
             string targetName = beat == null || string.IsNullOrEmpty(beat.Beat.targetId) ? null : Array.Find(stop.targets, x => x.id == beat.Beat.targetId)?.name;
             int count = day.stops.Length;
             rig.Captions.Show(
-                $"STOP {Mathf.Min(cur + 1, count)} OF {count}{(travelling ? "  ·  ON THE WAY" : "")}",
+                travelling ? $"ON THE WAY TO STOP {Mathf.Min(cur + 1, count)} OF {count}" : $"STOP {Mathf.Min(cur + 1, count)} OF {count}",
                 stop.name,
                 !ready || !voiced ? $"Finding {city}…" : beat?.Beat.text ?? (travelling ? "" : "…"),
                 targetName);

@@ -6,47 +6,59 @@ using UnityEngine;
 
 namespace Orion.World
 {
-    /* What is drawn on the city: the route, in the manner of how each leg is travelled and with a light
-     * running along it the way it goes, a pin on each stop, the guide's light to follow down a leg, and
-     * a beam and ring on whatever is being described. Sized in `Unit`s, large enough to
-     * read from a vantage's distance; the guide is just ahead of the person, so it has its own. */
+    /* What is drawn on the city, in the manner of the desktop flight.
+     *
+     *   the route    in the way each leg is travelled, with a light running along it the way it goes
+     *   a stop       a small amber disc with its number, and its name on a chip of dark glass beside it. It is a
+     *                label, not an object: it faces the person, is drawn over whatever stands in front of it, and is
+     *                the same size to the eye from any distance, as a label on a screen is
+     *   the subject  a ring on the ground that breathes, a ripple leaving it, and a hairline of light standing on it
+     *   the guide    a small light to follow down a leg
+     */
 
     public class Marks : MonoBehaviour
     {
-        const float Unit = 900 * Frame.Closer, GuideUnit = 250;
         const float Lift = 3;                                  // the route floats this far above the street it was measured on
         const float SparkRadius = 4.5f, SparkRest = 60;        // the light that runs along a leg, and the metres' worth of pause before it sets off again
-        const float PinHeight = .034f * Unit;
+        const float TagHeight = 30;                            // a stop's label stands this far above its ground
+        const float TagSize = .033f;                           // and its disc is this wide to the eye: the tangent of 1.9 degrees, which a headset's ~20 pixels a degree can read
+        const float RingInner = 9, RingOuter = 11.5f, BeamHeight = 48;
+        const float GuideRadius = 2.6f;
 
         class Drawn { public GameObject Root; public RoutePath Path; public LegStyle Style; public Transform Spark; }
+        class Pin { public Transform Root, Tag; public Material Disc; public TextMeshPro Number, Name; public ChipLook Chip; public Pointable Hit; }
+        /// <summary>The materials of a name chip, so it can be dimmed as one.</summary>
+        class ChipLook { public Material Border, Fill; }
 
         readonly List<Drawn> legs = new List<Drawn>();
         readonly List<Pin> pins = new List<Pin>();
-        Transform orb, beam, head;
-        Material played;
+        Transform orb, halo, subject, ring, ripple, head;
+        Material rippleLook, played;
         Color colour = Look.Amber;
         int playedLegs;                                        // legs already behind the person are dimmed, once
-
-        class Pin { public Transform Root, Face; public Renderer Ball; public TextMeshPro Name; public Pointable Hit; }
 
         public void Build(Transform head)
         {
             this.head = head;
+
             orb = new GameObject("Guide").transform;
             orb.SetParent(transform, false);
-            Look.Draw("Core", orb, Meshes.Sphere(.011f * GuideUnit, 24, 16), Look.Flat(Look.Warm));
-            Look.Draw("Halo", orb, Meshes.Sphere(.026f * GuideUnit, 24, 16), Look.Flat(Look.Amber.Alpha(.22f)));
+            Look.Draw("Core", orb, Meshes.Sphere(GuideRadius, 24, 16), Look.Flat(Look.Warm));
+            halo = Look.Draw("Halo", orb, Meshes.Sphere(GuideRadius * 2.4f, 24, 16), Look.Flat(Look.Amber.Alpha(.2f))).transform;
 
-            beam = new GameObject("Beam").transform;
-            beam.SetParent(transform, false);
-            Look.Draw("Shaft", beam, Meshes.Shaft(.0012f * Unit, .0035f * Unit, .1f * Unit), Look.Flat(Look.Amber.Alpha(.35f)));
-            Look.Draw("Ring", beam, Meshes.Ring(.012f * Unit, .0155f * Unit, 48), Look.Flat(Look.Amber.Alpha(.9f), depthTest: false)).transform.localPosition = Vector3.up * .002f * Unit;
+            subject = new GameObject("Subject").transform;
+            subject.SetParent(transform, false);
+            ring = Look.Draw("Ring", subject, Meshes.Ring(RingInner, RingOuter, 64), Look.Flat(Look.Amber.Alpha(.9f), depthTest: false)).transform;
+            rippleLook = Look.Flat(Look.Amber.Alpha(.5f), depthTest: false);
+            ripple = Look.Draw("Ripple", subject, Meshes.Ring(RingOuter, RingOuter + 1.2f, 64), rippleLook).transform;
+            Look.Draw("Beam", subject, Meshes.Shaft(.32f, .12f, BeamHeight, 8), Look.Flat(Look.Amber.Alpha(.75f), depthTest: false));
+            ring.localPosition = ripple.localPosition = Vector3.up * 1.5f;
 
             orb.gameObject.SetActive(false);
-            beam.gameObject.SetActive(false);
+            subject.gameObject.SetActive(false);
         }
 
-        /// <summary>A pin on each stop of a new day. `onPick` is told which one was pointed at and chosen.</summary>
+        /// <summary>A label on each stop of a new day. `onPick` is told which one was pointed at and chosen.</summary>
         public void SetStops(Day day, Action<int> onPick)
         {
             foreach (var p in pins) Destroy(p.Root.gameObject);
@@ -56,27 +68,38 @@ namespace Orion.World
             for (int i = 0; i < day.stops.Length; i++)
             {
                 int stop = i;
-                var root = new GameObject($"Pin {i + 1}").transform;
-                root.SetParent(transform, false);
-                Look.Draw("Stem", root, Meshes.Shaft(.0007f * Unit, .0007f * Unit, PinHeight, 8), Look.Flat(colour));
-                var ball = Look.Draw("Ball", root, Meshes.Sphere(.0085f * Unit, 24, 16), Look.Flat(colour, depthWrite: true));
-                ball.transform.localPosition = Vector3.up * (PinHeight + .008f * Unit);
-                var face = new GameObject("Face").transform;
-                face.SetParent(ball.transform, false);
-                var number = Look.Text("Number", face, .0105f * Unit, Look.Ink, TextAlignmentOptions.Center, new Vector2(.03f, .02f) * Unit);
-                number.text = (i + 1).ToString();
-                number.transform.localPosition = Vector3.back * .0088f * Unit;
-                var label = Look.Text("Name", face, .0125f * Unit, Look.Cream, TextAlignmentOptions.Bottom, new Vector2(.14f, .06f) * Unit);
-                label.text = day.stops[i].name;
-                label.outlineColor = Look.Background; label.outlineWidth = .2f;
-                label.transform.localPosition = Vector3.up * (.0135f + .03f) * Unit;
-                var hit = Pointable.On(ball, .0085f * Unit, () => onPick(stop));
-                pins.Add(new Pin { Root = root, Face = face, Ball = ball.GetComponent<Renderer>(), Name = label, Hit = hit });
-                root.gameObject.SetActive(false);
+                var pin = new Pin { Root = new GameObject($"Stop {i + 1}").transform };
+                pin.Root.SetParent(transform, false);
+                Look.Draw("Stem", pin.Root, Meshes.Shaft(.18f, .18f, TagHeight, 6), Look.Flat(colour.Alpha(.45f)));
+
+                // The label is laid out with its disc one unit wide, and scaled each frame to be the same size to the eye.
+                pin.Tag = new GameObject("Tag").transform;
+                pin.Tag.SetParent(pin.Root, false);
+                pin.Tag.localPosition = Vector3.up * TagHeight;
+                pin.Disc = Look.Flat(colour, depthTest: false);
+                var disc = Look.Draw("Disc", pin.Tag, Meshes.RoundedRect(1, 1, .5f, 12), pin.Disc, 10);
+                pin.Number = Look.Text("Number", pin.Tag, Face.SansBold, .5f, Look.Ink, TextAlignmentOptions.Center, new Vector2(1, 1), onTop: true, order: 12);
+                pin.Number.text = (i + 1).ToString();
+                pin.Number.transform.localPosition = Vector3.back * .01f;
+
+                pin.Name = Look.Text("Name", pin.Tag, Face.Sans, .42f, Look.Soft, TextAlignmentOptions.Left, new Vector2(12, 1), onTop: true, order: 12);
+                pin.Name.textWrappingMode = TextWrappingModes.NoWrap;
+                pin.Name.text = day.stops[i].name;
+                pin.Name.ForceMeshUpdate();
+                float wide = pin.Name.preferredWidth + .6f;
+                var chip = Look.Panel("Chip", pin.Tag, wide, .86f, .43f, .78f, onTop: true, order: 10, Hairline: .03f);
+                chip.transform.localPosition = new Vector3(.75f + wide / 2, 0, 0);
+                pin.Name.rectTransform.pivot = new Vector2(0, .5f);
+                pin.Name.transform.localPosition = new Vector3(.75f + .3f, 0, -.02f);
+                pin.Chip = new ChipLook { Border = chip.GetComponent<Renderer>().sharedMaterial, Fill = chip.transform.GetChild(0).GetComponent<Renderer>().sharedMaterial };
+
+                pin.Hit = Pointable.On(disc, .7f, () => onPick(stop));
+                pin.Root.gameObject.SetActive(false);
+                pins.Add(pin);
             }
         }
 
-        /// <summary>The route and the pins, on the ground as it is now known.</summary>
+        /// <summary>The route and the labels, on the ground as it is now known.</summary>
         public void Place(Day day, IReadOnlyList<RoutePath> paths, IReadOnlyList<Vector3?> stops)
         {
             foreach (var l in legs) Destroy(l.Root);
@@ -100,24 +123,42 @@ namespace Orion.World
             }
         }
 
-        /// <summary>Each frame: which stop is current, where the guide's light is, what the beam is on.</summary>
+        /// <summary>Each frame: which stop is current, where the guide's light is, what is being talked about.</summary>
         public void Show(int currentStop, bool dwelling, float t, Vector3? guide, Vector3? target)
         {
             orb.gameObject.SetActive(guide.HasValue);
-            if (guide.HasValue) orb.position = guide.Value + Vector3.up * (.03f * GuideUnit + Mathf.Sin(t * 2.2f) * .003f * GuideUnit);
-            beam.gameObject.SetActive(target.HasValue);
-            if (target.HasValue) beam.position = target.Value;
+            if (guide.HasValue)
+            {
+                orb.position = guide.Value + Vector3.up * (8 + Mathf.Sin(t * 2.2f) * .8f);
+                halo.localScale = Vector3.one * (1 + .12f * Mathf.Sin(Time.time * 3.1f));
+            }
+
+            subject.gameObject.SetActive(target.HasValue);
+            if (target.HasValue)
+            {
+                subject.position = target.Value;
+                ring.localScale = Vector3.one * (1 + .12f * Mathf.Sin(Time.time / .26f));          // it breathes, as the desktop's does
+                float out01 = Time.time % 2.2f / 2.2f;                                            // and a ripple leaves it
+                ripple.localScale = Vector3.one * (1 + 1.6f * out01);
+                rippleLook.color = Look.Amber.Alpha(.5f * (1 - out01) * (1 - out01));
+            }
 
             for (int i = 0; i < pins.Count; i++)
             {
                 var p = pins[i];
-                bool active = i == currentStop;
-                p.Root.localScale = Vector3.one * (1 + (dwelling && active ? .18f + Mathf.Sin(t * 4) * .08f : 0));
-                p.Ball.sharedMaterial.color = active ? Look.Warm : colour;
-                p.Ball.transform.localScale = Vector3.one * (p.Hit.Hot ? 1.2f : 1);
-                p.Name.gameObject.SetActive(active);
-                p.Face.rotation = Quaternion.LookRotation(p.Face.position - head.position, Vector3.up);     // text reads from its back, so it looks away from the reader
+                if (!p.Root.gameObject.activeSelf) continue;
+                bool active = i == currentStop && dwelling;
+                Vector3 away = p.Tag.position - head.position;
+                float size = Mathf.Clamp(away.magnitude, 40, 4000) * TagSize * (active ? 1.25f : 1) * (p.Hit.Hot ? 1.15f : 1);
+                p.Tag.localScale = Vector3.one * size;
+                p.Tag.rotation = Quaternion.LookRotation(away, Vector3.up);                        // text reads from its back, so it looks away from the reader
+                float strength = active ? 1 : i < currentStop ? .45f : .8f;                       // where we are; where we have been; where we are going
+                p.Disc.color = (active ? Look.Warm : colour).Alpha(strength);
+                p.Number.alpha = strength; p.Name.alpha = strength;
+                p.Chip.Border.color = (active ? Look.LineHot : Look.Line).Alpha(.9f * strength);
+                p.Chip.Fill.color = Look.Glass.Alpha(.78f * strength);
             }
+
             // A leg already travelled is dimmed, once, and its light put out. On the others a light runs the way the leg goes.
             for (; playedLegs < Mathf.Min(currentStop, legs.Count); playedLegs++)
                 foreach (var r in legs[playedLegs].Root.GetComponentsInChildren<Renderer>()) { if (r.name == "Line") r.sharedMaterial = played; else r.enabled = false; }

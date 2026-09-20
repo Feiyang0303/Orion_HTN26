@@ -9,11 +9,14 @@ using UnityEngine;
 
 namespace Orion
 {
-    /// <summary>What the guide is saying, low enough to leave the view ahead clear.</summary>
+    /// <summary>What the guide is saying, low enough to leave the view ahead clear: a panel of dark glass, a small
+    /// eyebrow saying where in the day this is, the place in the serif, the guide's words in the serif under it, and a
+    /// line of amber along the bottom for how far through the day it is.</summary>
     public class Captions : MonoBehaviour
     {
-        const float W = .95f, H = .3f, Pad = .04f, Front = -.008f;
+        const float W = .95f, H = .3f, Pad = .045f, Front = -.006f;
         TextMeshPro header, title, line, target;
+        Transform progress;
 
         public static Captions Make(Transform rig)
         {
@@ -21,16 +24,21 @@ namespace Orion
             c.transform.SetParent(rig, false);
             c.transform.localPosition = new Vector3(0, .98f, 1.05f);
             c.transform.localRotation = Quaternion.Euler(31.5f, 0, 0);
-            Look.Draw("Back", c.transform, Meshes.Quad(W, H), Look.Flat(Look.Panel.Alpha(.78f)));
-            Look.Draw("Rule", c.transform, Meshes.Quad(W, .004f), Look.Flat(Look.Amber)).transform.localPosition = new Vector3(0, H / 2, Front);
-            c.header = TopLeft(Look.Text("Header", c.transform, .017f, Look.Amber, TextAlignmentOptions.TopLeft, new Vector2(W - 2 * Pad, .025f)), .125f);
-            c.header.characterSpacing = 8;
-            c.title = TopLeft(Look.Text("Title", c.transform, .036f, Look.Cream, TextAlignmentOptions.TopLeft, new Vector2(W - 2 * Pad, .05f)), .1f);
-            c.line = TopLeft(Look.Text("Line", c.transform, .0225f, Look.Body, TextAlignmentOptions.TopLeft, new Vector2(W - 2 * Pad, .185f)), .048f);
-            c.line.lineSpacing = 35;
-            c.target = Look.Text("Target", c.transform, .014f, Look.Amber, TextAlignmentOptions.BottomRight, new Vector2(W - 2 * Pad, .02f));
-            c.target.rectTransform.pivot = new Vector2(1, 0);
-            c.target.transform.localPosition = new Vector3(W / 2 - Pad, -.135f, Front);
+            Look.Panel("Glass", c.transform, W, H, .022f);
+            c.header = TopLeft(Look.Text("Header", c.transform, Face.Sans, .0148f, Look.Hint, TextAlignmentOptions.TopLeft, new Vector2(W - 2 * Pad, .02f)), .122f);
+            c.header.characterSpacing = 14;
+            c.title = TopLeft(Look.Text("Title", c.transform, Face.Display, .04f, Look.Soft, TextAlignmentOptions.TopLeft, new Vector2(W - 2 * Pad, .052f)), .1f);
+            c.line = TopLeft(Look.Text("Line", c.transform, Face.Display, .0262f, Look.Soft, TextAlignmentOptions.TopLeft, new Vector2(W - 2 * Pad, .17f)), .04f);
+            c.line.lineSpacing = 18;
+            c.target = Look.Text("Target", c.transform, Face.Sans, .013f, Look.Amber, TextAlignmentOptions.TopRight, new Vector2(.4f, .02f));
+            c.target.rectTransform.pivot = new Vector2(1, 1);
+            c.target.transform.localPosition = new Vector3(W / 2 - Pad, .122f, Front);
+            c.target.characterSpacing = 6;
+
+            var track = Look.Draw("Track", c.transform, Meshes.Quad(W - 2 * Pad, .003f), Look.Flat(Look.Track), 2);
+            track.transform.localPosition = new Vector3(0, -H / 2 + .02f, Front);
+            c.progress = Look.Draw("Progress", track.transform, Meshes.Quad(1, .003f), Look.Flat(Look.Amber), 3).transform;
+            c.Progress = 0;
             return c;
         }
 
@@ -44,16 +52,28 @@ namespace Orion
         public void Show(string header, string title, string line, string target)
         {
             this.header.text = header; this.title.text = title; this.line.text = line;
-            this.target.text = string.IsNullOrEmpty(target) ? "" : $"› {target}";
+            this.target.text = string.IsNullOrEmpty(target) ? "" : target.ToUpperInvariant();
+        }
+
+        /// <summary>How far through the day the flight is, 0 to 1.</summary>
+        public float Progress
+        {
+            set
+            {
+                float full = W - 2 * Pad, p = Mathf.Clamp01(value);
+                progress.localScale = new Vector3(full * p, 1, 1);
+                progress.localPosition = new Vector3(-full / 2 + full * p / 2, 0, -.0005f);
+            }
         }
     }
 
-    /// <summary>Buttons you point at and squeeze. They sit at your lap, tilted up to meet you.</summary>
+    /// <summary>Buttons you point at and squeeze: pills of dark glass, the one that matters in amber. They sit at your
+    /// lap, tilted up to meet you.</summary>
     public class Console : MonoBehaviour
     {
-        const float ButtonH = .05f, Gap = .012f, Front = -.008f;
+        const float ButtonH = .05f, Gap = .012f, Front = -.006f;
 
-        class Button { public Pointable Hit; public Material Back; public bool Primary; }
+        class Button { public Pointable Hit; public Material Border; public TextMeshPro Label; public bool Primary; }
 
         readonly List<Button> buttons = new List<Button>();
         TextMeshPro stats;
@@ -64,11 +84,12 @@ namespace Orion
             c.transform.SetParent(rig, false);
             c.transform.localPosition = new Vector3(0, .76f, .3f);
             c.transform.localRotation = Quaternion.Euler(43, 0, 0);
-            var hint = Look.Text("Hint", c.transform, .014f, Look.Hint, TextAlignmentOptions.Center, new Vector2(.8f, .02f));
+            var hint = Look.Text("Hint", c.transform, Face.Sans, .0125f, Look.Hint, TextAlignmentOptions.Center, new Vector2(.8f, .02f));
             hint.text = "A or X pauses  ·  flick a thumbstick to turn  ·  hold B or Y to leave";
+            hint.characterSpacing = 4;
             hint.transform.localPosition = new Vector3(0, -.075f, 0);
-            c.stats = Look.Text("Stats", c.transform, .014f, Look.Amber, TextAlignmentOptions.Center, new Vector2(.8f, .02f));
-            c.stats.transform.localPosition = new Vector3(0, -.1f, 0);
+            c.stats = Look.Text("Stats", c.transform, Face.Sans, .011f, Look.Hint.Alpha(.7f), TextAlignmentOptions.Center, new Vector2(.8f, .02f));
+            c.stats.transform.localPosition = new Vector3(0, -.098f, 0);
             return c;
         }
 
@@ -77,9 +98,9 @@ namespace Orion
         {
             foreach (var b in buttons) Destroy(b.Hit.gameObject);
             buttons.Clear();
-            Row(.05f, ("‹ Prev", onPrev, .13f, false), (playing ? "Pause" : "Play", onPlay, .13f, true), ("Next ›", onNext, .13f, false));
+            Row(.05f, ("‹  Prev", onPrev, .13f, false), (playing ? "Pause" : "Play", onPlay, .13f, true), ("Next  ›", onNext, .13f, false));
             if (day == null) Row(-.02f, (smooth ? "Ride: smooth" : "Ride: blinks", onSmooth, .2f, false), ("Leave", onLeave, .16f, false));
-            else Row(-.02f, (smooth ? "Ride: smooth" : "Ride: blinks", onSmooth, .2f, false), ($"{day} ›", onDay, .34f, false), ("Leave", onLeave, .16f, false));
+            else Row(-.02f, (smooth ? "Ride: smooth" : "Ride: blinks", onSmooth, .2f, false), ($"{day}  ›", onDay, .34f, false), ("Leave", onLeave, .16f, false));
         }
 
         public void ShowStats(string text) => stats.text = text;
@@ -91,20 +112,28 @@ namespace Orion
             float x = -total / 2;
             foreach (var (label, onClick, width, primary) in row)
             {
-                var back = Look.Flat(primary ? Look.Amber : Look.Button.Alpha(.94f));
-                var go = Look.Draw(label, transform, Meshes.Quad(width, ButtonH), back);
+                GameObject go;
+                Material border = null;
+                if (primary) go = Look.Draw(label, transform, Meshes.RoundedRect(width, ButtonH, ButtonH / 2), Look.Flat(Look.Amber));
+                else { go = Look.Panel(label, transform, width, ButtonH, ButtonH / 2, .82f); border = go.GetComponent<Renderer>().sharedMaterial; }
                 go.transform.localPosition = new Vector3(x + width / 2, y, 0);
-                var text = Look.Text("Label", go.transform, .0175f, primary ? Look.Ink : Look.Cream, TextAlignmentOptions.Center, new Vector2(width, ButtonH));
+                var text = Look.Text("Label", go.transform, primary ? Face.SansBold : Face.Sans, .0165f, primary ? Look.Ink : Look.Soft, TextAlignmentOptions.Center, new Vector2(width, ButtonH), order: 3);
                 text.text = label;
+                text.characterSpacing = 4;
                 text.transform.localPosition = new Vector3(0, 0, Front);
-                buttons.Add(new Button { Hit = Pointable.On(go, new Vector3(width, ButtonH, .02f), onClick), Back = back, Primary = primary });
+                buttons.Add(new Button { Hit = Pointable.On(go, new Vector3(width, ButtonH, .02f), onClick), Border = border, Label = text, Primary = primary });
                 x += width + Gap;
             }
         }
 
         void Update()
         {
-            foreach (var b in buttons) if (!b.Primary) b.Back.color = (b.Hit.Hot ? Look.ButtonHot : Look.Button).Alpha(.94f);
+            foreach (var b in buttons)
+            {
+                if (b.Primary) continue;
+                b.Border.color = (b.Hit.Hot ? Look.LineHot : Look.Line).Alpha(.9f);          // as the desktop's buttons answer a pointer: the border warms, the words turn amber
+                b.Label.color = b.Hit.Hot ? Look.Amber : Look.Soft;
+            }
         }
     }
 
@@ -114,7 +143,7 @@ namespace Orion
     /// keeps them internal, so they are read by name (and kept from being stripped by Assets/Orion/link.xml).</summary>
     public class Credits : MonoBehaviour
     {
-        const float W = .95f, H = .07f, Pad = .04f, LogoH = .022f, Front = -.004f;
+        const float W = .95f, H = .052f, Pad = .045f, LogoH = .02f, Front = -.004f;
         const BindingFlags Any = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
 
         TextMeshPro text;
@@ -126,12 +155,12 @@ namespace Orion
         {
             var c = new GameObject("Credits").AddComponent<Credits>();
             c.transform.SetParent(rig, false);
-            c.transform.localPosition = new Vector3(0, .815f, .951f);          // hung from the caption panel's lower edge, in its plane
+            c.transform.localPosition = new Vector3(0, .823f, .954f);          // hung from the caption panel's lower edge, in its plane
             c.transform.localRotation = Quaternion.Euler(31.5f, 0, 0);
-            Look.Draw("Back", c.transform, Meshes.Quad(W, H), Look.Flat(Look.Panel.Alpha(.78f)));
+            Look.Panel("Glass", c.transform, W, H, .016f, .7f);
             c.logo = Look.Draw("Logo", c.transform, Meshes.Quad(1, 1), new Material(Look.ShaderNamed("OrionTexture"))).GetComponent<Renderer>();
             c.logo.enabled = false;
-            c.text = Look.Text("Text", c.transform, .015f, Look.Body, TextAlignmentOptions.Left, new Vector2(W - 2 * Pad, H - .01f));
+            c.text = Look.Text("Text", c.transform, Face.Sans, .0125f, Look.Hint, TextAlignmentOptions.Left, new Vector2(W - 2 * Pad, H - .01f));
             c.text.overflowMode = TextOverflowModes.Ellipsis;
         }
 
