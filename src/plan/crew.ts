@@ -150,7 +150,7 @@ export async function findStops(opts: {
       complain about a day that does not fit before the Critic is asked. */
   legSecs?: (all: Candidate[]) => Promise<number[]>
 }): Promise<Candidate[]> {
-  const { city, origin, radiusM, wish, fixed, count, onEvent = () => {}, legSecs } = opts
+  const { city, origin, radiusM, wish, mode, fixed, count, onEvent = () => {}, legSecs } = opts
   const say = (agent: Agent, kind: 'tool' | 'agent', state: 'working' | 'done' | 'reworking' | 'failed', detail: string) =>
     onEvent({ type: 'crew', agent, kind, state, detail })
 
@@ -198,7 +198,7 @@ export async function findStops(opts: {
     }
 
     say('Critic', 'agent', 'working', 'Judging the day')
-    const review = await critic(summarise(all, secs, wish))
+    const review = await critic(summarise(all, secs, wish, mode))
     // A place the person named is not the Judger's to reject.
     const fair = review.complaints.filter(c => !all.some(s => s.asked && c.text.toLowerCase().includes(s.name.toLowerCase())))
     onEvent(verdict('Critic', 'day', fair.map((c, i) => ({ id: `judge-${i}`, text: c.text, owner: c.owner }))))
@@ -209,12 +209,14 @@ export async function findStops(opts: {
   return picks.map(p => fromPick(p, wish))
 }
 
-function summarise(all: Candidate[], legSecs: number[], wish: Wish) {
+function summarise(all: Candidate[], legSecs: number[], wish: Wish, mode: 'full' | 'short') {
   const lines = all.map((c, i) =>
     `${i + 1}. ${c.id} | ${c.name} | kind: ${c.kind} | ${c.visitMin} min there | ` +
     (c.asked ? 'ASKED FOR BY NAME — not yours to reject' : c.why) +
     (legSecs[i] ? `\n   then ${Math.round(legSecs[i] / 60)} min ${wish.transport} to the next` : ''))
   return [
+    // Asked for, not an oversight: without this the Judger sends a quick tour back for being short, every time.
+    ...(mode === 'short' ? ['This is a QUICK TOUR: a few stops on purpose, however many hours there are. Do not object that the day is short, light, or has time to spare, and do not ask for more places.'] : []),
     `Hours: ${wish.startAt} to ${wish.endAt}. Getting about: ${wish.transport}. Pace: ${wish.pace}.`,
     `Who: ${wish.party}. Budget: ${wish.budget}.`,
     wish.meals.length ? `Keeping time clear for: ${wish.meals.join(' and ')}.` : 'No meal breaks asked for.',

@@ -36,6 +36,7 @@ const PRELOAD_ON = new URLSearchParams(location.search).get('preload') !== '0'
 const DIRECTOR_ON = new URLSearchParams(location.search).get('director') !== '0'      // the director that looks (director.vision.ts)
 const noHit = () => null
 const TAU = Math.PI * 2
+const CLOCK_MAX_STEP = 0.25     // seconds the flight's clock may advance in one frame: real time down to four frames a second
 const MAX_TURN = 0.55      // radians a second the camera may swing round its subject: half a turn takes six seconds
 const DIVE_TURN = 1.2      // the opening dive is one deliberate sweep, already eased, and may turn faster
 
@@ -226,7 +227,10 @@ function Rig({ plan, begin, quality, onStopReached, onFinish, onHud, control, ti
          than leaving dead air. If it runs long, hold the shot until the last
          word instead of letting the next camera move cut it off. */
       if (spoken && st.audio && !st.audioFailed && st.audio.ended) st.t = spoken.t1
-      let next = Math.min(tl.total, st.t + dt)
+      // The clock keeps real time. It stepped by the same capped dt the camera eases with (a twentieth of a second), so on
+      // a machine drawing eight frames a second every silent stretch ran at less than half speed: a five-second dive
+      // took twelve. Only a real stall (a hidden tab, a long parse) is still cut short.
+      let next = Math.min(tl.total, st.t + Math.min(rawDt, CLOCK_MAX_STEP))
       if (spoken && st.audio && !st.audioFailed && !st.audio.ended && next >= spoken.t1)
         next = spoken.t1 - 0.001
       st.t = next

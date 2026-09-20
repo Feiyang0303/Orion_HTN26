@@ -141,7 +141,7 @@ const DUST_VERT = /* glsl */`
     float tw = 0.35 + 0.65 * abs(sin(uTime * (0.5 + aSeed * 1.6) + aSeed * 40.0));
     vA = tw * (0.42 + 0.4 * uPulse) * uReveal;
     vSeed = aSeed;
-    gl_PointSize = uSize * uPx * 0.0075 / -mv.z;
+    gl_PointSize = aSize * uPx * 0.0075 / -mv.z;      // each mote's own size. It read uSize, which this shader never had: it never compiled, and no dust was drawn
     gl_Position = projectionMatrix * mv;
   }`
 

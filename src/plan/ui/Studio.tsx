@@ -31,6 +31,8 @@ import type { Day, LatLon, Stay, Trip, Wish } from '../../types'
  */
 
 type Line = { who: 'you' | 'editor'; text: string }
+/** What the code reports ("removed X; moved Y") said as the editor says things: starting with a capital. */
+const sentence = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
 export default function Studio({ wish, mode, origin, saved: given, onTrip, onFly, onHome, onJournal, onMap, onCrew, saveAudio }: {
   wish: Wish
@@ -151,6 +153,13 @@ export default function Studio({ wish, mode, origin, saved: given, onTrip, onFly
   }, [trip, openingJournal, persist, onJournal])
 
   const [vr, setVr] = useState<{ state: 'idle' | 'busy' | 'ready' | 'failed'; why?: string }>({ state: 'idle' })
+  // The note that it was sent is news, not a fixture: it goes after a few seconds, so it does not sit over the page
+  // on a window too narrow to give it the bar's own row.
+  useEffect(() => {
+    if (vr.state !== 'ready') return
+    const gone = setTimeout(() => setVr({ state: 'idle' }), 7000)
+    return () => clearTimeout(gone)
+  }, [vr.state])
   const openInVr = useCallback(async () => {
     if (!trip) return
     setVr({ state: 'busy' })
@@ -202,7 +211,7 @@ export default function Studio({ wish, mode, origin, saved: given, onTrip, onFly
       if (real.length) {
         const { trip: next, rebuilt, notes } = await applyEdits(session.current, trip, real, { saveAudio, onEvent, voice: true })
         setTrip(next)
-        if (notes.length) setChat(c => [...c, { who: 'editor', text: `${notes.join('; ')}.${rebuilt.length ? ` Day${rebuilt.length === 1 ? '' : 's'} ${rebuilt.join(', ')} redone.` : ''}` }])
+        if (notes.length) setChat(c => [...c, { who: 'editor', text: `${sentence(notes.join('; '))}.${rebuilt.length ? ` Day${rebuilt.length === 1 ? '' : 's'} ${rebuilt.join(', ')} redone.` : ''}` }])
       }
     } catch (e) {
       const id = report(e, 'studio.revise', { extra: { city: origin.name } })
@@ -223,7 +232,7 @@ export default function Studio({ wish, mode, origin, saved: given, onTrip, onFly
     try {
       const { trip: next, notes } = await applyEdits(s, trip, [{ op: 'new_bed' }], { saveAudio, onEvent, voice: true })
       setTrip(next); setStay(s.bed)
-      if (notes.length) setChat(c => [...c, { who: 'editor', text: `${notes.join('; ')}. The days are routed from there now.` }])
+      if (notes.length) setChat(c => [...c, { who: 'editor', text: `${sentence(notes.join('; '))}. The days are routed from there now.` }])
     } catch (e) {
       const id = report(e, 'studio.new_bed', { extra: { city: origin.name } })
       setChat(c => [...c, { who: 'editor', text: `Could not find another place to sleep: ${e instanceof Error ? e.message : String(e)}${id ? ` (${id})` : ''}` }])

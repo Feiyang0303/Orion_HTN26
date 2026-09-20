@@ -9,7 +9,7 @@
    of faint diagonal strokes crossing each other so the surface reads as
    textured rather than printed. The light falls from the top-left. */
 .jl-cover {
-  position: sticky; top: 18px; align-self: start; min-height: calc(100vh - 96px); padding: 64px 42px 46px;
+  position: sticky; top: 18px; align-self: start; min-height: calc(100vh - 96px); padding: 64px 42px 84px;   /* the foot is kept clear for the ✦ that sits there: on a short cover the count used to run under it */
   display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;
   border: 1px solid rgba(255,220,170,.22); border-radius: 13px 2px 2px 13px; color: #f5ddb0; overflow: hidden;
   background:

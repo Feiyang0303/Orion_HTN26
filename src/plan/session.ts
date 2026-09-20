@@ -53,6 +53,7 @@ const say = (s: Session, agent: Agent, kind: 'tool' | 'agent', state: 'working' 
 /** A few days at once, not every day at once: enough overlap to cut the wait,
     not so many that the models and the voice start failing each other. */
 const DAY_CONCURRENCY = 3
+const QUICK_STOPS = 3            // what the kickoff's "Quick tour · three stops" promises, per day
 async function mapLimited<T, R>(items: T[], n: number, fn: (item: T, i: number) => Promise<R>): Promise<R[]> {
   const out: R[] = new Array(items.length)
   let next = 0
@@ -112,7 +113,10 @@ async function stagePlacesImpl(s: Session): Promise<DayDraft[]> {
   // Sized to the hours, with a little over: the day-shaper is told the budget
   // and will leave the surplus aside, and a scout asked for too few cannot be
   // asked for the rest without a second round of API calls.
-  const perDay = Math.max(2, Math.min(7, Math.round(budget / 50) + 1))
+  // A quick tour is three stops a day, as its switch says. It was sized to the hours like any other, so the switch only
+  // shortened what was said at each of seven places.
+  const quick = s.mode === 'short'
+  const perDay = quick ? QUICK_STOPS : Math.max(2, Math.min(7, Math.round(budget / 50) + 1))
 
   const taken = new Set<number>()
   const fixed: Candidate[] = []
@@ -143,7 +147,7 @@ async function stagePlacesImpl(s: Session): Promise<DayDraft[]> {
      is allowed for; a day that is merely not full is left alone. */
   const minutesOf = (d: DayDraft) => d.stops.reduce((n, c) => n + c.visitMin, 0)
   for (const d of drafts) {
-    if (minutesOf(d) >= budget * 0.6) continue
+    if (quick || minutesOf(d) >= budget * 0.6) continue       // a quick tour is meant to be light
     const want = Math.max(1, Math.min(3, Math.round((budget * 0.8 - minutesOf(d)) / 50)))
     say(s, 'Scout', 'agent', 'working', `${d.title} is light — looking for ${want} more`)
     const extra = await findStops({ city: s.origin.name, origin: s.origin, radiusM: tripRadius(nDays), wish, mode: s.mode, fixed: drafts.flatMap(x => x.stops), count: want, onEvent: () => {}, legSecs: all => travelSecs(all, wish) }).catch(() => [])

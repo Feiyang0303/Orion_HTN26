@@ -184,7 +184,7 @@ function App() {
             <motion.div key="done" className="orion-done" {...layer}>
               <div className="o-glass orion-done-card">
                 <p className="o-eyebrow">Landed</p>
-                <h2 className="o-title" style={{ fontSize: 44 }}>That was {flying ? `day ${flying.number}` : 'the day'}.</h2>
+                <h2 className="o-title" style={{ fontSize: 44 }}>That was {flying && ((live ?? resume)?.trip.days.length ?? 1) > 1 ? `day ${flying.number}` : 'the day'}.</h2>
                 <div style={{ display: 'flex', gap: 10, marginTop: 24 }}>
                   <button className="o-btn primary" onClick={() => setPhase(flightFrom)}>{flightFrom === 'journal' ? 'Back to the journal' : 'Back to the trip'}</button>
                   <button className="o-btn" onClick={goHome}>Plan another</button>

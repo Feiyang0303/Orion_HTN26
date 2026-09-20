@@ -107,7 +107,7 @@ export async function locate(query: string, near?: LatLon, signal?: AbortSignal,
     .map(r => ({ name: `${r.name} — ${r.full.split(',').slice(1, 3).join(', ').trim()}`, lat: r.lat, lon: r.lon }))
 
   const out: Place = {
-    asked: query, name: best.name, lat: best.lat, lon: best.lon,
+    asked: query, name: opts.settlement ? plainName(best.name, query) : best.name, lat: best.lat, lon: best.lon,
     region: best.full.split(',').slice(1, 3).map(s => s.trim()).join(', '),
     ...(alternatives.length ? { alternatives } : {}),
   }
@@ -120,6 +120,15 @@ export async function geocode(query: string, signal?: AbortSignal): Promise<Plac
   const hit = await locate(query, undefined, signal, { settlement: true })
   if (!hit) throw new Error(`Couldn't find a place called "${query}".`)
   return hit
+}
+
+/* Asked for London, the map answers "Greater London", and that name then heads the trip, opens the guide's welcome and
+   goes on the journal's cover. When what came back is only what was typed with an administrator's qualifier on it, the
+   person's own word is the name. Only then: "Mexico City" and "Kansas City" are names, and stay as they are. */
+const QUALIFIED = /^(?:Greater|City of|Metropolitan City of|Municipality of|Commune of|Ville de|Città di|Stadt)\s+(.+)$|^(.+?)\s+(?:City|Metropolitan Area|Metropolis|Municipality|Prefecture|Region|District)$/i
+function plainName(name: string, asked: string) {
+  const m = name.match(QUALIFIED), core = (m?.[1] ?? m?.[2] ?? '').trim()
+  return core && core.toLowerCase() === asked.trim().toLowerCase() ? core : name
 }
 
 /** Live suggestions under the desk's place field. Bounded to the city, nearest

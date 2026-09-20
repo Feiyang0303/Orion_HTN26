@@ -219,7 +219,7 @@ const reasonFor = (p: OsmPlace, days: Waypost[][]) => {
   const stars = Number(p.tags.stars)
   return [
     c.days === 0 ? `${fmtM(p.distM)} from the middle of your places`
-      : c.days === 1 && first ? `${fmtM(c.out)} to ${shortName(first.name)}, where the day starts`
+      : c.days === 1 && first ? `${fmtM(c.out)} from ${shortName(first.name)}, one of your places`
       : `${fmtM(c.out)} to the first place on an average day, never more than ${fmtM(c.worstOut)}`,
     Number.isFinite(stars) && stars > 0 ? `${stars} stars, self-declared` : '',
     p.tags['addr:street'] ? `on ${p.tags['addr:street']}` : '',

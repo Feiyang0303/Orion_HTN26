@@ -35,7 +35,7 @@ export default function TripView({ trip, day, onDay, onFly, onFocus, planning, o
 }) {
   const shown = day === 'all' ? trip.days : trip.days.filter(d => d.number === day)
   const places = trip.days.reduce((n, d) => n + d.stops.length, 0)
-  const distance = trip.days.reduce((n, d) => n + d.legs.reduce((a, l) => a + l.distanceM, 0), 0)
+  const distance = trip.days.reduce((n, d) => n + d.legs.reduce((a, l) => a + l.distanceM, 0) + (d.approach?.distanceM ?? 0) + (d.back?.distanceM ?? 0), 0)      // the whole loop, as the journal and each day's own line count it
   const stay = trip.stays[0]
 
   return (
@@ -71,7 +71,7 @@ export default function TripView({ trip, day, onDay, onFly, onFocus, planning, o
 
       <footer className="t-foot">
         Places from Wikipedia, chosen by a model and verified by code · beds and tables from OpenStreetMap · routes and times from Google Routes ·
-        the guide may only say what a cited source says.
+        the guide is written from the cited sources.
       </footer>
     </motion.aside>
   )
@@ -123,13 +123,17 @@ function DayBlock({ day, many, stay, onFly, onFocus, planning }: {
 }) {
   const c = dayColour(day.number - 1)
   const tableAfter = (s: Stop): Table[] => day.tables.filter(t => t.nearStopId === s.id)
+  // The line is kept with the day, and a day written before the way back was counted says a shorter distance than the
+  // header and the journal do. The distance is counted here, from the day itself, so every trip agrees with itself.
+  const loopKm = (day.legs.reduce((n, l) => n + l.distanceM, 0) + (day.approach?.distanceM ?? 0) + (day.back?.distanceM ?? 0)) / 1000
+  const epigraph = day.epigraph.replace(/\d+(?:\.\d+)? km/, `${loopKm.toFixed(1)} km`)
   return (
     <section className="t-day" style={{ ['--c' as string]: c }}>
       <div className="t-day-head">
         <div>
           {many && <p className="t-day-no"><i />Day {day.number}</p>}
           <h2 className="o-title">{many ? day.title : 'The day'}</h2>
-          <p className="t-epigraph">{day.epigraph}</p>
+          <p className="t-epigraph">{epigraph}</p>
         </div>
         <button type="button" className="o-btn primary" disabled={planning} onClick={() => onFly(day)}>Fly this day <Icon name="arrow" size={15} /></button>
       </div>

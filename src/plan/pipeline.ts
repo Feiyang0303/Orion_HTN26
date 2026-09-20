@@ -10,7 +10,7 @@ import { narrate, withAudio, writeBridges, writeClosing, writeOpening, writePref
 import { estimateSec, speak } from './tts'
 import { findStops, matchWant, roomFor, tripRadius, type Candidate, type Skeleton } from './crew'
 import { slug } from './geo'
-import { sentences } from './sentences'
+import { sentences, withoutNameAsides } from './sentences'
 
 /* The second half of the crew: reading up on each place, writing what the
  * guide will say, and speaking it. It runs on a Skeleton — a day whose stops,
@@ -85,6 +85,7 @@ export async function writePages(skeleton: Skeleton, opts: PipelineOptions): Pro
   }
 
   say('Narrator', 'agent', 'working', `Writing ${chosen.length} pages`)
+  if (opts.voice === true) say('Voice', 'agent', 'working', 'Recording each line as it is written')
   let voiceFailed = false
   const speakNow = opts.voice === true
 
@@ -99,12 +100,14 @@ export async function writePages(skeleton: Skeleton, opts: PipelineOptions): Pro
       a ? photoFor(a).catch(() => null) : Promise.resolve(null),
     ])
     const targets: Target[] = near
-      .filter(n => n.pageId !== a?.pageId && n.extract.length > 60)
+      .filter(n => n.pageId !== a?.pageId && n.extract.length > 60 && !isEvent(n.title))
       .slice(0, 6).map(toTarget)
     return { c, index, before: null as Stop | null, targets, photo }
   }))
 
-  const totalKm = (legs.reduce((s, l) => s + l.distanceM, 0) + (approach?.distanceM ?? 0)) / 1000
+  // The whole loop: out from the bed, between the places, and back. The journal always counted it this way; the trip's
+  // header, the day's own line and what the guide says at the end did not count the way back, and the numbers disagreed.
+  const totalKm = (legs.reduce((s, l) => s + l.distanceM, 0) + (approach?.distanceM ?? 0) + (back?.distanceM ?? 0)) / 1000
   say('Narrator', 'agent', 'working', 'Writing the opening note')
   const prefaceP = writePreface({
     city: origin.name, startAt: wish.startAt, endsAt: clock.endsAt, windowEnd: wish.endAt,
@@ -245,6 +248,16 @@ export async function writePages(skeleton: Skeleton, opts: PipelineOptions): Pro
     opening && closing ? `The day has its welcome, and closes ${dayCount > 1 ? `as day ${dayNumber} of ${dayCount}` : 'on its own'}`
       : 'One of the two ends could not be written')
 
+  /* The Voice records each line as it is written, and said so only when a line failed: on the stage it stood idle
+     through the whole of its own work. It says what it is doing, and how it went. */
+  if (speakNow) {
+    const lines = [...stops.flatMap(st => st.beats), ...spanned.flatMap(l => l.bridge ? [l.bridge] : []), ...(opening ? [opening] : []), ...(closing ? [closing] : [])]
+    const recorded = lines.filter(b => b.audioUrl).length
+    say('Voice', 'agent', recorded === lines.length ? 'done' : 'failed', recorded === lines.length
+      ? `${recorded} lines recorded`
+      : `${recorded} of ${lines.length} lines recorded; the rest are spoken when the day is flown`)
+  }
+
   const preface = await prefaceP
   say('Narrator', 'agent', preface ? 'done' : 'failed', preface ? 'The opening note is written' : 'No opening note — the counted line stands alone')
 
@@ -252,7 +265,7 @@ export async function writePages(skeleton: Skeleton, opts: PipelineOptions): Pro
     id: planId, city: origin.name, origin: { lat: origin.lat, lon: origin.lon }, mode, stops, legs: spanned,
     wish, from, approach, back,
     ...(opening ? { opening } : {}), ...(closing ? { closing } : {}),
-    epigraph: epigraphFor(stops, legs, approach, window, clock.endsAt), preface,
+    epigraph: epigraphFor(stops, totalKm, window, clock.endsAt), preface,
     generatedAt: new Date().toISOString(),
     provenance: {
       router: 'code', timekeeper: 'code',
@@ -313,19 +326,24 @@ export async function planTour(wish: Wish, opts: PipelineOptions & { mode?: Mode
 
 /* ------------------------------------------------------------------ helpers */
 
+/* Wikipedia pins events to the ground they happened on, so "Siege of Lisbon" and "1755 Lisbon earthquake" turn up as
+   things standing near a castle. A guide can point the camera at a building; it cannot point it at a siege, and the
+   Director was being sent to walk round one. Judged from the title, which is the only evidence there is. */
+const EVENT = /^(?:\d{3,4}\s|(?:First|Second|Third)\s)?(?:Siege|Battle|Treaty|Massacre|Assassination|Bombing|Sack|Fall|Capture|Conquest|Coronation|Trial|Execution|Riots?|Uprising|Revolt|Raid|Occupation|Liberation|Great Fire)\s(?:of|at|on)\b|^\d{3,4}\s|\b(?:earthquake|massacre|riots?|bombings?|shooting|attacks?|uprising|revolt|revolution|election|protests?|disaster|crash|derailment|explosion|stampede)$/i
+const isEvent = (title: string) => EVENT.test(title.replace(/\s*\(.*\)$/, '').trim())
+
 const toTarget = (a: Article): Target => ({
   id: `w${a.pageId}`, name: a.title, lat: a.lat, lon: a.lon, summary: a.extract, source: wikiSource(a),
 })
 
 /* Split by plan/sentences, which knows "St. Mary" and "U.S. Route 9" are not sentence ends; printed pages used to
    end at "the Basilica of St." */
-const firstSentence = (s: string) => sentences(s)[0] ?? s.replace(/\s+/g, ' ').trim()
+const firstSentence = (s: string) => sentences(withoutNameAsides(s))[0] ?? s.replace(/\s+/g, ' ').trim()
 
 /** One line under the title, counted rather than written: every number in it
     is a field of this plan. */
-function epigraphFor(stops: Stop[], legs: Plan['legs'], approach: Plan['approach'], w: { startMin: number }, endsAt: string) {
+function epigraphFor(stops: Stop[], km: number, w: { startMin: number }, endsAt: string) {
   if (!stops.length) return ''
-  const km = (legs.reduce((s, l) => s + l.distanceM, 0) + (approach?.distanceM ?? 0)) / 1000
   return `${stops.length} places, ${km.toFixed(1)} km, ${HHMM(w.startMin)} to ${endsAt}.`
 }
 
