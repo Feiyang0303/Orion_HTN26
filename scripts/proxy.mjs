@@ -238,8 +238,8 @@ const v3Stability = mood => {
 /* The goose is a duck: the flight plays every clip a little fast with the
    browser's pitch-preservation off, which lifts the voice. So the lines are
    asked for slower by the same amount, and the pace comes out normal. The
-   two numbers are a pair: this one and QUACK_RATE in src/plan/quack.ts. */
-const GOOSE_SPEED = Number(env('ELEVENLABS_GOOSE_SPEED')) || 0.82
+   two numbers are a pair: this one and QUACK_RATE in src/plan/pace.ts. */
+const GOOSE_SPEED = Number(env("ELEVENLABS_GOOSE_SPEED")) || 0.77
 let speedTakes = true   // until a model refuses it, in which case the goose is just a quick duck
 
 async function speak(key, voice, text, model, mood, withStyle, speed = 1) {

@@ -1,7 +1,7 @@
 import type { Plan, Stop, Table } from '../types'
 import { askJson } from '../plan/json'
 import { postBytes } from '../plan/net'
-import { quack } from '../plan/quack'
+import { quack } from './quack'
 import { report } from '../telemetry'
 
 /* The guide you can interrupt.

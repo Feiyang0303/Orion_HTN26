@@ -1,10 +1,10 @@
 import { postBytes } from './net'
-import { QUACK_RATE } from './quack'
+import { QUACK_RATE } from './pace'
 import type { Beat, Leg, Stop } from '../types'
 
 /* Voice. ElevenLabs via the proxy, mp3_44100_128, which is constant-bitrate,
    so duration is exactly bytes*8/128000 (plus a few ms of header) — and
-   the flight plays every clip QUACK_RATE faster than that (see quack.ts).
+   the flight plays every clip QUACK_RATE faster than that (see fly/quack.ts).
    The paper journal never plays this; the flythrough does. */
 
 const BITRATE = 128_000
