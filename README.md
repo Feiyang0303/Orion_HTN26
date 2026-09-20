@@ -2,9 +2,11 @@
 
 Name a city. An AI crew plans your days on real streets, then a magic goose flies you through them in photorealistic 3D.
 
-Try it at [orion-coral.vercel.app](https://orion-coral.vercel.app). Planning a trip takes a few minutes, so if you're in a hurry, open a trip that's already on the shelf and fly that one.
+[![Watch the demo](docs/screenshots/demo-thumb.jpg)](https://youtu.be/1InwD73Dmjo)
 
-There's also a native [Meta Quest](quest/README.md) app.
+[Watch the demo](https://youtu.be/1InwD73Dmjo) · [Try it live](https://orion-coral.vercel.app) · [Meta Quest](quest/README.md)
+
+Planning a trip takes a few minutes, so if you're in a hurry, open a trip that's already on the shelf and fly that one.
 
 ## Inspiration
 
@@ -16,11 +18,39 @@ We wanted the plan to be something you could trust, and then something you could
 
 ## What it does
 
-Tell Orion what kind of trip you want and hit go. A small crew of agents + tools pops up and gets to work: one finds places, one checks how long it takes to get between them, one keeps the schedule honest, one complains when a pick is bad and sends it back.
+Tell Orion what kind of trip you want and hit go.
 
-If you don't like something, type that in ("drop the museum, slower morning") and it replans the day. Once you're happy with the plan, you lift off into a photorealistic 3D flight over the actual city while following the planned route. Your guide is a small magic goose. It talks you through each stop, and you can interrupt it with your voice to ask about what you're looking at.
+![Kickoff](docs/screenshots/01-kickoff.jpg)
+
+![Honolulu kickoff](docs/screenshots/02-kickoff-honolulu.jpg)
+
+A small crew of agents + tools pops up and gets to work: one finds places, one checks how long it takes to get between them, one keeps the schedule honest, one complains when a pick is bad and sends it back.
+
+![The crew at work](docs/screenshots/03-crew.jpg)
+
+If you don't like something, type that in ("drop the museum, slower morning") and it replans the day. Once you're happy with the plan, you lift off into a photorealistic 3D flight over the actual city while following the planned route.
+
+![A day in Honolulu](docs/screenshots/04-day-in-honolulu.jpg)
+
+![Washington Place](docs/screenshots/05-washington-place.jpg)
+
+Your guide is a small magic goose. It talks you through each stop, and you can interrupt it with your voice to ask about what you're looking at.
+
+![Flight over Honolulu](docs/screenshots/06-flight-overview.jpg)
+
+![On the route](docs/screenshots/07-flight-route.jpg)
+
+![Iolani Palace](docs/screenshots/08-iolani-palace.jpg)
+
+![Ask the guide](docs/screenshots/09-guide.jpg)
+
+![End of the day](docs/screenshots/10-flight-end.jpg)
 
 As a plus, you also get an exportable travel journal that looks hand-drawn, with routes, arrival times, food, and a place to sleep.
+
+![Saved trips](docs/screenshots/11-saved-trips.jpg)
+
+![Paper journal](docs/screenshots/12-journal.jpg)
 
 ## The crew
 
