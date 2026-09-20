@@ -11,6 +11,8 @@ namespace Orion
         public static readonly Color Background = Hex("#07060a"), Amber = Hex("#f0b45e"), Cream = Hex("#f4e7c6");
         public static readonly Color Ink = Hex("#1a1208"), Warm = Hex("#fff3d6"), Body = Hex("#d9ccb0"), Hint = Hex("#9a8763");
         public static readonly Color Panel = Hex("#0c0a08"), Button = Hex("#1a1510"), ButtonHot = Hex("#3a2f22"), Floor = Hex("#0d0a08");
+        /// <summary>One hue per day of a trip, as everywhere else in Orion.</summary>
+        public static readonly Color[] Days = { Hex("#f0b45e"), Hex("#6fd6ff"), Hex("#c89bff"), Hex("#7fe3a6"), Hex("#ff8fa3"), Hex("#ffe066"), Hex("#8fb8ff") };
         public static readonly Color Haze = new Color(.30f, .17f, .08f);          // the sky's colour at the horizon, so the city fades into it
 
         /// <summary>The layer everything the person can point at lives on; the city is on the default one.</summary>
@@ -80,11 +82,24 @@ namespace Orion
             return Build(v, tris);
         }
 
-        /// <summary>One sphere at each point, as a single mesh: a line of beads is one draw call.</summary>
-        public static Mesh Beads(IReadOnlyList<Vector3> at, float radius)
+        /// <summary>A flat band along a path, lying on it face up: solid, or in dashes `on` metres long with `off` between.</summary>
+        public static Mesh Ribbon(Flight.RoutePath path, float width, float lift, float on, float off)
         {
+            const float Step = 4;                       // a band bends with the street this often
             var v = new List<Vector3>(); var tris = new List<int>();
-            foreach (var p in at) AddSphere(v, tris, p, radius, 8, 5);
+            float period = on > 0 ? on + off : path.Length + 1, length = on > 0 ? on : path.Length;
+            for (float from = 0; from < path.Length; from += period)
+            {
+                float to = Mathf.Min(path.Length, from + length);
+                int first = v.Count;
+                for (float s = from; ; s = Mathf.Min(to, s + Step))
+                {
+                    Vector3 at = path.At(s) + Vector3.up * lift, side = Vector3.Cross(Vector3.up, path.Heading(s, 2, 2, Vector3.forward)) * (width / 2);
+                    v.Add(at - side); v.Add(at + side);
+                    if (s >= to) break;
+                }
+                for (int k = first; k + 3 < v.Count; k += 2) tris.AddRange(new[] { k, k + 1, k + 2, k + 1, k + 3, k + 2 });
+            }
             return Build(v, tris);
         }
 
@@ -103,29 +118,6 @@ namespace Orion
                     int k = b + j * (around + 1) + i, n = k + around + 1;
                     tris.AddRange(new[] { k, k + 1, n, k + 1, n + 1, n });
                 }
-        }
-
-        /// <summary>A tube along a line of points.</summary>
-        public static Mesh Tube(IReadOnlyList<Vector3> line, float radius, int sides = 6)
-        {
-            var v = new List<Vector3>(); var tris = new List<int>();
-            for (int i = 0; i < line.Count; i++)
-            {
-                Vector3 dir = (line[Mathf.Min(i + 1, line.Count - 1)] - line[Mathf.Max(i - 1, 0)]).normalized;
-                Vector3 side = Vector3.Cross(Vector3.up, dir).normalized, top = Vector3.Cross(dir, side);
-                for (int s = 0; s <= sides; s++)
-                {
-                    float a = s * 2 * Mathf.PI / sides;
-                    v.Add(line[i] + (side * Mathf.Cos(a) + top * Mathf.Sin(a)) * radius);
-                }
-                if (i == 0) continue;
-                for (int s = 0; s < sides; s++)
-                {
-                    int k = (i - 1) * (sides + 1) + s, n = k + sides + 1;
-                    tris.AddRange(new[] { k, n, k + 1, k + 1, n, n + 1 });
-                }
-            }
-            return Build(v, tris);
         }
 
         /// <summary>An open cone standing on the origin: the beam's shaft.</summary>

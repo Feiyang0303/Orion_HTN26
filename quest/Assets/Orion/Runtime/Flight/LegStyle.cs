@@ -15,27 +15,32 @@ namespace Orion.Flight
     {
         const float MaxSlope = .3f;          // metres of height per metre along the route: steeper than any street
 
-        /// <summary>Radius of the drawn line, metres.</summary>
-        public readonly float Radius;
-        /// <summary>Metres between beads, or 0 for a continuous ribbon.</summary>
-        public readonly float BeadGap;
+        /// <summary>Width of the drawn line, metres.</summary>
+        public readonly float Width;
+        /// <summary>Metres of dash and of gap, or 0 for a solid line.</summary>
+        public readonly float DashOn, DashOff;
+        /// <summary>A wider, fainter line under the main one.</summary>
         public readonly bool Glow;
         public readonly float Opacity;
+        /// <summary>How fast the travelling light moves along the line, metres a second.</summary>
+        public readonly float PulseMps;
 
-        LegStyle(float radius, float beadGap, bool glow, float opacity) { Radius = radius; BeadGap = beadGap; Glow = glow; Opacity = opacity; }
+        LegStyle(float width, float dashOn, float dashOff, bool glow, float opacity, float pulseMps)
+        { Width = width; DashOn = dashOn; DashOff = dashOff; Glow = glow; Opacity = opacity; PulseMps = pulseMps; }
 
-        /// <summary>Walking is footsteps, cycling longer-spaced beads, transit a ribbon and driving a wide
-        /// road of light. A leg that is only an estimate is drawn broken and faint, so a guess never looks like a route.</summary>
+        /// <summary>Walking is footsteps, cycling long dashes, transit a ribbon and driving a wide road of light, as on the
+        /// desktop (whose widths are in pixels; these are what they come to from a vantage's distance). A leg that is only
+        /// an estimate is drawn broken and faint, so a guess never looks like a route.</summary>
         public static LegStyle For(string transport, bool estimated)
         {
             LegStyle s = transport switch
             {
-                "cycle" => new LegStyle(2.3f, 14.4f, false, .95f),
-                "transit" => new LegStyle(3.1f, 0, true, .95f),
-                "drive" => new LegStyle(3.8f, 0, true, .95f),
-                _ => new LegStyle(2.0f, 6.75f, false, .95f),          // walk; old plans predate the field
+                "cycle" => new LegStyle(3.4f, 34, 16, false, .95f, 90),
+                "transit" => new LegStyle(5f, 0, 0, true, .95f, 170),
+                "drive" => new LegStyle(6f, 0, 0, true, .95f, 220),
+                _ => new LegStyle(3f, 9, 15, false, .95f, 40),          // walk; old plans predate the field
             };
-            return estimated ? new LegStyle(s.Radius, s.BeadGap > 0 ? s.BeadGap : 10.8f, false, .5f) : s;
+            return estimated ? new LegStyle(s.Width, 12, 14, false, .5f, s.PulseMps) : s;
         }
 
         /// <summary>The same points with their heights made believable: outliers replaced by the median of
