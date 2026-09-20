@@ -23,6 +23,7 @@ import { legStyle, type LegStyle } from './legStyle'
 
 const noHit = () => null
 const WARM = new THREE.Color('#fff3d6')
+const RIDE = '#fff3d6'           // a ride whose line has no colour of its own on Google's map: still plainly not a walk
 
 const vertexShader = /* glsl */`
   attribute vec3 side;
@@ -187,7 +188,7 @@ export default function RouteLine({ pts: ground, colour, transport, estimated, d
     return steps.map(step => {
       const from = at; at += step.distanceM / said * total
       return step.mode === 'transit'
-        ? { from, to: at, style: legStyle('transit'), colour: step.line?.colour ?? colour, step }
+        ? { from, to: at, style: legStyle('transit'), colour: step.line?.colour ?? RIDE, step }
         : { from, to: at, style: legStyle('walk'), colour, step }
     }).filter(p => p.to - p.from > 1)
   }, [steps, estimated, total, transport, colour])
@@ -216,9 +217,9 @@ export default function RouteLine({ pts: ground, colour, transport, estimated, d
     <>
       {parts.map((part, i) => geometries[i] && <Stretch key={i} geometry={geometries[i]} part={part} lift={lift} dim={dim} floating={!!estimated} shared={shared} />)}
 
-      {/* the two stations of a ride, and which line it is */}
+      {/* the two stations of a ride */}
       {!dim && parts.map((part, i) => part.step?.mode === 'transit' && [part.from, part.to].map((s, end) => {
-        const p = where(s, new THREE.Vector3()), line = part.step!.line, name = end ? part.step!.to : part.step!.from
+        const p = where(s, new THREE.Vector3()), name = end ? part.step!.to : part.step!.from
         return (
           <group key={`${i}:${end}`} position={[p.x, p.y + lift + .5, p.z]}>
             <mesh rotation={[-Math.PI / 2, 0, 0]} raycast={noHit} renderOrder={4}>
@@ -227,17 +228,31 @@ export default function RouteLine({ pts: ground, colour, transport, estimated, d
             <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, .2, 0]} raycast={noHit} renderOrder={5}>
               <circleGeometry args={[8.5, 40]} /><meshBasicMaterial color="#0c0a08" transparent opacity={.92} depthTest={false} />
             </mesh>
-            {(name || (!end && line?.name)) && (
+            {name && (
               <Html position={[0, 16, 0]} center zIndexRange={[4, 0]} style={{ pointerEvents: 'none' }}>
-                <div className="route-pill route-stop" style={{ ['--c' as string]: part.colour }}>
-                  {!end && line?.name && <b style={{ background: part.colour, color: line.textColour ?? '#14100c' }}><Icon name="transit" size={11} />{line.name}</b>}
-                  {name}
-                </div>
+                <div className="route-pill route-stop" style={{ ['--c' as string]: part.colour }}>{name}</div>
               </Html>
             )}
           </group>
         )
       }))}
+
+      {/* and the line's own sign, worn along the ride the way it is worn on the train: its number, on its colour */}
+      {!dim && parts.map((part, i) => {
+        const line = part.step?.mode === 'transit' ? part.step.line : undefined
+        if (!line?.name) return null
+        const signs = THREE.MathUtils.clamp(Math.round((part.to - part.from) / 900), 1, 3)
+        return Array.from({ length: signs }, (_, k) => {
+          const p = where(part.from + (part.to - part.from) * (k + 1) / (signs + 1), new THREE.Vector3())
+          return (
+            <Html key={`${i}:sign:${k}`} position={[p.x, p.y + lift + 6, p.z]} center zIndexRange={[5, 0]} style={{ pointerEvents: 'none' }}>
+              <div className="route-line" style={{ background: part.colour, color: line.textColour ?? '#14100c' }} title={`${line.vehicle} ${line.name}`}>
+                <Icon name="transit" size={12} />{line.name}
+              </div>
+            </Html>
+          )
+        })
+      })}
 
       {label && !dim && (
         <Html position={[mid.x, mid.y + lift + 14, mid.z]} center zIndexRange={[4, 0]} style={{ pointerEvents: 'none' }}>

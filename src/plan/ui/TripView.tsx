@@ -154,10 +154,26 @@ function DayBlock({ day, many, stay, onFly, onFocus, planning }: {
 }
 
 function Leg({ leg, label }: { leg: Day['legs'][number]; label?: string }) {
+  const rides = leg.steps?.some(s => s.mode === 'transit')
   return (
     <div className="t-leg-in">
       <span className="t-leg-icon" aria-hidden><Icon name={leg.transport as IconName} size={15} /></span>
-      <span>{label ? `${label} · ` : ''}{mins(leg.durationSec)} · {km(leg.distanceM)} · {TRANSPORT_LABEL[leg.transport].toLowerCase()}{leg.estimated ? ' · estimated' : ''}</span>
+      <div className="t-leg-text">
+        <span>{label ? `${label} · ` : ''}{mins(leg.durationSec)} · {km(leg.distanceM)} · {TRANSPORT_LABEL[leg.transport].toLowerCase()}{leg.estimated ? ' · estimated' : ''}</span>
+        {/* How it is actually travelled, when the router knew: which line (in the operator's own colours, as the
+            map draws it), from which station to which, and the walking either side. Trips saved before the router
+            kept the parts still have the sentence the guide says. */}
+        {rides ? (
+          <ol className="t-ride">
+            {leg.steps!.map((s, i) => s.mode === 'transit' ? (
+              <li key={i}>
+                <b className="t-line" style={{ background: s.line?.colour ?? '#fff3d6', color: s.line?.textColour ?? '#14100c' }}>{s.line?.name || s.line?.vehicle || 'Transit'}</b>
+                <span>{[s.line?.name ? s.line.vehicle : '', s.from && s.to ? `${s.from} → ${s.to}` : s.from || s.to || '', s.stops ? `${s.stops} stop${s.stops === 1 ? '' : 's'}` : ''].filter(Boolean).join(' · ')}</span>
+              </li>
+            ) : s.distanceM >= 50 && <li key={i} className="t-ride-walk"><span>Walk {km(s.distanceM)}</span></li>)}
+          </ol>
+        ) : leg.how && <span className="t-ride-how">{leg.how[0].toUpperCase() + leg.how.slice(1)}</span>}
+      </div>
     </div>
   )
 }
