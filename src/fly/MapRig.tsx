@@ -4,7 +4,7 @@ import { Html } from '@react-three/drei'
 import * as THREE from 'three'
 import type { LatLon, LegStep, Transport } from '../types'
 import type { TilesHandle } from './GoogleTiles'
-import { GroundPlacer, type Anchor } from './ground'
+import { GroundPlacer, lineOnGround, type Anchor } from './ground'
 import { resample } from './geo'
 import { smoothHeights } from './legStyle'
 import RouteLine from './RouteLine'
@@ -106,9 +106,7 @@ export default function MapRig({ view, origin, tiles, loadTick }: {
   // World-space lines, rebuilt as the ground refines under them.
   const lines = useMemo(() => view.routes.map(r => {
     const n = resample(r.points, STEP_M).length
-    const pts: THREE.Vector3[] = []
-    for (let j = 0; j < n; j++) { const c = ground.get(`r:${r.id}:${j}`); if (c) pts.push(new THREE.Vector3(c.x, c.y, c.z)) }
-    return { ...r, pts: smoothHeights(pts) }
+    return { ...r, pts: smoothHeights(lineOnGround(Array.from({ length: n }, (_, j) => ground.get(`r:${r.id}:${j}`)))) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [view.routes, ground, version])
 

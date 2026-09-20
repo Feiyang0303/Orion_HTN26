@@ -1,5 +1,6 @@
 import { useMemo, type MutableRefObject } from 'react'
 import type { Quality } from './quality'
+import type { Transport } from '../types'
 
 /* The only chrome during the flight: where you are, what the guide is saying,
    and three controls. Everything else stays out of the way of the city. */
@@ -11,7 +12,12 @@ export type Hud = {
   /** Why this shot is taken from where it is, when the director that looks chose it. */
   direction: string
   paused: boolean; progress: number
+  /** How the leg being flown is travelled, while one is. */
+  transport?: Transport
 }
+
+/** It said "Walking to" whatever the leg was, over a caption telling you which bus to catch. */
+const GOING: Record<Transport, string> = { walk: 'Walking', cycle: 'Cycling', transit: 'Riding', drive: 'Driving' }
 export type Control = { paused: boolean; skip: boolean; restart: boolean }
 
 export default function FlightHud({ hud, control, quality, onQuality, onExit, onAsk }: {
@@ -26,7 +32,7 @@ export default function FlightHud({ hud, control, quality, onQuality, onExit, on
   const atAPlace = hud.phase === 'dwell'
   const label = hud.phase === 'hold' ? (hud.stopIndex ? 'That was the day' : 'Before we set off')
     : hud.phase === 'dive' ? 'Beginning the tour' : done ? 'Tour complete'
-    : hud.phase === 'travel' ? `Walking to stop ${hud.stopIndex + 1} of ${hud.stopCount}` : `Stop ${hud.stopIndex + 1} of ${hud.stopCount}`
+    : hud.phase === 'travel' ? `${GOING[hud.transport ?? 'walk'] ?? 'On the way'} to stop ${hud.stopIndex + 1} of ${hud.stopCount}` : `Stop ${hud.stopIndex + 1} of ${hud.stopCount}`
   /* Long narration is read as short subtitle cues. Word count tracks speech
      closely enough to keep the visible phrase near what is being heard, while
      punctuation prevents a sentence from being split at an awkward moment. */

@@ -26,6 +26,25 @@ export function toWorld(t: TilesHandle, p: LatLon, out: Vector3): Vector3 {
   return out.applyMatrix4(t.group.matrixWorld)
 }
 
+/** A line's cells as points. One that has not been put on the ground yet still has the height of the ellipsoid, which
+    is sea level: some twenty metres under Honolulu and two kilometres under Mexico City. Drawn as it was, it dragged
+    the line underground around it (and the flight's camera, which follows the line, with it) until a tile arrived and
+    it jumped up. It takes its height from the grounded points either side of it instead; a line with nothing on the
+    ground yet is not drawn at all, which is the truth about it. */
+export function lineOnGround(cells: (Placed | undefined)[]): Vector3[] {
+  const known = cells.filter((c): c is Placed => !!c)
+  if (!known.some(c => c.grounded)) return []
+  const ys = known.map(c => c.grounded ? c.y : NaN)
+  let last = -1
+  for (let i = 0; i < ys.length; i++) {
+    if (Number.isNaN(ys[i])) continue
+    for (let j = last + 1; j < i; j++) ys[j] = last < 0 ? ys[i] : ys[last] + (ys[i] - ys[last]) * (j - last) / (i - last)
+    last = i
+  }
+  for (let j = last + 1; j < ys.length; j++) ys[j] = ys[last]
+  return known.map((c, i) => new Vector3(c.x, ys[i], c.z))
+}
+
 export class GroundPlacer {
   private cells = new Map<string, Placed>()
   private queue: Anchor[] = []

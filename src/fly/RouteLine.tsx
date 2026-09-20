@@ -39,7 +39,16 @@ const vertexShader = /* glsl */`
     float depth = -(modelViewMatrix * vec4(c, 1.)).z;
     float halfWidth = max(widthM, minPx * depth * pxScale) * .5;
     vEdge = edge; vAlong = along;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(c + side * edge * halfWidth, 1.);
+    vec4 mv = modelViewMatrix * vec4(c + side * edge * halfWidth, 1.);
+    gl_Position = projectionMatrix * mv;
+    // It is drawn where it is, but tested for depth as if it were some metres nearer the eye. A ribbon two metres over
+    // photogrammetry is forever being poked through by it (a kerb, a parked car, the camber of a road, and every
+    // refinement of the tiles, which moves the surface by metres): stretches of it went faint and came back as the
+    // camera moved, which read as lines appearing and disappearing. A building is tens of metres of wall in the way and
+    // still hides it; the ground it lies on no longer can. More is allowed far off, where the model is coarser.
+    float toward = min(length(mv.xyz) * .5, 9. + far * .02);
+    vec4 nearer = projectionMatrix * vec4(mv.xyz * (1. - toward / max(length(mv.xyz), 1.)), 1.);
+    gl_Position.z = nearer.z / nearer.w * gl_Position.w;
   }`
 
 const fragmentShader = /* glsl */`
@@ -131,7 +140,8 @@ function Stretch({ geometry, part, lift, dim, floating, shared }: { geometry: TH
       // A city in daylight is a bright, busy thing to draw on: a soft dark casing under the ribbon is what lets it read.
       casing: make(1.9, o * .42, true, .7, true),
       main: make(1, o, floating, .3),
-      ghost: floating ? null : make(1, o * .4, true, .3),
+      // Seen through a roof or a tree it is fainter, but plainly the same line: at four tenths a travelled leg all but went out.
+      ghost: floating ? null : make(1, o * .6, true, .3),
       glow: part.style.glow ? make(3.2, o * .2, floating, 1) : null,
     }
   }, [part.colour, part.style, lift, dim, floating, shared])

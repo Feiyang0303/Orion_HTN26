@@ -338,7 +338,7 @@ function Rig({ plan, begin, quality, onStopReached, onFinish, onHud, control, ti
     st.height += (eye.y - look.y - st.height) * k
     camera.position.set(st.look.x + Math.cos(st.bearing) * st.reach, st.look.y + st.height, st.look.z + Math.sin(st.bearing) * st.reach)
     camera.lookAt(st.look)
-    if (import.meta.env.DEV) (window as unknown as { __cam: unknown }).__cam = { yaw: st.bearing, t: st.t, kind: seg.kind }
+    if (import.meta.env.DEV) { const w = window as unknown as { __cam: unknown; __ground: unknown }; w.__cam = { yaw: st.bearing, t: st.t, kind: seg.kind }; w.__ground = ground }
 
     // ---- highlight follows the active beat's target ----------------------
     const dwellStop = seg.kind === 'dwell' ? seg.stop : -1
@@ -370,6 +370,7 @@ function Rig({ plan, begin, quality, onStopReached, onFinish, onHud, control, ti
       caption: beat?.beat.text ?? '', captionProgress, targetName: target?.name ?? '', targetSource: target?.source.url ?? '',
       direction: beat && dwellStop >= 0 ? director.reasons.get(shotKey(dwellStop, beat.index)) ?? '' : '',
       paused: ctl.paused, progress: st.started ? st.t / tl.total : 0,
+      transport: seg.kind === 'travel' ? plan.legs[seg.leg]?.transport : undefined,
     }
     const sig = JSON.stringify([hud.phase, hud.stopIndex, hud.caption, hud.paused, Math.round(hud.progress * 200), Math.round(hud.captionProgress * 300)])
     if (sig !== st.hud) { st.hud = sig; onHud(hud) }

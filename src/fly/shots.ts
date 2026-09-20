@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import type { Plan } from '../types'
 import type { TilesHandle } from './GoogleTiles'
-import type { GroundPlacer } from './ground'
+import { lineOnGround, type GroundPlacer } from './ground'
 import { keyLeg, keyStop, keyTarget, SAMPLE_STEP_M } from './anchors'
 import { Path } from './routePath'
 import { smoothHeights } from './legStyle'
@@ -30,9 +30,7 @@ export type Route = { legPaths: Path[]; route: Path; legStart: number[] }
 export function routeOn(plan: Plan, ground: GroundPlacer): Route {
   const legPaths = plan.legs.map((leg, i) => {
     const n = resample(leg.polyline, SAMPLE_STEP_M).length
-    const pts: THREE.Vector3[] = []
-    for (let j = 0; j < n; j++) { const c = ground.get(keyLeg(i, j)); if (c) pts.push(new THREE.Vector3(c.x, c.y, c.z)) }
-    return new Path(smoothHeights(pts))
+    return new Path(smoothHeights(lineOnGround(Array.from({ length: n }, (_, j) => ground.get(keyLeg(i, j))))))
   })
   const legStart: number[] = []
   let acc = 0
