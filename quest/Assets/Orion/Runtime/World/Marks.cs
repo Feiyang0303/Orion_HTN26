@@ -6,20 +6,25 @@ using UnityEngine;
 
 namespace Orion.World
 {
-    /* What is drawn on the city: the route, a pin on each stop, the guide's light to follow down
-     * a leg, and a beam and ring on whatever is being described. Sized in `Unit`s, large enough to
+    /* What is drawn on the city: the route, in the manner of how each leg is travelled and with a light
+     * running along it the way it goes, a pin on each stop, the guide's light to follow down a leg, and
+     * a beam and ring on whatever is being described. Sized in `Unit`s, large enough to
      * read from a vantage's distance; the guide is just ahead of the person, so it has its own. */
 
     public class Marks : MonoBehaviour
     {
         const float Unit = 900 * Frame.Closer, GuideUnit = 250;
-        const float Lift = .0015f * Unit + 2;                 // the route floats this far above the street it was measured on
+        const float Lift = 3;                                  // the route floats this far above the street it was measured on
+        const float SparkRadius = 4.5f, SparkRest = 60;        // the light that runs along a leg, and the metres' worth of pause before it sets off again
         const float PinHeight = .034f * Unit;
 
-        readonly List<GameObject> legs = new List<GameObject>();
+        class Drawn { public GameObject Root; public RoutePath Path; public LegStyle Style; public Transform Spark; }
+
+        readonly List<Drawn> legs = new List<Drawn>();
         readonly List<Pin> pins = new List<Pin>();
         Transform orb, beam, head;
         Material played;
+        Color colour = Look.Amber;
         int playedLegs;                                        // legs already behind the person are dimmed, once
 
         class Pin { public Transform Root, Face; public Renderer Ball; public TextMeshPro Name; public Pointable Hit; }
@@ -27,8 +32,6 @@ namespace Orion.World
         public void Build(Transform head)
         {
             this.head = head;
-            played = Look.Flat(Look.Amber.Alpha(.4f));
-
             orb = new GameObject("Guide").transform;
             orb.SetParent(transform, false);
             Look.Draw("Core", orb, Meshes.Sphere(.011f * GuideUnit, 24, 16), Look.Flat(Look.Warm));
@@ -48,13 +51,15 @@ namespace Orion.World
         {
             foreach (var p in pins) Destroy(p.Root.gameObject);
             pins.Clear();
+            colour = Look.Days[(Mathf.Max(1, day.number) - 1) % Look.Days.Length];
+            played = Look.Flat(colour.Alpha(.35f));
             for (int i = 0; i < day.stops.Length; i++)
             {
                 int stop = i;
                 var root = new GameObject($"Pin {i + 1}").transform;
                 root.SetParent(transform, false);
-                Look.Draw("Stem", root, Meshes.Shaft(.0007f * Unit, .0007f * Unit, PinHeight, 8), Look.Flat(Look.Amber));
-                var ball = Look.Draw("Ball", root, Meshes.Sphere(.0085f * Unit, 24, 16), Look.Flat(Look.Amber, depthWrite: true));
+                Look.Draw("Stem", root, Meshes.Shaft(.0007f * Unit, .0007f * Unit, PinHeight, 8), Look.Flat(colour));
+                var ball = Look.Draw("Ball", root, Meshes.Sphere(.0085f * Unit, 24, 16), Look.Flat(colour, depthWrite: true));
                 ball.transform.localPosition = Vector3.up * (PinHeight + .008f * Unit);
                 var face = new GameObject("Face").transform;
                 face.SetParent(ball.transform, false);
@@ -74,31 +79,19 @@ namespace Orion.World
         /// <summary>The route and the pins, on the ground as it is now known.</summary>
         public void Place(Day day, IReadOnlyList<RoutePath> paths, IReadOnlyList<Vector3?> stops)
         {
-            foreach (var l in legs) Destroy(l);
+            foreach (var l in legs) Destroy(l.Root);
             legs.Clear();
             playedLegs = 0;
             for (int i = 0; i < paths.Count; i++)
             {
-                var path = paths[i];
-                if (path.Pts.Count < 2) { legs.Add(new GameObject($"Leg {i} (unplaced)")); legs[i].transform.SetParent(transform, false); continue; }
                 var style = LegStyle.For(day.legs[i].transport, day.legs[i].estimated);
-                var leg = new GameObject($"Leg {i}");
-                leg.transform.SetParent(transform, false);
-                var colour = Look.Flat(Look.Amber.Alpha(style.Opacity));
-                if (style.BeadGap > 0)
-                {
-                    var at = new List<Vector3>();
-                    for (float s = 0; s <= path.Length; s += style.BeadGap) at.Add(path.At(s) + Vector3.up * Lift);
-                    Look.Draw("Beads", leg.transform, Meshes.Beads(at, style.Radius * 1.35f), colour);
-                }
-                else
-                {
-                    var line = new List<Vector3>(path.Pts.Count);
-                    foreach (var p in path.Pts) line.Add(p + Vector3.up * Lift);
-                    Look.Draw("Ribbon", leg.transform, Meshes.Tube(line, style.Radius), colour);
-                    if (style.Glow) Look.Draw("Glow", leg.transform, Meshes.Tube(line, style.Radius * 2.6f), Look.Flat(Look.Amber.Alpha(.14f)));
-                }
+                var leg = new Drawn { Root = new GameObject($"Leg {i}"), Path = paths[i], Style = style };
+                leg.Root.transform.SetParent(transform, false);
                 legs.Add(leg);
+                if (paths[i].Pts.Count < 2) continue;
+                if (style.Glow) Look.Draw("Glow", leg.Root.transform, Meshes.Ribbon(paths[i], style.Width * 2.8f, Lift - .3f, 0, 0), Look.Flat(colour.Alpha(.16f)));
+                Look.Draw("Line", leg.Root.transform, Meshes.Ribbon(paths[i], style.Width, Lift, style.DashOn, style.DashOff), Look.Flat(colour.Alpha(style.Opacity)));
+                leg.Spark = Look.Draw("Spark", leg.Root.transform, Meshes.Sphere(SparkRadius, 12, 8), Look.Flat(Look.Warm.Alpha(.9f), depthTest: false)).transform;
             }
             for (int i = 0; i < pins.Count; i++)
             {
@@ -120,13 +113,22 @@ namespace Orion.World
                 var p = pins[i];
                 bool active = i == currentStop;
                 p.Root.localScale = Vector3.one * (1 + (dwelling && active ? .18f + Mathf.Sin(t * 4) * .08f : 0));
-                p.Ball.sharedMaterial.color = active ? Look.Warm : Look.Amber;
+                p.Ball.sharedMaterial.color = active ? Look.Warm : colour;
                 p.Ball.transform.localScale = Vector3.one * (p.Hit.Hot ? 1.2f : 1);
                 p.Name.gameObject.SetActive(active);
                 p.Face.rotation = Quaternion.LookRotation(p.Face.position - head.position, Vector3.up);     // text reads from its back, so it looks away from the reader
             }
+            // A leg already travelled is dimmed, once, and its light put out. On the others a light runs the way the leg goes.
             for (; playedLegs < Mathf.Min(currentStop, legs.Count); playedLegs++)
-                foreach (var r in legs[playedLegs].GetComponentsInChildren<Renderer>()) if (r.name != "Glow") r.sharedMaterial = played;
+                foreach (var r in legs[playedLegs].Root.GetComponentsInChildren<Renderer>()) { if (r.name == "Line") r.sharedMaterial = played; else r.enabled = false; }
+            for (int i = playedLegs; i < legs.Count; i++)
+            {
+                var leg = legs[i];
+                if (leg.Spark == null) continue;
+                float s = Time.time * leg.Style.PulseMps % (leg.Path.Length + SparkRest);
+                leg.Spark.gameObject.SetActive(s <= leg.Path.Length);
+                leg.Spark.position = leg.Path.At(s) + Vector3.up * (Lift + 1);
+            }
         }
     }
 }

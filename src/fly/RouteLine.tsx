@@ -1,19 +1,158 @@
-import { useMemo, useRef } from 'react'
-import { useFrame } from '@react-three/fiber'
-import { Html, Line } from '@react-three/drei'
+import { useEffect, useMemo, useRef } from 'react'
+import { useFrame, useThree } from '@react-three/fiber'
+import { Html } from '@react-three/drei'
 import * as THREE from 'three'
-import type { Transport } from '../types'
+import type { LegStep, Transport } from '../types'
 import Icon from '../ui/Icon'
-import { legStyle } from './legStyle'
+import { legStyle, type LegStyle } from './legStyle'
 
-/* One leg of a journey drawn on the city in the manner of how it is travelled (see
- * legStyle), with a light that runs along it in the direction of travel and, when
- * asked, a small label at its middle saying how long it takes. */
+/* One leg of a journey, drawn on the city as light laid along the street.
+ *
+ * It is a ribbon, not a line: flat on the ground, as wide as the street it follows (and
+ * never thinner on screen than a line would be, so it still reads from two kilometres up),
+ * soft at its edges, with light flowing along it the way the leg is travelled and a comet
+ * that runs its length: the traveller. Each way of travelling has its own manner (legStyle),
+ * and a leg by transit is drawn as what it is made of: a walk to the platform, the ride in
+ * the line's own colour between two marked stations, a walk out. Where a roof or a tree
+ * stands over the street the ribbon shows through it faintly rather than breaking, and a
+ * leg nobody could route is an arc over the city, broken and faint, that does not pretend
+ * to be a street.
+ */
 
 const noHit = () => null
+const WARM = new THREE.Color('#fff3d6')
 
-export default function RouteLine({ pts, colour, transport, estimated, dim, lift = 3, label }: {
-  /** Already on the ground and smoothed (routeLine.smoothHeights). */
+const vertexShader = /* glsl */`
+  attribute vec3 side;
+  attribute float edge;
+  attribute float along;
+  uniform float widthM, minPx, pxScale, lift;
+  varying float vEdge, vAlong;
+  void main() {
+    // From high up the city under it is a coarser model than the one its heights were read from, and
+    // stands metres off it, so the ribbon rides a little higher the farther away it is seen from.
+    float far = -(modelViewMatrix * vec4(position, 1.)).z;
+    vec3 c = position + vec3(0., lift + far * .006, 0.);
+    float depth = -(modelViewMatrix * vec4(c, 1.)).z;
+    float halfWidth = max(widthM, minPx * depth * pxScale) * .5;
+    vEdge = edge; vAlong = along;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(c + side * edge * halfWidth, 1.);
+  }`
+
+const fragmentShader = /* glsl */`
+  uniform vec3 colour, warm;
+  uniform float opacity, time, flowMps, dashOn, dashOff, between, head, trail, soft;
+  varying float vEdge, vAlong;
+  void main() {
+    float across = abs(vEdge);
+    float body = 1. - smoothstep(1. - soft, 1., across);
+    float core = 1. - smoothstep(0., .45, across);
+
+    // Light moving along it, in the direction of travel.
+    float ph = fract((vAlong - time * flowMps) / 140.);
+    float flow = smoothstep(0., .5, ph) * (1. - smoothstep(.5, 1., ph));
+
+    // Footsteps and long dashes, as brighter marks on a ribbon that stays whole between them (only a
+    // guess is truly broken); from far enough up that they would shimmer, an even tone instead.
+    float marks = 1.;
+    if (dashOn > 0.) {
+      float period = dashOn + dashOff, m = mod(vAlong, period);
+      float mark = smoothstep(0., 1., m) * (1. - smoothstep(dashOn - 1., dashOn, m));
+      marks = mix(between, 1., mix(mark, dashOn / period, clamp(fwidth(vAlong) / period * 2.5, 0., 1.)));
+    }
+
+    // The comet: bright at its head, fading behind it.
+    float behind = head - vAlong;
+    float comet = head >= 0. && behind >= 0. ? exp(-behind / trail) : 0.;
+
+    vec3 c = colour * (.78 + .3 * flow) + warm * (core * .22 + comet * 1.1);
+    float a = opacity * body * marks * (.78 + .22 * flow) + comet * body * .85;
+    gl_FragColor = vec4(c, clamp(a, 0., 1.));
+    #include <colorspace_fragment>
+  }`
+
+/** A flat strip along `pts` between `from` and `to` metres, carrying for every vertex which way is
+    sideways and how far along the whole leg it is; the shader gives it its width. */
+function ribbon(pts: THREE.Vector3[], cum: number[], from: number, to: number): THREE.BufferGeometry {
+  const at = (s: number) => {
+    let hi = cum.findIndex(v => v >= s); if (hi < 1) hi = 1
+    const t = (s - cum[hi - 1]) / Math.max(1e-6, cum[hi] - cum[hi - 1])
+    return new THREE.Vector3().lerpVectors(pts[hi - 1], pts[hi], THREE.MathUtils.clamp(t, 0, 1))
+  }
+  const line: { p: THREE.Vector3; s: number }[] = [{ p: at(from), s: from }]
+  pts.forEach((p, i) => { if (cum[i] > from + .5 && cum[i] < to - .5) line.push({ p, s: cum[i] }) })
+  line.push({ p: at(to), s: to })
+
+  const position: number[] = [], side: number[] = [], edge: number[] = [], along: number[] = [], index: number[] = []
+  const dir = new THREE.Vector3(), out = new THREE.Vector3()
+  line.forEach(({ p, s }, i) => {
+    dir.subVectors(line[Math.min(i + 1, line.length - 1)].p, line[Math.max(i - 1, 0)].p).setY(0)
+    if (dir.lengthSq() < 1e-6) dir.set(1, 0, 0)
+    out.set(-dir.z, 0, dir.x).normalize()
+    for (const e of [-1, 1]) { position.push(p.x, p.y, p.z); side.push(out.x, out.y, out.z); edge.push(e); along.push(s) }
+    if (i) { const k = i * 2; index.push(k - 2, k - 1, k, k - 1, k + 1, k) }
+  })
+  const g = new THREE.BufferGeometry()
+  g.setAttribute('position', new THREE.Float32BufferAttribute(position, 3))
+  g.setAttribute('side', new THREE.Float32BufferAttribute(side, 3))
+  g.setAttribute('edge', new THREE.Float32BufferAttribute(edge, 1))
+  g.setAttribute('along', new THREE.Float32BufferAttribute(along, 1))
+  g.setIndex(index)
+  return g
+}
+
+type Part = { from: number; to: number; style: LegStyle; colour: string; step?: LegStep }
+type Shared = { time: { value: number }; head: { value: number }; pxScale: { value: number } }
+
+/** One stretch of the leg in one manner: the ribbon, the faint ghost of it that shows through
+    whatever stands over the street, and for the wide ones a glow underneath. */
+function Stretch({ geometry, part, lift, dim, floating, shared }: { geometry: THREE.BufferGeometry; part: Part; lift: number; dim: boolean; floating: boolean; shared: Shared }) {
+  const mats = useMemo(() => {
+    const o = (dim ? .35 : 1) * part.style.opacity
+    const make = (width: number, opacity: number, through: boolean, soft: number, shadow = false) => new THREE.ShaderMaterial({
+      vertexShader, fragmentShader, transparent: true, depthWrite: false, depthTest: !through, side: THREE.DoubleSide,
+      polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+      uniforms: {
+        colour: { value: new THREE.Color(shadow ? '#000' : part.colour) }, warm: { value: shadow ? new THREE.Color(0, 0, 0) : WARM },
+        widthM: { value: part.style.widthM * width }, minPx: { value: part.style.minPx * width * (dim ? .6 : 1) },
+        lift: { value: lift }, opacity: { value: opacity }, soft: { value: soft },
+        flowMps: { value: dim ? 0 : part.style.flowMps }, trail: { value: Math.max(60, part.style.flowMps * 1.6) },
+        dashOn: { value: part.style.dash?.on ?? 0 }, dashOff: { value: part.style.dash?.off ?? 0 }, between: { value: floating ? 0 : .42 },
+        time: shared.time, head: shadow ? { value: -1 } : shared.head, pxScale: shared.pxScale,
+      },
+    })
+    return {
+      // A city in daylight is a bright, busy thing to draw on: a soft dark casing under the ribbon is what lets it read.
+      casing: make(1.9, o * .42, true, .7, true),
+      main: make(1, o, floating, .3),
+      ghost: floating ? null : make(1, o * .4, true, .3),
+      glow: part.style.glow ? make(3.2, o * .2, floating, 1) : null,
+    }
+  }, [part.colour, part.style, lift, dim, floating, shared])
+  useEffect(() => () => { mats.casing.dispose(); mats.main.dispose(); mats.ghost?.dispose(); mats.glow?.dispose() }, [mats])
+  return (
+    <>
+      <mesh geometry={geometry} material={mats.casing} raycast={noHit} frustumCulled={false} renderOrder={0} />
+      {mats.glow && <mesh geometry={geometry} material={mats.glow} raycast={noHit} frustumCulled={false} renderOrder={1} />}
+      {mats.ghost && <mesh geometry={geometry} material={mats.ghost} raycast={noHit} frustumCulled={false} renderOrder={2} />}
+      <mesh geometry={geometry} material={mats.main} raycast={noHit} frustumCulled={false} renderOrder={3} />
+    </>
+  )
+}
+
+let glowTexture: THREE.Texture | null = null
+/** A soft disc of light, drawn once: the head of the comet. */
+function glow() {
+  if (glowTexture) return glowTexture
+  const c = document.createElement('canvas'); c.width = c.height = 128
+  const g = c.getContext('2d')!, r = g.createRadialGradient(64, 64, 0, 64, 64, 64)
+  r.addColorStop(0, 'rgba(255,248,230,1)'); r.addColorStop(.18, 'rgba(255,226,160,.85)'); r.addColorStop(.5, 'rgba(240,180,94,.22)'); r.addColorStop(1, 'rgba(240,180,94,0)')
+  g.fillStyle = r; g.fillRect(0, 0, 128, 128)
+  return glowTexture = new THREE.CanvasTexture(c)
+}
+
+export default function RouteLine({ pts: ground, colour, transport, estimated, dim = false, lift = 3, label, steps, head }: {
+  /** Already on the ground and smoothed (legStyle.smoothHeights). */
   pts: THREE.Vector3[]
   colour: string
   transport: Transport
@@ -21,41 +160,106 @@ export default function RouteLine({ pts, colour, transport, estimated, dim, lift
   dim?: boolean
   lift?: number
   label?: string
+  /** A transit leg's parts, if the router gave them. */
+  steps?: LegStep[]
+  /** Where the traveller is, in metres along the leg, when something is actually travelling it
+      (the flight); null or absent and the comet runs the leg by itself, over and over. */
+  head?: () => number | null
 }) {
-  const style = legStyle(transport, estimated)
-  const line = useMemo(() => pts.map(p => [p.x, p.y + lift, p.z] as [number, number, number]), [pts, lift])
+  // A leg that could not be routed is two points and a guess. It is lifted into an arc over the
+  // city, because a straight line through the buildings reads as a street that is not there.
+  const pts = useMemo(() => {
+    if (!estimated || ground.length < 2) return ground
+    const span = ground[0].distanceTo(ground[ground.length - 1]), rise = Math.min(160, span * .16)
+    let run = 0
+    return ground.map((p, i) => {
+      if (i) run += ground[i].distanceTo(ground[i - 1])
+      return new THREE.Vector3(p.x, p.y + Math.sin(Math.PI * Math.min(1, run / Math.max(1, span))) * rise, p.z)
+    })
+  }, [ground, estimated])
+
   const cum = useMemo(() => {
     const c = [0]
     for (let i = 1; i < pts.length; i++) c.push(c[i - 1] + pts[i].distanceTo(pts[i - 1]))
     return c
   }, [pts])
-  const spark = useRef<THREE.Mesh>(null)
-  const w = dim ? style.width * .6 : style.width
-  const o = dim ? .35 : style.opacity
+  const total = cum[cum.length - 1] ?? 0
+
+  // The leg as stretches, each in its own manner. The steps' own distances share the line out between them.
+  const parts = useMemo<Part[]>(() => {
+    const whole = [{ from: 0, to: total, style: legStyle(transport, estimated), colour }]
+    const said = steps?.reduce((m, s) => m + s.distanceM, 0) ?? 0
+    if (!steps || estimated || said <= 0 || total <= 0) return whole
+    let at = 0
+    return steps.map(step => {
+      const from = at; at += step.distanceM / said * total
+      return step.mode === 'transit'
+        ? { from, to: at, style: legStyle('transit'), colour: step.line?.colour ?? colour, step }
+        : { from, to: at, style: legStyle('walk'), colour, step }
+    }).filter(p => p.to - p.from > 1)
+  }, [steps, estimated, total, transport, colour])
+
+  const geometries = useMemo(() => pts.length < 2 ? [] : parts.map(p => ribbon(pts, cum, p.from, p.to)), [pts, cum, parts])
+  useEffect(() => () => geometries.forEach(g => g.dispose()), [geometries])
+
+  const shared = useMemo<Shared>(() => ({ time: { value: 0 }, head: { value: -1 }, pxScale: { value: .001 } }), [])
+  const comet = useRef<THREE.Sprite>(null)
+  const flowMps = legStyle(transport, estimated).flowMps
+  const camera = useThree(s => s.camera) as THREE.PerspectiveCamera
+  const height = useThree(s => s.size.height)
+
+  const where = (s: number, out: THREE.Vector3) => {
+    let hi = cum.findIndex(v => v >= s); if (hi < 1) hi = 1
+    return out.lerpVectors(pts[hi - 1], pts[hi], THREE.MathUtils.clamp((s - cum[hi - 1]) / Math.max(1e-6, cum[hi] - cum[hi - 1]), 0, 1))
+  }
 
   useFrame(({ clock }) => {
-    const m = spark.current, total = cum[cum.length - 1]
-    if (!m || dim || total < 1) return
-    const s = (clock.elapsedTime * style.pulseMps) % (total + 60)     // a short pause at the far end before it starts again
-    if (s > total) { m.visible = false; return }
-    m.visible = true
-    let hi = cum.findIndex(v => v >= s); if (hi < 1) hi = 1
-    const t = (s - cum[hi - 1]) / Math.max(1e-6, cum[hi] - cum[hi - 1])
-    m.position.lerpVectors(pts[hi - 1], pts[hi], t); m.position.y += lift + 1
+    shared.time.value = clock.elapsedTime
+    shared.pxScale.value = 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) / height
+    const own = (clock.elapsedTime * flowMps * 2.2) % (total + flowMps * 3)       // runs the leg, rests a moment, runs it again
+    const s = dim || total < 1 ? -1 : head?.() ?? (own > total ? -1 : own)
+    shared.head.value = s
+    const m = comet.current
+    if (!m) return
+    m.visible = s >= 0
+    if (s >= 0) { where(s, m.position); m.position.y += lift + 2 }
   })
 
   if (pts.length < 2) return null
   const mid = pts[pts.length >> 1]
   return (
     <>
-      {style.glow && <Line points={line} color={colour} lineWidth={w * 2.8} transparent opacity={dim ? .06 : .16} raycast={noHit} depthWrite={false} />}
-      <Line points={line} color={colour} lineWidth={w} transparent opacity={o} raycast={noHit}
-        dashed={!!style.dash} dashSize={style.dash?.on} gapSize={style.dash?.off} />
+      {parts.map((part, i) => geometries[i] && <Stretch key={i} geometry={geometries[i]} part={part} lift={lift} dim={dim} floating={!!estimated} shared={shared} />)}
+
       {!dim && (
-        <mesh ref={spark} raycast={noHit} visible={false}>
-          <sphereGeometry args={[7, 12, 8]} /><meshBasicMaterial color="#fff3d6" transparent opacity={.9} depthTest={false} toneMapped={false} />
-        </mesh>
+        <sprite ref={comet} visible={false} scale={[.05, .05, 1]} raycast={noHit} renderOrder={5}>
+          <spriteMaterial map={glow()} transparent depthTest={false} depthWrite={false} sizeAttenuation={false} blending={THREE.AdditiveBlending} toneMapped={false} />
+        </sprite>
       )}
+
+      {/* the two stations of a ride, and which line it is */}
+      {!dim && parts.map((part, i) => part.step?.mode === 'transit' && [part.from, part.to].map((s, end) => {
+        const p = where(s, new THREE.Vector3()), line = part.step!.line, name = end ? part.step!.to : part.step!.from
+        return (
+          <group key={`${i}:${end}`} position={[p.x, p.y + lift + .5, p.z]}>
+            <mesh rotation={[-Math.PI / 2, 0, 0]} raycast={noHit} renderOrder={4}>
+              <circleGeometry args={[14, 40]} /><meshBasicMaterial color={part.colour} transparent opacity={.95} depthTest={false} toneMapped={false} />
+            </mesh>
+            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, .2, 0]} raycast={noHit} renderOrder={5}>
+              <circleGeometry args={[8.5, 40]} /><meshBasicMaterial color="#0c0a08" transparent opacity={.92} depthTest={false} />
+            </mesh>
+            {(name || (!end && line?.name)) && (
+              <Html position={[0, 16, 0]} center zIndexRange={[4, 0]} style={{ pointerEvents: 'none' }}>
+                <div className="route-pill route-stop" style={{ ['--c' as string]: part.colour }}>
+                  {!end && line?.name && <b style={{ background: part.colour, color: line.textColour ?? '#14100c' }}><Icon name="transit" size={11} />{line.name}</b>}
+                  {name}
+                </div>
+              </Html>
+            )}
+          </group>
+        )
+      }))}
+
       {label && !dim && (
         <Html position={[mid.x, mid.y + lift + 14, mid.z]} center zIndexRange={[4, 0]} style={{ pointerEvents: 'none' }}>
           <div className="route-pill" style={{ ['--c' as string]: colour }}><Icon name={transport} size={13} />{label}{estimated ? ' · est.' : ''}</div>

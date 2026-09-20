@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace Orion.Flight
 {
@@ -14,6 +15,9 @@ namespace Orion.Flight
     {
         public string text, targetId, audioUrl;      // targetId and audioUrl may be absent: JsonUtility leaves them empty
         public float durationSec;
+
+        /// <summary>Whether there is anything to say. JsonUtility makes an empty Beat where a plan has none.</summary>
+        public bool Said => !string.IsNullOrWhiteSpace(text);
     }
 
     [Serializable]
@@ -32,6 +36,8 @@ namespace Orion.Flight
         public LatLon[] polyline = Array.Empty<LatLon>();
         public float distanceM, durationSec;
         public bool estimated;
+        /// <summary>What the guide says on the way, if anything.</summary>
+        public Beat bridge;
     }
 
     [Serializable]
@@ -42,6 +48,20 @@ namespace Orion.Flight
         public LatLon origin;
         public Stop[] stops = Array.Empty<Stop>();
         public Leg[] legs = Array.Empty<Leg>();
+        /// <summary>The welcome, spoken at the first place before anything else, and the goodbye, at the last.</summary>
+        public Beat opening, closing;
+
+        /// <summary>Everything the guide says in the day, in the order it is said.</summary>
+        public IEnumerable<Beat> Spoken()
+        {
+            if (opening != null && opening.Said) yield return opening;
+            for (int i = 0; i < stops.Length; i++)
+            {
+                foreach (var b in stops[i].beats) if (b.Said) yield return b;
+                if (i < legs.Length && legs[i].bridge != null && legs[i].bridge.Said) yield return legs[i].bridge;
+            }
+            if (closing != null && closing.Said) yield return closing;
+        }
     }
 
     [Serializable] public class Trip { public string city; public LatLon origin; public Day[] days = Array.Empty<Day>(); }

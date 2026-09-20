@@ -62,7 +62,7 @@ namespace Orion.Editor
                 .Where(t => t.transform.parent != null && t.transform.parent.name == "Captions").Select(t => $"{t.name}: {t.text}"));
             Debug.Log($"[smoke {EditorApplication.timeSinceStartup - started:0}s] city {(tiles ? tiles.ComputeLoadProgress() : -1):0}%  tile renderers {(tiles ? tiles.GetComponentsInChildren<MeshRenderer>().Length : 0)}  "
                 + $"colliders {(tiles ? tiles.GetComponentsInChildren<MeshCollider>().Length : 0)}  rig {(rig ? rig.transform.position.ToString("0") : "none")} yaw {(rig ? rig.transform.eulerAngles.y : 0):0}  "
-                + $"google loads today {Orion.World.TileBudget.SpentToday}/{Orion.World.TileBudget.PerDay}  veil {Object.FindFirstObjectByType<Veil>()?.Fade:0.00}  guide {GameObject.Find("Guide") != null}  beam {GameObject.Find("Beam") != null}  fps {1 / Time.smoothDeltaTime:0}  ||  {captions}");
+                + $"google loads today {Orion.DailyBudget.Tiles.SpentToday}/{Orion.DailyBudget.Tiles.PerDay}  veil {Object.FindFirstObjectByType<Veil>()?.Fade:0.00}  guide {GameObject.Find("Guide") != null}  beam {GameObject.Find("Beam") != null}  fps {1 / Time.smoothDeltaTime:0}  ||  {captions}");
 
             Save(Shoot(head), $"Logs/smoke-{taken}.png");
             // The same moment with the head level, as a person's would be: the horizon, the haze, the panels below.
@@ -86,7 +86,7 @@ namespace Orion.Editor
         static void Save(RenderTexture texture, string path)
         {
             RenderTexture.active = texture;
-            var image = new Texture2D(texture.width, texture.height, TextureFormat.RGBA32, false);
+            var image = new Texture2D(texture.width, texture.height, TextureFormat.RGB24, false);
             image.ReadPixels(new Rect(0, 0, texture.width, texture.height), 0, 0);
             RenderTexture.active = null;
             File.WriteAllBytes(path, image.EncodeToPNG());

@@ -13,6 +13,9 @@ namespace Orion
 
         void Start()
         {
+            // A stack trace with every line of log is dear on a headset, and Cesium's physics meshes draw a warning per coarse tile.
+            Application.SetStackTraceLogType(LogType.Log, StackTraceLogType.None);
+            Application.SetStackTraceLogType(LogType.Warning, StackTraceLogType.None);
             Application.targetFrameRate = 72;                    // in a headset the compositor sets the pace; anywhere else, this does
             var rig = Rig.Make();
             rig.Veil.Fade = 0;
@@ -25,7 +28,7 @@ namespace Orion
             var world = City.Make(config.googleTilesKey);
             if (world == null)
             {
-                rig.Captions.Show("ORION", "That is enough for today", $"This headset has loaded the city {TileBudget.PerDay} times today, and each load is a billed request to Google. It will again tomorrow (Pacific time).", null);
+                rig.Captions.Show("ORION", "That is enough for today", $"This headset has loaded the city {DailyBudget.Tiles.PerDay} times today, and each load is a billed request to Google. It will again tomorrow (Pacific time).", null);
                 return;
             }
             world.Refused += status => rig.Captions.Show("ORION", "Google would not serve the city",

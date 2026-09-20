@@ -197,6 +197,27 @@ namespace Orion.Tests
         }
 
         [Test]
+        public void TheWelcomeTheLinesOnTheWayAndTheGoodbyeAreAllGivenTheirTime()
+        {
+            var day = Sparse();
+            day.opening = new Beat { text = "Welcome.", durationSec = 4 };
+            day.closing = new Beat { text = "Goodbye.", durationSec = 3 };
+            day.legs[0].bridge = new Beat { text = "A very long line said on the way.", durationSec = 60 };
+            var tl = new Timeline(day, Ride.StraightSec);
+            Assert.AreEqual(SegmentKind.Hold, tl.Segments[0].Kind);
+            Assert.AreEqual(Timeline.HoldLeadSec + 4 + Timeline.TailSec, tl.Segments[0].T1, 1e-4f);
+            Assert.AreEqual(tl.Segments[0].T1, tl.DwellStart[0], "the first stop follows the welcome");
+            var leg = tl.Segments[2];
+            Assert.AreEqual(SegmentKind.Travel, leg.Kind);
+            Assert.AreEqual(Timeline.BridgeLeadSec + 60 + Timeline.TailSec, leg.T1 - leg.T0, 1e-3f, "a leg is never cut short of its own line");
+            Assert.AreEqual("A very long line said on the way.", leg.ActiveBeat(leg.T0 + 10).Beat.text);
+            var last = tl.Segments[tl.Segments.Count - 1];
+            Assert.AreEqual(SegmentKind.Hold, last.Kind);
+            Assert.AreEqual(2, last.Index, "the goodbye is said at the last stop");
+            Assert.AreEqual(5, new List<Beat>(day.Spoken()).Count);
+        }
+
+        [Test]
         public void ALongLegCostsNoMoreClockThanAKilometre()
         {
             Assert.AreEqual(Ride.StraightSec(1000), Ride.StraightSec(3699));

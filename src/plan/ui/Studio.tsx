@@ -164,7 +164,7 @@ export default function Studio({ wish, mode, origin, saved: given, onTrip, onFly
         const c = dayColour((d.number ?? di + 1) - 1)
         const dim = dayIx !== 'all' && dayIx !== d.number
         d.stops.forEach((s, k) => pins.push({ id: `${d.number}:${s.id}`, lat: s.lat, lon: s.lon, label: String(k + 1), name: dim ? undefined : s.name, colour: c }))
-        d.legs.forEach((l, k) => routes.push({ id: `${d.number}:${k}`, points: l.polyline, colour: c, dim, transport: l.transport, estimated: l.estimated, label: pills ? `${Math.max(1, Math.round(l.durationSec / 60))} min` : undefined }))
+        d.legs.forEach((l, k) => routes.push({ id: `${d.number}:${k}`, points: l.polyline, colour: c, dim, transport: l.transport, estimated: l.estimated, steps: l.steps, label: pills ? `${Math.max(1, Math.round(l.durationSec / 60))} min` : undefined }))
         if (d.approach) routes.push({ id: `${d.number}:approach`, points: d.approach.polyline, colour: c, dim, transport: d.approach.transport, estimated: d.approach.estimated, label: pills ? `${Math.max(1, Math.round(d.approach.durationSec / 60))} min` : undefined })
       })
     } else {

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type MutableRefObject } from 'rea
 import { useFrame, useThree } from '@react-three/fiber'
 import { Html } from '@react-three/drei'
 import * as THREE from 'three'
-import type { LatLon, Transport } from '../types'
+import type { LatLon, LegStep, Transport } from '../types'
 import type { TilesHandle } from './GoogleTiles'
 import { GroundPlacer, type Anchor } from './ground'
 import { resample } from './geo'
@@ -21,7 +21,7 @@ import RouteLine from './RouteLine'
  * views of one place. */
 
 export type MapPin = { id: string; lat: number; lon: number; label: string; name?: string; colour: string; fresh?: boolean; home?: boolean }
-export type MapRoute = { id: string; points: LatLon[]; colour: string; dim?: boolean; transport?: Transport; estimated?: boolean; label?: string }
+export type MapRoute = { id: string; points: LatLon[]; colour: string; dim?: boolean; transport?: Transport; estimated?: boolean; label?: string; steps?: LegStep[] }
 export type MapView = {
   pins: MapPin[]
   routes: MapRoute[]
@@ -114,7 +114,7 @@ export default function MapRig({ view, origin, tiles, loadTick }: {
 
   return (
     <>
-      {lines.map(l => <RouteLine key={l.id} pts={l.pts} colour={l.colour} transport={l.transport ?? 'walk'} estimated={l.estimated} dim={l.dim} label={l.label} />)}
+      {lines.map(l => <RouteLine key={l.id} pts={l.pts} colour={l.colour} transport={l.transport ?? 'walk'} estimated={l.estimated} steps={l.steps} dim={l.dim} label={l.label} />)}
       {view.pins.map(p => {
         const c = ground.get(`p:${p.id}`)
         if (!c) return null
