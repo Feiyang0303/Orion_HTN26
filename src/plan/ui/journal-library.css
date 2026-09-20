@@ -56,6 +56,14 @@
   transition: transform .45s var(--ease);
 }
 .jl-chapter:hover:not(:disabled) .jl-mark { transform: rotate(-3deg) translateY(-3px) scale(1.03); }
+/* A sketch starts undrawn — strokes wound back to full dash-offset, washes at
+   opacity 0 — and draws itself in only under a live journal page, where that
+   is the whole point of turning to it. A cover is not a page that opens; the
+   landmark should simply be there. So it is shown finished, the way the title
+   sketches on a page are. */
+.jl-mark .sk-pencil path, .jl-mark .sk-ink path, .jl-mark .sk-pencil circle, .jl-mark .sk-ink circle,
+.jl-mark .sk-pencil ellipse, .jl-mark .sk-ink ellipse { stroke-dashoffset: 0; }
+.jl-mark .sk-wash, .jl-mark .sk-wash2 { opacity: .5; }
 .jl-meta, .jl-date, .jl-open { position: relative; z-index: 1; }
 
 .jl-tab { position: absolute; left: 22px; top: 0; padding: 7px 11px 6px; border-radius: 0 0 6px 6px; background: rgba(111,66,38,.16); color: #7c5837; font: 600 9px/1 var(--ui); letter-spacing: .13em; text-transform: uppercase; }
