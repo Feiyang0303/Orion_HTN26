@@ -31,18 +31,24 @@
 .jn-view { display: flex; gap: 4px; padding: 3px; border-radius: 999px; background: rgba(255, 255, 255, .06); }
 .jn-view .o-chip { font-family: var(--ui); }
 
-/* The same trip read plainly. The modern panel is normally pinned to the left
-   of the city map; here there is no map, so it is unpinned and centred, and
-   the journal's paper colours and handwriting are taken back off it. */
+/* The same trip read plainly — and "the same" is the point. This is the panel
+   the studio shows the moment a trip is generated, rendered by the same
+   component, so it keeps that panel's own geometry: pinned to the left, its
+   own width, its own height, its own scrollbar. It used to be unpinned and
+   stretched to the full width of the page, which turned a slim column into a
+   slab and made a saved trip look like a different product from the one that
+   had just been planned.
+
+   What is missing here is the city behind it. Reopening something saved does
+   not spend tile quota on a map nobody asked for, so the journal's own
+   darkened ground stands in until the day is flown.
+
+   `.jn` carries a backdrop-filter, which makes it the containing block for
+   fixed-position descendants — so the panel pins to the journal's own rect
+   rather than the window's. They are the same rectangle, and it means the
+   panel cannot escape the journal. Only the handwriting is taken back off. */
 .jn.is-plain { justify-content: flex-start; padding-bottom: 20px; }
-.jn-plain {
-  width: min(880px, 100%); flex: 1 1 auto; min-height: 0; display: flex;
-  font-family: var(--ui); color: var(--ink);
-}
-.jn-plain .t-panel {
-  position: relative; left: auto; top: auto; bottom: auto;
-  width: 100%; max-height: 100%; margin: 0 auto;
-}
+.jn-plain { font-family: var(--ui); color: var(--ink); }
 .jn-days { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: center; }
 .jn-flip { transform: rotate(180deg); }
 .jn.is-plain .jn-days { display: none; }
