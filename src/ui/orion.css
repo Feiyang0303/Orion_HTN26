@@ -493,10 +493,12 @@ input[type='time'].o-input { color-scheme: dark; padding: .7em .9em; }
   font: 500 11.5px var(--sans, 'DM Sans', system-ui, sans-serif); color: #f4e7c6; background: color-mix(in srgb, #0c0a08 82%, transparent);
   border: 1px solid color-mix(in srgb, var(--c) 55%, transparent); backdrop-filter: blur(6px); animation: pin-in .6s var(--ease) both; }
 .route-pill svg { color: var(--c); }
-/* a station: the line it is on, in the line's own colours, and its name */
-.route-stop { padding-left: 4px; }
-.route-stop b { display: inline-flex; align-items: center; gap: 3px; padding: 1px 7px 1px 5px; border-radius: 999px; font-weight: 600; }
-.route-stop b svg { color: inherit; }
+/* a station's name, quieter than a journey time */
+.route-stop { padding: 3px 9px; font-size: 10.5px; color: #e3d2ac; }
+/* a line's sign on its ride: the number, on the operator's own colour */
+.route-line { display: inline-flex; align-items: center; gap: 4px; padding: 2px 9px 2px 6px; border-radius: 999px; white-space: nowrap;
+  font: 700 12px var(--sans, 'DM Sans', system-ui, sans-serif); letter-spacing: .01em;
+  border: 1.5px solid color-mix(in srgb, #0c0a08 70%, transparent); box-shadow: 0 2px 10px rgba(0, 0, 0, .55); animation: pin-in .6s var(--ease) both; }
 
 /* whether the trip is kept */
 .tv-keep { align-self: center; font: 500 12px var(--sans, 'DM Sans', system-ui, sans-serif); color: #9a8763; letter-spacing: .02em; }
