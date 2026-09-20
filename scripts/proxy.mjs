@@ -141,6 +141,7 @@ const GOOSE_WANTS = env('ELEVENLABS_GOOSE_VOICE') || 'Gigi'
    European accents are left out on purpose. */
 const GOOSE_LIKE = ['gigi', 'jessica', 'laura', 'sarah', 'matilda', 'rachel', 'elli']
 const AMERICAN = v => /american/i.test(v.labels?.accent ?? '') && !/british|australian|irish|swedish|african/i.test(v.labels?.accent ?? '')
+const NOT_AMERICAN = v => !!v.labels?.accent && !AMERICAN(v)   // an unlabelled voice is given the benefit of the doubt
 const LIGHT = v => /young|middle/i.test(v.labels?.age ?? '') && /female|neutral/i.test(v.labels?.gender ?? '')
 let resolvedGoose = null
 async function gooseVoiceId(key) {
@@ -152,12 +153,13 @@ async function gooseVoiceId(key) {
       || voices.find(v => (v.name ?? '').toLowerCase().includes(n))
     resolvedGoose = voices.find(v => v.voice_id === GOOSE_WANTS)?.voice_id
       || named(want)?.voice_id
-      || GOOSE_LIKE.map(named).find(Boolean)?.voice_id
+      || GOOSE_LIKE.map(named).find(v => v && !NOT_AMERICAN(v))?.voice_id
       || voices.find(v => AMERICAN(v) && LIGHT(v))?.voice_id
       || voices.find(AMERICAN)?.voice_id
       || await voiceId(key)
     const chosen = voices.find(v => v.voice_id === resolvedGoose)
     console.log(`[tts] the goose speaks as ${chosen ? `"${chosen.name}"${chosen.labels?.accent ? ` (${chosen.labels.accent})` : ''}` : 'the guide\'s own voice'}${chosen && chosen.name.toLowerCase() !== want ? ` — no voice called "${GOOSE_WANTS}" on this account` : ''}`)
+    if (chosen && NOT_AMERICAN(chosen)) console.warn(`[tts] "${chosen.name}" is ${chosen.labels.accent}, not American: set ELEVENLABS_GOOSE_VOICE to an American voice from GET /api/voices`)
   } catch {
     resolvedGoose = await voiceId(key)
   }
@@ -235,17 +237,22 @@ const v3Stability = mood => {
   return m.stability <= 0.32 ? 0 : 0.5
 }
 
-/* The goose is a duck: the flight plays every clip a little fast with the
+/* The goose is small: the flight plays every clip a little fast with the
    browser's pitch-preservation off, which lifts the voice. So the lines are
    asked for slower by the same amount, and the pace comes out normal. The
-   two numbers are a pair: this one and QUACK_RATE in src/plan/pace.ts. */
-const GOOSE_SPEED = Number(env("ELEVENLABS_GOOSE_SPEED")) || 0.77
-let speedTakes = true   // until a model refuses it, in which case the goose is just a quick duck
+   two numbers are a pair: this one and QUACK_RATE in src/plan/pace.ts.
+   It is also even: a child's voice acting hard is not cute, so the goose is
+   held at least at Natural on v3 and kept steady with little style elsewhere. */
+const GOOSE_SPEED = Number(env("ELEVENLABS_GOOSE_SPEED")) || 0.82
+let speedTakes = true   // until a model refuses it, in which case the goose is just a little quick
 
 async function speak(key, voice, text, model, mood, withStyle, speed = 1) {
   const m = MOOD[mood] || MOOD.warm
   const v3 = /_v3/.test(model)
   const pace = speedTakes && speed !== 1 ? { speed } : {}
+  const goose = speed !== 1
+  const stability = goose ? Math.max(m.stability, 0.6) : m.stability
+  const style = goose ? Math.min(m.style, 0.2) : m.style
   const r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voice}?output_format=mp3_44100_128`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'xi-api-key': key, accept: 'audio/mpeg' },
@@ -253,10 +260,10 @@ async function speak(key, voice, text, model, mood, withStyle, speed = 1) {
       text: text.trim().slice(0, 5000),
       model_id: model,
       voice_settings: v3
-        ? { stability: v3Stability(mood), similarity_boost: 0.75, use_speaker_boost: true, ...pace }
+        ? { stability: goose ? Math.max(v3Stability(mood), 0.5) : v3Stability(mood), similarity_boost: 0.75, use_speaker_boost: true, ...pace }
         : {
-            stability: m.stability, similarity_boost: 0.75, use_speaker_boost: true,
-            ...(withStyle ? { style: m.style } : {}),
+            stability, similarity_boost: 0.75, use_speaker_boost: true,
+            ...(withStyle ? { style } : {}),
             ...pace,
           },
     }),

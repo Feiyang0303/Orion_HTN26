@@ -3,4 +3,4 @@
    because clip durations are worked out from it at planning time, which
    also runs from node scripts. A pair with ELEVENLABS_GOOSE_SPEED on the
    proxy, which is its inverse — change one, change the other. */
-export const QUACK_RATE = 1.3
+export const QUACK_RATE = 1.22
