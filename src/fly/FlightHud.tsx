@@ -1,4 +1,4 @@
-import type { MutableRefObject } from 'react'
+import { useMemo, type MutableRefObject } from 'react'
 import type { Quality } from './quality'
 
 /* The only chrome during the flight: where you are, what the guide is saying,
@@ -7,7 +7,7 @@ import type { Quality } from './quality'
 export type Hud = {
   phase: 'idle' | 'hold' | 'dive' | 'dwell' | 'travel' | 'done'
   stopIndex: number; stopCount: number; stopName: string
-  caption: string; targetName: string; targetSource: string
+  caption: string; captionProgress: number; targetName: string; targetSource: string
   /** Why this shot is taken from where it is, when the director that looks chose it. */
   direction: string
   paused: boolean; progress: number
@@ -27,6 +27,21 @@ export default function FlightHud({ hud, control, quality, onQuality, onExit, on
   const label = hud.phase === 'hold' ? (hud.stopIndex ? 'That was the day' : 'Before we set off')
     : hud.phase === 'dive' ? 'Beginning the tour' : done ? 'Tour complete'
     : hud.phase === 'travel' ? `Walking to stop ${hud.stopIndex + 1} of ${hud.stopCount}` : `Stop ${hud.stopIndex + 1} of ${hud.stopCount}`
+  /* Long narration is read as short subtitle cues. Word count tracks speech
+     closely enough to keep the visible phrase near what is being heard, while
+     punctuation prevents a sentence from being split at an awkward moment. */
+  const captionCues = useMemo(() => {
+    const words = hud.caption.trim().split(/\s+/).filter(Boolean)
+    const cues: string[] = []; let cue: string[] = []
+    for (const word of words) {
+      cue.push(word)
+      if (cue.length >= 14 || (cue.length >= 8 && /[.!?][”"']?$/.test(word))) { cues.push(cue.join(' ')); cue = [] }
+    }
+    if (cue.length) cues.push(cue.join(' '))
+    return cues
+  }, [hud.caption])
+  const cueIndex = Math.min(captionCues.length - 1, Math.max(0, Math.floor(hud.captionProgress * captionCues.length)))
+  const captionCue = captionCues[cueIndex] ?? hud.caption
   return (
     <>
       <div className="hud-top">
@@ -34,10 +49,9 @@ export default function FlightHud({ hud, control, quality, onQuality, onExit, on
         <b>{hud.phase === 'dive' || hud.phase === 'hold' ? '' : hud.stopName}</b>
       </div>
       {hud.caption && (
-        <div className="hud-caption" aria-live="polite">
+        <div className="hud-caption" aria-live="polite" title={hud.direction || undefined}>
           {hud.targetName && <small>Look at · {hud.targetName}</small>}
-          <p>{hud.caption}</p>
-          {hud.direction && <small className="hud-direction">Shot chosen by the director · {hud.direction}</small>}
+          <p key={`${hud.caption}:${cueIndex}`}>{captionCue}</p>
         </div>
       )}
       <div className="hud-controls">

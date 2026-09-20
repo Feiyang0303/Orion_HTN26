@@ -330,14 +330,20 @@ function Rig({ plan, begin, quality, onStopReached, onFinish, onHud, control, ti
     const stopIdx = seg.kind === 'dwell' ? seg.stop : seg.kind === 'travel' ? seg.leg + 1
       : seg.kind === 'hold' && seg.which === 'closing' ? plan.stops.length - 1 : 0
     const target = beat?.beat.targetId && dwellStop >= 0 ? plan.stops[dwellStop].targets.find(x => x.id === beat.beat.targetId) : undefined
+    const mediaDuration = st.audio?.duration ?? 0
+    const captionProgress = beat
+      ? st.audio && Number.isFinite(mediaDuration) && mediaDuration > 0
+        ? st.audio.currentTime / mediaDuration
+        : (st.t - beat.t0) / Math.max(0.001, beat.t1 - beat.t0)
+      : 0
     const hud: Hud = {
       phase: !st.started ? 'idle' : st.finished ? 'done' : seg.kind,
       stopIndex: stopIdx, stopCount: plan.stops.length, stopName: plan.stops[Math.min(stopIdx, plan.stops.length - 1)]?.name ?? '',
-      caption: beat?.beat.text ?? '', targetName: target?.name ?? '', targetSource: target?.source.url ?? '',
+      caption: beat?.beat.text ?? '', captionProgress, targetName: target?.name ?? '', targetSource: target?.source.url ?? '',
       direction: beat && dwellStop >= 0 ? director.reasons.get(shotKey(dwellStop, beat.index)) ?? '' : '',
       paused: ctl.paused, progress: st.started ? st.t / tl.total : 0,
     }
-    const sig = JSON.stringify([hud.phase, hud.stopIndex, hud.caption, hud.paused, Math.round(hud.progress * 200)])
+    const sig = JSON.stringify([hud.phase, hud.stopIndex, hud.caption, hud.paused, Math.round(hud.progress * 200), Math.round(hud.captionProgress * 300)])
     if (sig !== st.hud) { st.hud = sig; onHud(hud) }
   })
 
