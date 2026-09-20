@@ -49,6 +49,7 @@ namespace Orion.Editor
         public static void Apk()
         {
             Setup();
+            if (!File.ReadAllText("ProjectSettings/ProjectSettings.asset").Contains("activeInputHandler: 1")) throw new Exception("The Input System is not the active input handler: run setup first, on its own.");
             WriteConfig();
             Directory.CreateDirectory(Path.GetDirectoryName(ApkPath));
             var report = BuildPipeline.BuildPlayer(new BuildPlayerOptions { scenes = new[] { Scene }, locationPathName = ApkPath, target = BuildTarget.Android, options = BuildOptions.None });
@@ -130,6 +131,13 @@ namespace Orion.Editor
             PlayerSettings.colorSpace = ColorSpace.Linear;
             PlayerSettings.SetMobileMTRendering(UnityEditor.Build.NamedBuildTarget.Android, true);
             PlayerSettings.defaultInterfaceOrientation = UIOrientation.LandscapeLeft;
+
+            // The head pose and the controllers arrive through the Input System, which OpenXR requires and which a project made
+            // from nothing leaves switched off (0, the old Input Manager): the city then renders, fixed to the person's face.
+            // There is no API for it. It takes effect when the editor next starts, which is why build.sh runs setup on its own first.
+            var project = new SerializedObject(AssetDatabase.LoadAllAssetsAtPath("ProjectSettings/ProjectSettings.asset")[0]);
+            project.FindProperty("activeInputHandler").intValue = 1;
+            project.ApplyModifiedPropertiesWithoutUndo();
             EditorUserBuildSettings.androidBuildSystem = AndroidBuildSystem.Gradle;
         }
 

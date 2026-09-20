@@ -65,7 +65,7 @@ namespace Orion
             c.transform.localPosition = new Vector3(0, .76f, .3f);
             c.transform.localRotation = Quaternion.Euler(43, 0, 0);
             var hint = Look.Text("Hint", c.transform, .014f, Look.Hint, TextAlignmentOptions.Center, new Vector2(.8f, .02f));
-            hint.text = "A or X pauses the guide  ·  hold B or Y to leave";
+            hint.text = "A or X pauses  ·  flick a thumbstick to turn  ·  hold B or Y to leave";
             hint.transform.localPosition = new Vector3(0, -.075f, 0);
             c.stats = Look.Text("Stats", c.transform, .014f, Look.Amber, TextAlignmentOptions.Center, new Vector2(.8f, .02f));
             c.stats.transform.localPosition = new Vector3(0, -.1f, 0);

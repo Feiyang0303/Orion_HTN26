@@ -55,6 +55,10 @@ namespace Orion
         Vector3 eye, look, was, drift; float yaw; bool placed, cutting;
 
         bool pauseHeld; float leaveHeld;
+        // Looking round without turning round: a flick of either thumbstick turns the person's space by a step, at once
+        // (a turn that sweeps is the kind that makes people ill). It lasts until the next vantage, which opens facing its subject.
+        const float SnapTurn = Mathf.PI / 6;
+        float turned; int flickHeld;
         (int stop, int beat, bool playing, bool travelling, bool ready, bool smooth, int day)? shown;      // what the panels last showed
         int fetchedFor = -1;
 
@@ -160,6 +164,9 @@ namespace Orion
             bool pause = rig.Hands[0].Primary || rig.Hands[1].Primary;
             if (pause && !pauseHeld) TogglePlay();
             pauseHeld = pause;
+            int flick = rig.Hands[1].Flick != 0 ? rig.Hands[1].Flick : rig.Hands[0].Flick;
+            if (flick != 0 && flickHeld == 0) turned += flick * SnapTurn;
+            flickHeld = flick;
             leaveHeld = rig.Hands[0].Secondary || rig.Hands[1].Secondary ? leaveHeld + dt : 0;
             if (leaveHeld > .8f) Leave();
 
@@ -216,10 +223,10 @@ namespace Orion
                 float off = Vector3.Distance(follower.Pos, eye);
                 if (!placed) { fade = 1; fadeGoal = 1; cutting = true; }                          // a new day arrives in the dark
                 else if (!cutting && (now != key || off > (travelling ? 300 : 15) || Mathf.Abs(Follower.AngleTo(follower.Yaw, yaw)) > 1.6f)) { cutting = true; fadeGoal = 1; }
-                if (cutting && fade > .97f) { follower.Snap(eye, yaw, drift); key = now; placed = true; cutting = false; if (fadeThen == null) fadeGoal = 0; }
+                if (cutting && fade > .97f) { follower.Snap(eye, yaw, drift); turned = 0; key = now; placed = true; cutting = false; if (fadeThen == null) fadeGoal = 0; }
                 else if (cutting) follower.Coast(dt);
                 else follower.Follow(eye, yaw, dt);
-                rig.Carry(follower.Pos, follower.Yaw);
+                rig.Carry(follower.Pos, follower.Yaw + turned);
                 rig.Veil.Vignette = follower.Motion;
             }
             else if (!placed && stops.Length > 0 && stops[0].HasValue)

@@ -18,6 +18,8 @@ namespace Orion
         /// <summary>A or X, and B or Y, as they are this frame.</summary>
         public bool Primary { get; private set; }
         public bool Secondary { get; private set; }
+        /// <summary>The thumbstick, pushed fully left (-1) or right (1), or neither (0).</summary>
+        public int Flick { get; private set; }
 
         public static Pointer Make(Transform rig, XRNode node)
         {
@@ -42,6 +44,7 @@ namespace Orion
             line.enabled = tracked;
             Primary = device.TryGetFeatureValue(CommonUsages.primaryButton, out bool a) && a;
             Secondary = device.TryGetFeatureValue(CommonUsages.secondaryButton, out bool b) && b;
+            Flick = device.TryGetFeatureValue(CommonUsages.primary2DAxis, out Vector2 stick) && Mathf.Abs(stick.x) > .7f ? (int)Mathf.Sign(stick.x) : 0;
             if (!tracked) return;
             transform.localPosition = pos; transform.localRotation = rot;
 

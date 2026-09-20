@@ -10,7 +10,7 @@ unity() { "$UNITY" -batchmode -projectPath . -buildTarget Android "$@"; }
 text() { [ -d "Assets/TextMesh Pro" ] || unity -executeMethod Orion.Editor.Build.ImportText -logFile Logs/text.log; }
 case "${1:-apk}" in
   setup) text && unity -quit -executeMethod Orion.Editor.Build.Setup -logFile Logs/setup.log ;;
-  apk)   text && unity -quit -executeMethod Orion.Editor.Build.Apk -logFile Logs/build.log && ls -lh Build/orion-quest.apk ;;
+  apk)   text && unity -quit -executeMethod Orion.Editor.Build.Setup -logFile Logs/setup.log && unity -quit -executeMethod Orion.Editor.Build.Apk -logFile Logs/build.log && ls -lh Build/orion-quest.apk ;;
   test)  text && unity -runTests -testPlatform EditMode -testResults Logs/tests.xml -logFile Logs/tests.log ;;
   smoke) text && "$UNITY" -batchmode -projectPath . -buildTarget Android -executeMethod Orion.Editor.Smoke.Run -logFile Logs/smoke.log; grep "\[smoke" Logs/smoke.log ;;
   *) echo "usage: $0 [setup|apk|test|smoke]"; exit 2 ;;
