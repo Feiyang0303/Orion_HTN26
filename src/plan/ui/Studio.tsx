@@ -96,7 +96,7 @@ export default function Studio({ wish, mode, origin, saved: given, onTrip, onFly
         const stays = await stageStay(s, found)
         if (ctl.signal.aborted) return
         setStay(stays[0] ?? null)
-        const made = await stagePlan(s, found, { saveAudio, onEvent, signal: ctl.signal })
+        const made = await stagePlan(s, found, { saveAudio, onEvent, voice: true, signal: ctl.signal })
         if (!ctl.signal.aborted) setTrip(made)
       } catch (e) {
         if (!ctl.signal.aborted) {
@@ -199,7 +199,7 @@ export default function Studio({ wish, mode, origin, saved: given, onTrip, onFly
       setChat(c => [...c, { who: 'editor', text: r.reply || 'Done.' }])
       const real = r.edits.filter(e => e.op !== 'none')
       if (real.length) {
-        const { trip: next, rebuilt, notes } = await applyEdits(session.current, trip, real, { saveAudio, onEvent })
+        const { trip: next, rebuilt, notes } = await applyEdits(session.current, trip, real, { saveAudio, onEvent, voice: true })
         setTrip(next)
         if (notes.length) setChat(c => [...c, { who: 'editor', text: `${notes.join('; ')}.${rebuilt.length ? ` Day${rebuilt.length === 1 ? '' : 's'} ${rebuilt.join(', ')} redone.` : ''}` }])
       }
@@ -220,7 +220,7 @@ export default function Studio({ wish, mode, origin, saved: given, onTrip, onFly
     if (!s || !trip || swapping || asking) return
     setSwapping(true)
     try {
-      const { trip: next, notes } = await applyEdits(s, trip, [{ op: 'new_bed' }], { saveAudio, onEvent })
+      const { trip: next, notes } = await applyEdits(s, trip, [{ op: 'new_bed' }], { saveAudio, onEvent, voice: true })
       setTrip(next); setStay(s.bed)
       if (notes.length) setChat(c => [...c, { who: 'editor', text: `${notes.join('; ')}. The days are routed from there now.` }])
     } catch (e) {

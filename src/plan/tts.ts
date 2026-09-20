@@ -39,7 +39,9 @@ async function playable(url: string): Promise<boolean> {
 }
 
 /** Speak every beat that still has no clip. Used when a day is about to fly,
-    not when the journal is drawn.
+    not when the journal is drawn. A plan is voiced as it is written now
+    (PipelineOptions.voice), so this mostly finds nothing to do: it is what
+    catches a clip that failed then, and a trip made before that was so.
 
     Every beat means every beat. The pages are the obvious ones, but the legs'
     bridge lines and the day's opening and closing are beats too, and each one

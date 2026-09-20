@@ -35,8 +35,10 @@ export type PipelineOptions = {
   /** Where a beat's mp3 goes; returns the URL the browser will play it from.
       Browser: a blob URL. Fixture script: a file under public/plans/<id>/. */
   saveAudio: (planId: string, name: string, bytes: ArrayBuffer) => Promise<string>
-  /** Speak now. The app leaves this off and voices a day when it flies;
-      the paper journal never needs the clips. */
+  /** Speak now, as the pages are written. The app does: a plan has its voice before anyone flies it, so a flight
+      (and a headset, which is sent the saved trip) starts at once with the real narration. It costs the speech of
+      days that may never be flown; a revision speaks only what it rewrote (`written`). Whatever this misses, because
+      a clip failed or the trip is older than this, is spoken when its day first flies (tts.voiceDay). */
   voice?: boolean
   signal?: AbortSignal
 }
