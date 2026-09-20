@@ -134,13 +134,13 @@ async function voiceId(key) {
    list, so the choice lives in .env as a word ("Gigi", "Lily") rather than an
    id nobody can read, and so a name the account does not have falls back to
    the guide's voice instead of to silence. Resolved once per run. */
-const GOOSE_WANTS = env('ELEVENLABS_GOOSE_VOICE') || 'duck'
-/* The goose wants a duck's voice. `duck` (the default) means: a cartoon duck
-   from the ElevenLabs voice library, found by search and added to the
-   account under the name below the first time, then reused. Any other value
-   is a voice on the account, by id or name. If no duck can be had — the
-   library search fails, or the account has no free voice slot — the goose
-   falls back on a light, young, American voice and is pitched up instead. */
+const GOOSE_WANTS = env('ELEVENLABS_GOOSE_VOICE') || 'Gigi'
+/* The goose is a child: Gigi, ElevenLabs' own light American animation voice,
+   pitched up a little by the flight (see gooseRate). Gigi is a premade voice,
+   so every account and every instance has the same one — one voice, always.
+   ELEVENLABS_GOOSE_VOICE names another voice on the account, by name or id;
+   `duck` or `library:<name>` instead borrows a cartoon duck from the voice
+   library (added to the account the first time, then reused). */
 const DUCK_NAME = 'Orion Goose'
 const GOOSE_LIKE = ['gigi', 'jessica', 'laura', 'sarah', 'matilda', 'rachel', 'elli']
 const AMERICAN = v => /american/i.test(v.labels?.accent ?? '') && !/british|australian|irish|swedish|african/i.test(v.labels?.accent ?? '')
