@@ -23,7 +23,7 @@ namespace Orion
 
     public class FlightDeck : MonoBehaviour
     {
-        const float PreloadAheadSec = 12; const int PreloadMost = 2;
+        const float PreloadAheadSec = 12;
         const float SettledAt = 95, SettleMaxSec = 8;          // a stop is in focus when this much (%) of what is wanted has loaded; and it is waited for no longer than this
         const float RebuildSec = 3;                            // once under way, the route and the shots are re-placed on refined ground no more often than this
         const float WaitingHeight = 400;                       // where a person waits, above the first stop, while there is no city yet
@@ -41,6 +41,7 @@ namespace Orion
         readonly List<(float t, Vector3 eye, Vector3 look)> coming = new List<(float, Vector3, Vector3)>();
         readonly List<(Vector3, Vector3)> ahead = new List<(Vector3, Vector3)>();
         bool ready, groundMoved; float builtAt = float.MinValue, sweep;
+        int placedShape; bool redraw = true;                   // what the route looked like when it was last drawn; and a redraw asked for regardless
         bool voiced;                                           // every beat has its clip and its true length, so the timeline is the real one
 
         // the clock
@@ -57,7 +58,7 @@ namespace Orion
         Vector3 eye, look, was, drift; float yaw; bool placed, cutting;
 
         bool pauseHeld; float leaveHeld;
-        int frames; float worst, since;                        // for the line of log that says how it is running
+        int frames; float worst, since, mine;                        // for the line of log that says how it is running
         // Looking round without turning round: a flick of either thumbstick turns the person's space by a step, at once
         // (a turn that sweeps is the kind that makes people ill). It lasts until the next vantage, which opens facing its subject.
         const float SnapTurn = Mathf.PI / 6;
@@ -86,14 +87,14 @@ namespace Orion
             Restart();
             // The city and the voice are fetched side by side; the day begins when both are there.
             voiced = false;
-            StartCoroutine(narration.Voice(day, () => { timeline = new Timeline(day, Ride.StraightSec); voiced = true; Restart(); }));
+            StartCoroutine(narration.Voice(day, () => { timeline = new Timeline(day, Ride.StraightSec); voiced = true; Restart(); }));      // Restart asks for a redraw, so the shots are timed by the real timeline
         }
 
         void Jump(int stop)
         {
             t = timeline.DwellStart[Mathf.Clamp(stop, 0, day.stops.Length - 1)];
             playing = true; settling = 0; shown = null;
-            groundMoved = true;                                  // the route is redrawn, so legs ahead of here are lit again
+            groundMoved = true; redraw = true;                   // the route is redrawn, so legs ahead of here are lit again
         }
 
         /// <summary>From the top: the welcome, if the day has one.</summary>
@@ -118,10 +119,18 @@ namespace Orion
                 if (ground.TryGet(Anchor.Stop(i), out var c)) stops[i] = c.Pos;
                 foreach (var tg in day.stops[i].targets) if (ground.TryGet(Anchor.Target(i, tg.id), out var p)) targets[(i, tg.id)] = p.Pos;
             }
+            ready = Array.TrueForAll(stops, s => s.HasValue) && ground.TryGet(Anchor.Stop(0), out var first) && first.Grounded;
+
+            // The ground is looked at again every few seconds, and mostly it has not moved: the route, the rides and the
+            // shots are only made again when something on it has shifted by about a metre.
             shots.RouteOn(day);
+            int shape = day.stops.Length;
+            foreach (var path in shots.LegPaths) foreach (var p in path.Pts) shape = unchecked(shape * 31 + Mathf.RoundToInt(p.x) * 7 + Mathf.RoundToInt(p.y) * 3 + Mathf.RoundToInt(p.z));
+            foreach (var s in stops) if (s.HasValue) shape = unchecked(shape * 31 + Mathf.RoundToInt(s.Value.x + s.Value.y + s.Value.z));
+            if (shape == placedShape && !redraw) return;
+            placedShape = shape; redraw = false;
             trails = new List<RoutePath>(); rides = new List<Ride>();
             for (int i = 0; i < day.legs.Length; i++) { trails.Add(shots.Trail(i)); rides.Add(new Ride(trails[i])); }
-            ready = Array.TrueForAll(stops, s => s.HasValue) && ground.TryGet(Anchor.Stop(0), out var first) && first.Grounded;
             marks.Place(day, shots.LegPaths, stops);
 
             // Every shot of the day and when it comes, for the tile loader to get ahead of.
@@ -163,6 +172,13 @@ namespace Orion
         }
 
         void Update()
+        {
+            long began = System.Diagnostics.Stopwatch.GetTimestamp();
+            Fly();
+            mine += (System.Diagnostics.Stopwatch.GetTimestamp() - began) * 1000f / System.Diagnostics.Stopwatch.Frequency;
+        }
+
+        void Fly()
         {
             float raw = Time.deltaTime, dt = Mathf.Min(raw, .05f);
             if (ground.Step(Time.time)) groundMoved = true;
@@ -262,15 +278,15 @@ namespace Orion
                 // While this view is still arriving, every request is for it. Once it has (or a move is seconds away), the
                 // loader is pointed at what comes next, however far off, so the next place is already sharp on arrival.
                 bool settled = loaded >= SettledAt;
-                foreach (var c in coming) if (c.t > t - 1 && (settled || c.t <= t + PreloadAheadSec) && ahead.Count < (settled ? PreloadMost : 1) && c.t > t) ahead.Add((c.eye, c.look));
+                foreach (var c in coming) if (c.t > t - 1 && (settled || c.t <= t + PreloadAheadSec) && ahead.Count < Mathf.Min(Tuning.LookAhead, settled ? 2 : 1) && c.t > t) ahead.Add((c.eye, c.look));
                 world.LookAhead(ahead);
                 rig.Console.ShowStats($"city {loaded:0}%  ·  {1 / Mathf.Max(raw, .001f):0} fps");
             }
             frames++; worst = Mathf.Max(worst, raw); since += raw;
             if (since >= 5)
             {
-                Debug.Log($"[orion] {frames / since:0} fps, worst frame {worst * 1000:0} ms, city {loaded:0}%, clock {t:0.0}/{timeline.Total:0.0}, {(travelling ? "leg" : "stop")} {seg.Index}, ready {ready}, placed {placed}");
-                frames = 0; worst = 0; since = 0;
+                Debug.Log($"[orion] {frames / since:0} fps, worst frame {worst * 1000:0} ms, Orion's own {mine / Mathf.Max(1, frames):0.0} ms/frame, {world.TilesShown} tiles, city {loaded:0}%, clock {t:0.0}/{timeline.Total:0.0}, {(travelling ? "leg" : "stop")} {seg.Index}, ready {ready}, placed {placed}");
+                frames = 0; worst = 0; since = 0; mine = 0;
             }
 
             /* the guide: the light you follow down a leg, and a beam on whatever it is talking about */

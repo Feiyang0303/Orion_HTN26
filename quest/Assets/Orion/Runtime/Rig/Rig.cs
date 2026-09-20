@@ -17,8 +17,6 @@ namespace Orion
     {
         /// <summary>Where a head is taken to be above the floor of the person's space.</summary>
         public const float HeadHeight = 1.6f;
-        /// <summary>How far the city is drawn, and fetched. Beyond it is haze: a headset cannot afford the tiles all the way to the horizon.</summary>
-        public const float Far = 3000;
         const float Foveation = .66f;                          // 0 none, 1 the most the headset offers
 
         public Camera Head { get; private set; }
@@ -34,7 +32,7 @@ namespace Orion
             var head = new GameObject("Head") { tag = "MainCamera" };
             head.transform.SetParent(rig.transform, false);
             rig.Head = head.AddComponent<Camera>();
-            rig.Head.nearClipPlane = .2f; rig.Head.farClipPlane = Far;
+            rig.Head.nearClipPlane = .2f; rig.Head.farClipPlane = Tuning.Far;
             rig.Head.clearFlags = CameraClearFlags.Skybox;
             rig.Head.backgroundColor = Look.Background;
             head.AddComponent<AudioListener>();
@@ -65,6 +63,7 @@ namespace Orion
             var displays = new List<XRDisplaySubsystem>();
             SubsystemManager.GetSubsystems(displays);
             foreach (var d in displays) d.foveatedRenderingLevel = Foveation;
+            XRSettings.eyeTextureResolutionScale = Tuning.EyeScale;
         }
 
         /// <summary>Put the person's head at `eye`, facing `yaw` (radians). Position and yaw, nothing else.</summary>

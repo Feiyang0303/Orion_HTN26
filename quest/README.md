@@ -52,6 +52,26 @@ Guards against a repeat, in order of how much they are worth:
 3. `TileBudget`: each device loads Google's tileset at most 40 times a (Pacific) day, counted before the request is made.
    Past that the app says so and does not ask. A normal run spends one.
 
+## Tuning on the headset
+
+What holds 72 Hz was found by measuring on a Quest Pro, not by guessing. `adb logcat -s Unity VrApi` shows the app's own
+line every 5 s (`[orion] 72 fps, worst frame …, N tiles, city 100%, clock …`) beside the headset's counters (`FPS=72/72 …
+GPU%=… CPU%=…`). Any setting in `Runtime/Tuning.cs` can be tried on the next launch without a rebuild:
+
+```sh
+adb shell "printf '%s\n' sse=32 eyes=1.3 > /sdcard/Android/data/com.orion.quest/files/tuning.txt"   # try
+adb shell rm /sdcard/Android/data/com.orion.quest/files/tuning.txt                                    # back to the defaults
+```
+
+What the measurements said (downtown Toronto, ~1,650 tiles loaded):
+- Screen-space error is measured against the ~1,900 px eye buffer: 12 px was 15 fps with the GPU at 99%; 24 px is sharp and fits.
+- Every extra camera given to Cesium re-walks Google's tile tree on the main thread, ~5 ms each: six (a ring of three to
+  keep the circle loaded, two look-ahead, the eyes) held a settled stop to 33 fps. One look-ahead camera costs a frame or two.
+- Frustum culling off keeps the circle loaded without extra cameras but costs ~8 fps and 15% GPU. Instead: culling on,
+  tiles out of view kept to 48 px, and a 1.28 GB cache so that what a head turns back to is still in memory.
+- A tile shader the SRP Batcher can use, and no stack traces on Cesium's per-tile physics warnings, took the CPU from 90% to 50%.
+- Orion's own code is 0.2–0.4 ms a frame. An eye buffer of 1.2x fits on a Pro at these settings.
+
 ## The Google tiles key
 
 The build reads `VITE_GOOGLE_MAPS_KEY` from the web app's `.env` one directory up (or

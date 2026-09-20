@@ -16,7 +16,8 @@ namespace Orion.World
     {
         // Screen-space error, in the headset's own pixels. One value for the whole flight: Cesium reloads the entire
         // tileset when this is set, a fresh request to Google each time, so it is set once and never touched again.
-        const float ScreenSpaceError = 12;
+        // It is measured against the eye buffer, which on a headset is ~1900 px tall: 12 there asks for geometry finer than
+        // the GPU can draw at 72 Hz (15 fps on a Quest Pro over downtown Toronto) and takes correspondingly long to arrive.
         // What the tile cache may hold. A headset with memory to spare (a Quest Pro or 3 has 8–12 GB) keeps more of the
         // city, so a place already seen is not fetched again; a Quest 2 cannot.
         static long CacheBytes => (SystemInfo.systemMemorySize >= 7000 ? 1280L : 512L) * 1024 * 1024;
@@ -37,6 +38,8 @@ namespace Orion.World
 
         /// <summary>How much of what is wanted has loaded, 0 to 100.</summary>
         public float LoadProgress => tiles.ComputeLoadProgress();
+        /// <summary>How many tiles are being drawn, or could be.</summary>
+        public int TilesShown => tiles.transform.childCount;
         /// <summary>The layer the city's colliders are on.</summary>
         public int Layer => tiles.gameObject.layer;
         readonly List<Camera> ahead = new List<Camera>();
@@ -64,15 +67,15 @@ namespace Orion.World
             t.tilesetSource = CesiumDataSource.FromUrl;
             t.url = url;
             t.showCreditsOnScreen = true;                        // Google's terms: the attribution stays in view (see Credits)
-            t.maximumScreenSpaceError = ScreenSpaceError;
+            t.maximumScreenSpaceError = Tuning.ScreenSpaceError;
             t.maximumCachedBytes = CacheBytes;
-            t.maximumSimultaneousTileLoads = 24;
+            t.maximumSimultaneousTileLoads = Tuning.TileLoads;
             t.preloadAncestors = true;
             t.preloadSiblings = false;                           // every request spent on a neighbour is one not spent on what is in view
-            t.enableFrustumCulling = true;
+            t.enableFrustumCulling = Tuning.Cull;
             t.enableFogCulling = false;                          // Cesium's fog drops far tiles by its own reckoning, leaving a hard edge; the far plane and Orion's haze end the city instead
             t.enforceCulledScreenSpaceError = true;
-            t.culledScreenSpaceError = 64;
+            t.culledScreenSpaceError = Tuning.CulledError;
             t.createPhysicsMeshes = true;                        // the ground is found by rays onto them (see Ground)
             t.generateSmoothNormals = false;
             t.opaqueMaterial = new Material(Look.ShaderNamed("OrionTiles"));      // unlit, with the haze Cesium's own lacks
@@ -80,7 +83,7 @@ namespace Orion.World
             Cesium3DTileset.OnCesium3DTilesetLoadFailure += city.OnLoadFailure;
 
             Shader.SetGlobalColor("_OrionHaze", Look.Haze.linear);
-            Shader.SetGlobalVector("_OrionHazeRange", new Vector4(Rig.Far * .35f, Rig.Far * .95f));
+            Shader.SetGlobalVector("_OrionHazeRange", new Vector4(Tuning.Far * .35f, Tuning.Far * .95f));
             RenderSettings.skybox = new Material(Look.ShaderNamed("OrionSky"));
             return city;
         }
@@ -99,20 +102,24 @@ namespace Orion.World
         /// <summary>Centre the world on a day. Everything the flight places is within a few kilometres of here.</summary>
         public void CentreOn(LatLon origin) => Georeference.SetOriginLongitudeLatitudeHeight(origin.lon, origin.lat, 0);
 
+        Camera Unseen(string name, float fov, int px)
+        {
+            var cam = new GameObject(name).AddComponent<Camera>();
+            cam.transform.SetParent(transform, false);
+            cam.enabled = false;
+            cam.fieldOfView = fov; cam.aspect = 1; cam.nearClipPlane = .3f; cam.farClipPlane = Tuning.Far;
+            cam.targetTexture = new RenderTexture(px, px, 0);        // never drawn into: it is how a camera is given a resolution
+            return cam;
+        }
+
         /// <summary>Tiles are chosen for the cameras Cesium knows about. Cameras that draw nothing, held on the
-        /// views coming up, make it fetch those views in advance, and drop them as the flight moves past.</summary>
+        /// views coming up, make it fetch those views in advance, and drop them as the flight moves past. They are not
+        /// free: Cesium walks Google's whole tile tree again for each one, on the main thread, and on a Quest Pro over a
+        /// downtown that is ~5 ms apiece. Six of them held the app to 33 fps; one costs a couple of frames a second.</summary>
         public void LookAhead(IReadOnlyList<(Vector3 eye, Vector3 look)> views)
         {
             var manager = CesiumCameraManager.GetOrCreate(tiles.gameObject);
-            while (ahead.Count < views.Count)
-            {
-                var cam = new GameObject($"Look ahead {ahead.Count}").AddComponent<Camera>();
-                cam.transform.SetParent(transform, false);
-                cam.enabled = false;
-                cam.fieldOfView = 70; cam.nearClipPlane = .3f; cam.farClipPlane = Rig.Far;
-                cam.targetTexture = new RenderTexture(PreloadPx, PreloadPx, 0);      // never drawn into: it is how a camera is given a resolution
-                ahead.Add(cam);
-            }
+            while (ahead.Count < views.Count) ahead.Add(Unseen($"Look ahead {ahead.Count}", 70, PreloadPx));
             manager.additionalCameras.Clear();
             for (int i = 0; i < views.Count; i++)
             {
