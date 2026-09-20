@@ -26,7 +26,6 @@ export const CREW: Member[] = [
   { id: 'Timekeeper', name: 'Timekeeper',   kind: 'tool',  colour: '#ffc266', role: 'Fitting the day to the clock',         prop: 'clock',    hat: 'band',  skin: '#b98764' },
   { id: 'Critic',     name: 'Judger',       kind: 'agent', colour: '#ff8f8f', role: 'Finding what is wrong, sending others back', prop: 'lens',     hat: 'bun',   skin: '#e4bf9f' },
   { id: 'Narrator',   name: 'Narrator',     kind: 'agent', colour: '#c8a2ff', role: 'Writing what the guide will say',      prop: 'quill',    hat: 'beret', skin: '#d9ad86' },
-  { id: 'Auditor',    name: 'Auditor',      kind: 'tool',  colour: '#a6e86b', role: 'Tracing every sentence to a source',   prop: 'stamp',    hat: 'cap',   skin: '#efd2b6' },
   { id: 'Voice',      name: 'Voice',        kind: 'agent', colour: '#ff9ad5', role: 'Recording the narration',              prop: 'mic',      hat: 'none',  skin: '#c08d69' },
   { id: 'Director',   name: 'Director',     kind: 'agent', colour: '#ff9a4d', role: 'Walking round each place to choose the shot', prop: 'camera', hat: 'beret', skin: '#e0b892' },
 ]

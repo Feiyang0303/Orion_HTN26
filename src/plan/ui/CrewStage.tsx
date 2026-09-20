@@ -17,7 +17,6 @@ const PHASES = [
   { id: 'Critic', label: 'Judging', agent: 'Critic' },
   { id: 'Router', label: 'Routing the days', agent: 'Router' },
   { id: 'Narrator', label: 'Writing the guide', agent: 'Narrator' },
-  { id: 'Auditor', label: 'Checking every line', agent: 'Auditor' },
   { id: 'Director', label: 'Choosing the shots', agent: 'Director' },
 ] as const
 

@@ -1,6 +1,6 @@
 import { Fragment, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import { TRANSPORT_LABEL, type Claim, type Day, type LatLon, type Stay, type Stop, type Table, type Trip } from '../../types'
+import { TRANSPORT_LABEL, type Day, type LatLon, type Stay, type Stop, type Table, type Trip } from '../../types'
 import { dayColour } from '../../ui/palette'
 import Icon, { type IconName } from '../../ui/Icon'
 
@@ -193,7 +193,6 @@ function Meal({ table }: { table: Table }) {
 
 function StopCard({ stop, index, onFocus }: { stop: Stop; index: number; onFocus: (at: LatLon | null) => void }) {
   const [open, setOpen] = useState(false)
-  const traced = stop.beats.flatMap(b => b.claims ?? []).filter(c => !c.framing)
   return (
     <motion.article className="t-stop" initial={{ opacity: 0, y: 18 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: '0px 0px -8% 0px' }}
       transition={{ duration: .6, ease: [.22, .9, .24, 1] }} onMouseEnter={() => onFocus({ lat: stop.lat, lon: stop.lon })} onMouseLeave={() => onFocus(null)}>
@@ -214,7 +213,7 @@ function StopCard({ stop, index, onFocus }: { stop: Stop; index: number; onFocus
           <>
             <button type="button" className="t-toggle" aria-expanded={open} onClick={() => setOpen(o => !o)}>
               <span>{open ? 'Hide' : 'Read'} what the guide will say</span>
-              <em>{stop.beats.length} moment{stop.beats.length === 1 ? '' : 's'}{traced.length ? ` · ${traced.filter(c => c.supported).length}/${traced.length} lines sourced` : ''}</em>
+              <em>{stop.beats.length} moment{stop.beats.length === 1 ? '' : 's'}</em>
             </button>
             <AnimatePresence initial={false}>
               {open && (
@@ -223,7 +222,7 @@ function StopCard({ stop, index, onFocus }: { stop: Stop; index: number; onFocus
                     <li key={i}>
                       <span className="t-beat-mark" aria-hidden>{b.targetId ? '◎' : '●'}</span>
                       <p>
-                        {b.claims?.length ? <Sentences claims={b.claims} /> : b.text}
+                        {b.text}
                         <small>{b.targetId ? `looking at ${stop.targets.find(t => t.id === b.targetId)?.name ?? 'something nearby'}` : ''}</small>
                       </p>
                     </li>
@@ -236,14 +235,4 @@ function StopCard({ stop, index, onFocus }: { stop: Stop; index: number; onFocus
       </div>
     </motion.article>
   )
-}
-
-/** Narration with its receipts: hover or focus a sentence to read the line it rests on. */
-function Sentences({ claims }: { claims: Claim[] }) {
-  return <>{claims.map((c, i) => c.framing ? <span key={i}>{c.text} </span> : (
-    <span key={i} className={`t-claim ${c.supported ? 'is-traced' : 'is-unverified'}`} tabIndex={0}
-      title={c.supported ? `“${c.quote}” — ${c.source?.label}` : 'Could not be traced to the text the guide was given'}>
-      {c.text}{c.supported && c.source && <a className="t-cite" href={c.source.url} target="_blank" rel="noreferrer" aria-label={`Source: ${c.source.label}`}>↗</a>}{' '}
-    </span>
-  ))}</>
 }

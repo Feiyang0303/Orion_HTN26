@@ -4,9 +4,9 @@ import type { Stop } from '../types'
     (Geocode, Router, Timekeeper), `agent` = an LLM call (the Director's is one that is shown pictures). The UI labels them
     that way, because a person deserves to know which sentences on the page
     were written by a model and which were counted by a machine. */
-export type Agent = 'Geocode' | 'Scout' | 'Router' | 'Timekeeper' | 'Critic' | 'Narrator' | 'Auditor' | 'Voice' | 'Director'
+export type Agent = 'Geocode' | 'Scout' | 'Router' | 'Timekeeper' | 'Critic' | 'Narrator' | 'Voice' | 'Director'
 
-/** One objection from a judge (Critic, Timekeeper, Auditor). `owner` is who
+/** One objection from a judge (Critic, Timekeeper). `owner` is who
     must fix it — Scout re-picks, Narrator rewrites, etc. */
 export type Issue = { id: string; text: string; owner: Agent }
 

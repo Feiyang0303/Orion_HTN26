@@ -40,7 +40,6 @@
   --c-timekeeper: #ffc266;
   --c-critic: #ff8f8f;
   --c-narrator: #c8a2ff;
-  --c-auditor: #a6e86b;
   --c-voice: #ff9ad5;
 
   --display: 'IM Fell English', 'Iowan Old Style', Georgia, serif;
@@ -399,11 +398,6 @@ input[type='time'].o-input { color-scheme: dark; padding: .7em .9em; }
 .t-beat-mark { color: var(--c); font-size: 11px; padding-top: 5px; text-align: center; }
 .t-beats p { margin: 0; font: 400 15.5px/1.6 var(--display); color: var(--ink); }
 .t-beats small { display: block; margin-top: 5px; font: 400 11.5px/1.4 var(--ui); color: var(--ink-3); }
-.t-claim { border-bottom: 1px dotted rgba(255, 240, 210, .28); cursor: help; transition: background .2s; border-radius: 3px; }
-.t-claim:hover, .t-claim:focus-visible { background: rgba(240, 180, 94, .16); outline: none; }
-.t-claim.is-unverified { border-bottom: 1px dashed var(--danger); }
-.t-cite { margin-left: 3px; font: 400 .72em/1 var(--ui); color: var(--amber); text-decoration: none; opacity: .75; }
-.t-cite:hover { opacity: 1; }
 .t-foot { margin-top: 4px; padding-top: 18px; border-top: 1px solid var(--line); font-size: 11.5px; line-height: 1.6; color: var(--ink-3); }
 
 /* the editor, floating over the map */

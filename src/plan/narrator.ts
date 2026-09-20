@@ -16,7 +16,7 @@ import { askJson } from './json'
  * who is travelling.
  */
 
-export type Draft = { text: string; targetId?: string; claims?: import('../types').Claim[] }
+export type Draft = { text: string; targetId?: string }
 export type Mode = 'full' | 'short'
 
 const LIMITS = { short: { beats: 3, words: 30 }, full: { beats: 4, words: 46 } }
@@ -135,8 +135,7 @@ export type StopContext = {
 
 /* The two habits a model falls back into no matter how plainly the prompt
    forbids them: the brochure adjective, and saying the tour out loud. Checked
-   in code, quoted back, and rewritten once — the same shape as the Auditor's
-   pass over the facts, applied to the voice. */
+   in code, quoted back, and rewritten once. */
 const BROCHURE = /\b(iconic|magnificent|stunning|breathtaking|timeless|legendary|must-see|majestic|awe-inspiring|world-renowned|picturesque|a (?:true )?(?:jewel|gem)|testament to|steeped in|nestled|splendou?r|ethereal|resplendent|unparalleled|storied|amazing|incredible|wonderful|spectacular|fabulous|unforgettable)\b/i
 const TOUR_TALK = /\b(our (?:next|tour|flight)|we(?:'ll|'re| will| shall| now| then| can| may)?(?: \w+)? (?:fly|flying|head|heading|move|moving|turn|turning|arrive|arriving|go|going|travel|travelling|traveling|continue|leave|leaving)|this (?:tour|flight)|your (?:tour|flight)|next view|coming up next|as you can see|welcome to)\b/i
 
@@ -155,8 +154,6 @@ const PARTY_NOTE: Record<Party, string> = {
 
 export async function narrate(
   stop: { name: string; extract: string }, targets: Target[], mode: Mode, ctx?: StopContext,
-  /** Statements a first draft made that the Auditor could not find in the text; the rewrite must not repeat them. */
-  unsupported: string[] = [],
 ): Promise<{ beats: Draft[]; problems: string[] }> {
   const { beats: n, words } = LIMITS[mode]
   const source = [stop.name, stop.extract, ...targets.flatMap(t => [t.name, t.summary])].join('\n')
@@ -178,10 +175,6 @@ export async function narrate(
     (where ? `${where}\n\n` : '') +
     `Nearby targets you may point at:\n` +
     (targets.length ? targets.map(t => `${t.id} | ${t.name} | ${t.summary.replace(/\s+/g, ' ').slice(0, 300)}`).join('\n') : '(none)') +
-    (unsupported.length
-      ? `\n\nA first draft said these things, and none of them is in the text above. Do not say them or anything like them; ` +
-        `say only what the text says:\n${unsupported.map(u => `- ${u}`).join('\n')}`
-      : '') +
     `\n\nWrite up to ${n} beats, each at most ${words} words. Use all ${n} when the text supports them; write fewer rather than padding.`
 
   /* Two attempts, and the better of them is kept rather than the later one: a

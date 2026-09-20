@@ -2,14 +2,12 @@ import { report, observeCrew } from '../telemetry'
 import type { Beat, Direction, Leg, Plan, Stop, Target, Wish } from '../types'
 import { HHMM, MINS, TRANSPORT_LABEL } from '../types'
 import type { Agent, CrewEvent } from './events'
-import { verdict } from './events'
 import { geocode, locate } from './geocode'
 import { notable, photoFor, warmStopSources, wikiSource, type Article } from './wikipedia'
 import { bestOrder, legsFor, travelSecs } from './router'
 import { schedule, windowOf } from './timekeeper'
 import { narrate, withAudio, writeBridges, writeClosing, writeOpening, writePreface, type Draft, type Mode, type StopContext } from './narrator'
 import { estimateSec, speak } from './tts'
-import { auditText, repair, tally, unsupportedIn } from './auditor'
 import { findStops, matchWant, roomFor, tripRadius, type Candidate, type Skeleton } from './crew'
 import { slug } from './geo'
 import { sentences } from './sentences'
@@ -151,35 +149,6 @@ export async function writePages(skeleton: Skeleton, opts: PipelineOptions): Pro
         report(e, 'narrator.stop', { level: 'warning', extra: { stop: c.name } })
         say('Narrator', 'agent', 'failed', `${c.name}: ${(e as Error).message}`)
       }
-    }
-
-    /* The Auditor: every sentence traced to the text the Narrator was given. A
-       model told to use only the text still adds a plausible detail now and then,
-       so a draft with sentences that cannot be traced is sent back once, told
-       exactly which; whatever still cannot be traced is taken out before it is
-       voiced. What reaches the listener is what the sources support. */
-    const docs = [
-      ...(a ? [{ text: a.extract, source: wikiSource(a) }] : []),
-      ...targets.map(t => ({ text: t.summary, source: t.source })),
-    ]
-    const names = [c.name, ...targets.map(t => t.name)]
-    const audit = (list: Draft[]) => list.map(d => ({ ...d, claims: auditText(d.text, docs, names) }))
-    drafts = audit(drafts)
-    const first = tally(drafts)
-    const weak = unsupportedIn(drafts)
-    if (weak.length) {
-      say('Auditor', 'tool', 'failed', `${c.name}: ${weak.length} statement${weak.length === 1 ? '' : 's'} not in the source — sent back to the narrator`)
-      onEvent(verdict('Auditor', c.id, weak.map((text, i) => ({ id: `${c.id}-${i}`, text: `${c.name}: ${text}`, owner: 'Narrator' }))))
-      try { drafts = audit((await narrate({ name: c.name, extract: a?.extract ?? '' }, targets, mode, ctx, weak)).beats) } catch { /* keep the first draft; it is repaired below */ }
-    }
-    drafts = drafts.flatMap(d => repair(d) ?? [])
-    const traced = tally(drafts)
-    if (first.total) {
-      const leftover = unsupportedIn(drafts)
-      onEvent(verdict('Auditor', c.id, leftover.map((text, i) => ({ id: `${c.id}-${i}`, text: `${c.name}: ${text}`, owner: 'Narrator' }))))
-      say('Auditor', 'tool', leftover.length ? 'failed' : 'done',
-        `${c.name}: ${first.traced} of ${first.total} statements traced at first` +
-        (weak.length ? `, ${traced.traced} of ${traced.total} after the rewrite` : ''))
     }
 
     const beats = speakNow

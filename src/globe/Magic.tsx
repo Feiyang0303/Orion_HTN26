@@ -15,7 +15,6 @@ import { MEMBER, type Status } from '../crew/roster'
  *   Timekeeper  a clock face ticks around the city
  *   Critic      a red lens scans over the places
  *   Narrator    words rise from the city as a spiral of light
- *   Auditor     hexagonal shields flash out and are gone
  *   Voice       sound rings roll outward
  *   Director    a viewfinder walks round each place, side by side, and flashes when it takes one
  *
@@ -50,7 +49,6 @@ export default function CityFX({ status, places }: { status: MutableRefObject<Re
       <Clock status={status} />
       <Lens status={status} spots={spots} />
       <Words status={status} />
-      <Shields status={status} />
       <SoundRings status={status} />
       <Viewfinder status={status} spots={spots} />
     </group>
@@ -210,32 +208,6 @@ function Words({ status }: { status: MutableRefObject<Record<Agent, Status>> }) 
     ;(pts.current!.material as THREE.PointsMaterial).opacity = .95 * w
   })
   return <points ref={pts} geometry={geo}><pointsMaterial color={c} size={.02} transparent blending={add} depthWrite={false} sizeAttenuation /></points>
-}
-
-function Shields({ status }: { status: MutableRefObject<Record<Agent, Status>> }) {
-  const rings = useRef<(THREE.Mesh | null)[]>([])
-  const { tick } = useWork(status, 'Auditor')
-  const c = MEMBER.Auditor.colour
-  useFrame(({ clock }, dt) => {
-    const w = tick(dt), t = clock.elapsedTime
-    rings.current.forEach((m, i) => {
-      if (!m) return
-      const p = (t * .7 + i / 3) % 1
-      m.visible = w > .02
-      m.scale.setScalar(.05 + p * .3)
-      m.rotation.z = p * 1.2 + i
-      ;(m.material as THREE.MeshBasicMaterial).opacity = Math.sin(p * Math.PI) * .9 * w
-    })
-  })
-  return (
-    <group position={[0, .012, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-      {[0, 1, 2].map(i => (
-        <mesh key={i} ref={el => { rings.current[i] = el }}>
-          <ringGeometry args={[.9, 1, 6]} /><meshBasicMaterial color={c} transparent side={THREE.DoubleSide} blending={add} depthWrite={false} />
-        </mesh>
-      ))}
-    </group>
-  )
 }
 
 function SoundRings({ status }: { status: MutableRefObject<Record<Agent, Status>> }) {

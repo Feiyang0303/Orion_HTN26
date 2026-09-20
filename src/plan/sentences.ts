@@ -1,16 +1,11 @@
-/* Where one sentence ends and the next begins.
+/* Where one sentence ends and the next begins: a stop's blurb is the first sentence of its article, and the journal
+ * prints the first few.
  *
- * It matters more than it looks, because the Auditor works a sentence at a time: a statement it cannot trace to the
- * source is taken out before it is voiced. Split "…past the George Washington Bridge as part of U.S. Route 9." at
- * the abbreviation and there are two statements, the second of which ("Route 9.") traces to nothing and is removed,
- * and the guide is left saying "…as part of U.S." and stopping. The same cut printed pages that ended at "the
- * Basilica of St."
- *
- * The platform's own segmenter (Intl.Segmenter) does not know abbreviations either: it breaks at "U.S.", "St.",
- * "Frederick L." and "Mt." alike. So this splits at the plain places and then mends: a piece that ends on an
- * abbreviation or an initial did not end there, and is joined to what follows. Joining two real sentences now and
- * then ("…on Wall St. Today…") costs nothing, since a longer sentence is still traced as a whole; breaking one in
- * two costs the second half.
+ * The platform's own segmenter (Intl.Segmenter) does not know abbreviations: it breaks at "U.S.", "St.",
+ * "Frederick L." and "Mt." alike, and a plain split on full stops does the same, which printed pages that ended at
+ * "the Basilica of St." So this splits at the plain places and then mends: a piece that ends on an abbreviation or
+ * an initial did not end there, and is joined to what follows. Joining two real sentences now and then ("…on Wall
+ * St. Today…") costs little; breaking one in two loses its second half.
  */
 
 const TITLES = 'St|Ste|Mt|Ft|Dr|Mr|Mrs|Ms|Prof|Sr|Jr|Gen|Col|Capt|Cmdr|Lt|Sgt|Maj|Adm|Rev|Hon|Gov|Pres|Sen|Rep|Fr|Msgr'
