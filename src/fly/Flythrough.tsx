@@ -59,10 +59,32 @@ function Rig({ plan, begin, quality, onStopReached, onFinish, onHud, control, ti
   const s = useRef({
     t: 0, started: false, reached: -1, finished: false,
     riding: null as null | { leg: number; s: number },      // where the flight is along the leg it is on: the route draws its comet there
-    sweep: 0, beatKey: '', audio: null as HTMLAudioElement | null, wasPaused: false,
+    sweep: 0, beatKey: '', audio: null as HTMLAudioElement | null, audioFailed: false, wasPaused: false,
     inited: false, planAngle: 0, planEye: new THREE.Vector3(), planLook: new THREE.Vector3(),
     look: new THREE.Vector3(), hud: '', highlightKey: '',
   })
+  const audioCache = useRef(new Map<string, HTMLAudioElement>())
+  const audioFor = useCallback((url: string) => {
+    let audio = audioCache.current.get(url)
+    if (!audio) {
+      audio = new Audio(url)
+      audio.preload = 'auto'
+      audioCache.current.set(url, audio)
+      audio.load()
+    }
+    return audio
+  }, [])
+  // Fetch every line while the journal is still open. Starting a download only
+  // when its shot begins can leave the clock moving while the voice buffers.
+  useEffect(() => {
+    const beats = [
+      plan.opening,
+      ...plan.stops.flatMap(stop => stop.beats),
+      ...plan.legs.map(leg => leg.bridge),
+      plan.closing,
+    ]
+    beats.forEach(beat => { if (beat?.audioUrl) audioFor(beat.audioUrl) })
+  }, [plan, audioFor])
   const hl = useRef<THREE.Group>(null)
   const tmp = useMemo(() => ({ b: new THREE.Vector3(), eye: new THREE.Vector3(), lk: new THREE.Vector3() }), [])
 
@@ -159,13 +181,31 @@ function Rig({ plan, begin, quality, onStopReached, onFinish, onHud, control, ti
 
     // ---- clock -----------------------------------------------------------
     if (begin && !st.started) { st.started = true; st.t = 0; st.reached = -1; st.finished = false; beginFlight() }
-    if (!begin && st.started) { st.started = false; st.t = 0; endFlight('exited') }          // book reopened: back to the planning hold
-    if (ctl.restart) { ctl.restart = false; endFlight('restarted'); st.t = 0; st.reached = -1; st.finished = false; st.beatKey = ''; beginFlight() }
+    if (!begin && st.started) {
+      st.audio?.pause(); st.audio = null; st.audioFailed = false; st.beatKey = ''
+      st.started = false; st.t = 0; endFlight('exited')
+    }                                                                                       // book reopened: back to the planning hold
+    if (ctl.restart) {
+      ctl.restart = false; endFlight('restarted')
+      st.audio?.pause(); st.audio = null; st.audioFailed = false
+      st.t = 0; st.reached = -1; st.finished = false; st.beatKey = ''; beginFlight()
+    }
     if (ctl.skip && st.started) {
       ctl.skip = false
       st.t = tl.dwellStart.find(x => x > st.t + 0.05) ?? tl.total
     }
-    if (st.started && !ctl.paused && !st.finished) st.t = Math.min(tl.total, st.t + dt)
+    if (st.started && !ctl.paused && !st.finished) {
+      let next = Math.min(tl.total, st.t + dt)
+      const current = tl.at(st.t)
+      const spoken = activeBeat(current.seg, st.t)
+      /* durationSec is measured when the clip is made, but decoding, browser
+         startup and rounding can make real playback finish later. Never cross
+         the end of a spoken beat until the media element itself has ended;
+         otherwise changing camera shots pauses and discards the last words. */
+      if (spoken && st.audio && !st.audioFailed && !st.audio.ended && next >= spoken.t1)
+        next = spoken.t1 - 0.001
+      st.t = next
+    }
 
     // ---- what is happening -----------------------------------------------
     const { seg, u } = tl.at(st.t)
@@ -194,10 +234,22 @@ function Rig({ plan, begin, quality, onStopReached, onFinish, onHud, control, ti
     // has to say which kind of segment it came from or leg 0 and stop 0 collide.
     const beatKey = beat ? `${seg.kind}${seg.kind === 'travel' ? seg.leg : seg.kind === 'dwell' ? seg.stop : seg.kind === 'hold' ? seg.which : ''}:${beat.index}` : ''
     if (beatKey !== st.beatKey) {
-      st.audio?.pause(); st.audio = null; st.beatKey = beatKey
-      if (beat?.beat.audioUrl) { st.audio = new Audio(beat.beat.audioUrl); st.audio.play().catch(() => {}) }
+      st.audio?.pause(); st.audio = null; st.audioFailed = false; st.beatKey = beatKey
+      if (beat?.beat.audioUrl) {
+        const audio = audioFor(beat.beat.audioUrl)
+        audio.currentTime = 0
+        st.audio = audio
+        audio.play().catch(() => { if (st.audio === audio) st.audioFailed = true })
+      }
     }
-    if (st.audio && ctl.paused !== st.wasPaused) { if (ctl.paused) st.audio.pause(); else st.audio.play().catch(() => {}) }
+    if (st.audio && ctl.paused !== st.wasPaused) {
+      if (ctl.paused) st.audio.pause()
+      else {
+        const audio = st.audio
+        st.audioFailed = false
+        audio.play().catch(() => { if (st.audio === audio) st.audioFailed = true })
+      }
+    }
     st.wasPaused = ctl.paused
 
     // ---- camera ----------------------------------------------------------
@@ -260,6 +312,8 @@ function Rig({ plan, begin, quality, onStopReached, onFinish, onHud, control, ti
 
   useEffect(() => () => {
     s.current.audio?.pause()
+    audioCache.current.forEach(audio => audio.pause())
+    audioCache.current.clear()
     endFlight('left')
     pre.current.loader.clear(tiles.current)
   }, [])
