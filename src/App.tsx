@@ -53,6 +53,11 @@ function App() {
   const [flying, setFlying] = useState<Day | null>(null)
   const [map, setMap] = useState<MapView>(EMPTY_MAP)
   const [globeCity, setGlobeCity] = useState<LatLon | null>(null)
+  /* The city a saved trip's plain view has asked for. It is the trip's own
+     origin, set while that view is open and cleared when it closes, so a
+     saved trip is read over the real city exactly as a fresh one is — and a
+     journal left on the drawn page never buys a tile. */
+  const [journalCity, setJournalCity] = useState<LatLon | null>(null)
   const [crewEvents, setCrewEvents] = useState<CrewEvent[]>([])
   const [crewWorking, setCrewWorking] = useState(false)
   const audioUrls = useRef<string[]>([])
@@ -94,7 +99,7 @@ function App() {
   }, [])
 
   const onCrew = useCallback((events: CrewEvent[], working: boolean) => { setCrewEvents(events); setCrewWorking(working) }, [])
-  const goHome = useCallback(() => { setResume(null); setLive(null); setKickoff(null); setFlying(null); setMap(EMPTY_MAP); setCrewEvents([]); setCrewWorking(false); setGlobeCity(null); setPhase('kickoff') }, [])
+  const goHome = useCallback(() => { setResume(null); setLive(null); setKickoff(null); setFlying(null); setMap(EMPTY_MAP); setCrewEvents([]); setCrewWorking(false); setGlobeCity(null); setJournalCity(null); setPhase('kickoff') }, [])
   const openJournal = useCallback((from: 'kickoff' | 'studio') => { setJournalFrom(from); setPhase('journal') }, [])
   const startFly = useCallback((day: Day, from: 'studio' | 'journal', saved?: Saved) => {
     void (async () => {
@@ -120,7 +125,9 @@ function App() {
   // put on them, so they arrive well before they are needed without competing with the globe.
   const onGlobe = phase === 'kickoff' || (phase === 'studio' && crewWorking)
   const showCity = !onGlobe
-  const cityWanted = inFlight || (phase === 'studio' && (map.pins.length > 0 || !crewWorking))
+  const cityWanted = inFlight || !!journalCity || (phase === 'studio' && (map.pins.length > 0 || !crewWorking))
+  // A journal open on its plain view puts its own trip's city under the panel.
+  const groundOrigin = journalCity ?? origin
 
   return (
     <ErrorBoundary>
@@ -128,7 +135,7 @@ function App() {
         <div className="orion-ground" style={{ opacity: showCity ? 1 : 0 }}>
           <Flythrough
             plan={inFlight ? flying : null}
-            origin={cityWanted ? origin : null}
+            origin={cityWanted ? groundOrigin : null}
             map={map}
             begin={phase === 'flying'}
             onStopReached={() => {}}
@@ -136,6 +143,9 @@ function App() {
             onExit={() => setPhase(flightFrom)}
           />
         </div>
+        {/* The veil stays for the journal's plain view, because the studio has it
+            too and this is meant to be the same picture — lifting it here would
+            make a saved trip brighter than the one it was saved from. */}
         <div className="orion-veil" style={{ opacity: inFlight || !showCity ? 0 : 1 }} />
 
         <AnimatePresence>
@@ -170,6 +180,7 @@ function App() {
                 onPlan={goHome}
                 onOpenTrip={openSaved}
                 onFly={flySavedDay}
+                onCity={setJournalCity}
               />
             </motion.div>
           )}

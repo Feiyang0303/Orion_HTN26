@@ -47,7 +47,15 @@
    fixed-position descendants — so the panel pins to the journal's own rect
    rather than the window's. They are the same rectangle, and it means the
    panel cannot escape the journal. Only the handwriting is taken back off. */
-.jn.is-plain { justify-content: flex-start; padding-bottom: 20px; }
+/* On the drawn page the journal darkens and blurs whatever is behind it,
+   because the sheet is the subject. The plain view is the opposite: the panel
+   is glass and the city is meant to be seen through and around it, exactly as
+   in the studio. So the veil comes off here — and with it the backdrop-filter,
+   which also stops the journal being the containing block for the panel. */
+.jn.is-plain {
+  justify-content: flex-start; padding-bottom: 20px;
+  background: none; backdrop-filter: none;
+}
 .jn-plain { font-family: var(--ui); color: var(--ink); }
 .jn-days { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: center; }
 .jn-flip { transform: rotate(180deg); }

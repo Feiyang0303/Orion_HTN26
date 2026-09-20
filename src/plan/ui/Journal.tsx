@@ -3,7 +3,7 @@ import JournalPage from './JournalPage'
 import TripView from './TripView'
 import { SketchDefs } from './Sketches'
 import Icon from '../../ui/Icon'
-import type { Day, Trip } from '../../types'
+import type { Day, LatLon, Trip } from '../../types'
 import { forecast, type DayWeather } from '../weather'
 import { writeMemo, type Note } from '../memo'
 import './journal-page.css'
@@ -21,15 +21,29 @@ import './journal-page.css'
  * watercolour will ever show as well. Whichever is open, it is one trip
  * underneath, so the day you were looking at is the day you get back. */
 
-export default function Journal({ trip, onFly, onClose, onHome }: {
+export default function Journal({ trip, onFly, onClose, onHome, onCity }: {
   trip: Trip
   onFly: (day: Day) => void
   onClose: () => void
   onHome: () => void
+  /** The city this trip is in, while the plain view is open — so whatever is
+      behind the journal can put the real city there, which is what the panel
+      was designed to sit on. Null closes it again: the drawn page covers the
+      screen with paper, so loading a city under it would be tiles bought for
+      nobody. */
+  onCity?: (at: LatLon | null) => void
 }) {
   const [at, setAt] = useState(0)
   const [open, setOpen] = useState(false)
   const [view, setView] = useState<'paper' | 'plain'>('paper')
+
+  /* Ask for the city only while the plain view is showing, and give it back on
+     the way out, so closing the journal does not leave a city loaded under a
+     screen that has moved on. */
+  useEffect(() => {
+    onCity?.(view === 'plain' ? trip.origin : null)
+    return () => onCity?.(null)
+  }, [view, trip.origin, onCity])
   /* The plain reader has day tabs of its own and can show the whole trip at
      once, which the paper page cannot, so it keeps its own selection. */
   const [plainDay, setPlainDay] = useState<number | 'all'>('all')

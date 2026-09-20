@@ -20,10 +20,12 @@ function savedName() {
 /** The volume that binds every saved trip together. Opening a chapter hands the
  * existing animated paper journal the full trip, so a saved day is exactly the
  * same page (and the same flight) as it was when the crew first made it. */
-export default function JournalLibrary({ onClose, onPlan, onOpenTrip, onFly }: {
+export default function JournalLibrary({ onClose, onPlan, onOpenTrip, onFly, onCity }: {
   onClose: () => void
   onPlan: () => void
   onOpenTrip: (id: string) => void
+  /** Passed through to the journal: the city to show behind its plain view. */
+  onCity?: (at: import('../../types').LatLon | null) => void
   onFly: (saved: Saved, day: Day) => void
 }) {
   const [trips, setTrips] = useState<Summary[]>([])
@@ -95,6 +97,7 @@ export default function JournalLibrary({ onClose, onPlan, onOpenTrip, onFly }: {
         onFly={day => onFly(selected, day)}
         onHome={onPlan}
         onClose={() => setSelected(null)}
+        onCity={onCity}
       />
     )
   }
