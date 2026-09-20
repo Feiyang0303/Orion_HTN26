@@ -114,6 +114,10 @@ export default function JournalLibrary({ onClose, onPlan, onOpenTrip, onFly, onC
       <motion.div className="jl-volume" initial={{ opacity: 0, y: 28, rotateX: 5 }} animate={{ opacity: 1, y: 0, rotateX: 0 }} exit={{ opacity: 0, y: 18 }} transition={{ duration: .75, ease: [.22, .9, .24, 1] }}>
         <div className="jl-spine" aria-hidden><span>Orion</span></div>
         <header className="jl-cover">
+          {/* The furniture of a bound book: gilt corners inside the frame and a
+              ribbon marker hanging over the fore-edge. Both are decoration. */}
+          <i className="jl-gilt" aria-hidden />
+          <i className="jl-ribbon" aria-hidden />
           <button type="button" className="jl-close" onClick={onClose} aria-label="Close journal"><Icon name="close" size={18} /></button>
           <p className="jl-kicker">Collected journeys</p>
           <h1>{possessive} travel journal</h1>
@@ -160,10 +164,14 @@ export default function JournalLibrary({ onClose, onPlan, onOpenTrip, onFly, onC
                       {/* The city, drawn. A shelf of chapters that differ only in
                           the word at the top is a list; a landmark is what makes
                           one of them findable at a glance. */}
-                      <Sketch name={cityMark(trip.city, index)} size={126} className="jl-mark"
-                        wash="rgba(150,101,61,.30)" wash2="rgba(126,62,43,.20)" ink="rgba(74,56,36,.55)" />
+                      <Sketch name={cityMark(trip.city, index)} size={142} className="jl-mark"
+                        wash="rgba(150,101,61,.34)" wash2="rgba(126,62,43,.22)" ink="rgba(74,56,36,.6)" />
+                      {/* A postcard is held in with corners, and a stamp has been cancelled. */}
+                      <i className="jl-corner is-tl" aria-hidden />
+                      <i className="jl-corner is-br" aria-hidden />
                       <span className="jl-tab">Journey {String(index + 1).padStart(2, '0')}</span>
                       <span className="jl-stamp">{new Date(trip.updatedAt).getFullYear()}</span>
+                      <i className="jl-cancel" aria-hidden />
                       <span className="jl-city">{trip.city}</span>
                       <span className="jl-meta">{trip.days === 1 ? 'One day' : `${trip.days} days`} · {trip.places} places</span>
                       <span className="jl-date">Last written {date(trip.updatedAt)}</span>
