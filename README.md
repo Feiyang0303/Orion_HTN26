@@ -32,11 +32,9 @@ If you don't like something, type that in ("drop the museum, slower morning") an
 
 ![A day in Honolulu](docs/screenshots/04-day-in-honolulu.jpg)
 
-![Washington Place](docs/screenshots/05-washington-place.jpg)
 
 Your guide is a small magic goose. It talks you through each stop, and you can interrupt it with your voice to ask about what you're looking at.
 
-![Flight over Honolulu](docs/screenshots/06-flight-overview.jpg)
 
 ![On the route](docs/screenshots/07-flight-route.jpg)
 
