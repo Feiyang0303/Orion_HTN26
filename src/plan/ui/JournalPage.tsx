@@ -444,10 +444,15 @@ export default function JournalPage({ day, trip, open, onFly, weather, notes }: 
 
         {/* --------------------------------------------------- the title */}
         <header className="jp-title" style={{ ['--i' as string]: 0 }}>
-          <div className="jp-title-marks" aria-hidden>
-            {heroes.map((s, i) => <Sketch key={s.id} name={sketchFor(s.name, i)} size={44} wash={tones[i % 3]} ink={pal.ink} />)}
+          {/* The name and its three small drawings in one row, so the drawings
+              start where the name ends — a long name pushes them along, a very
+              long one sends them under, and nothing sits on the letters. */}
+          <div className="jp-title-row">
+            <h1 className="jp-city">{trip.city}</h1>
+            <div className="jp-title-marks" aria-hidden>
+              {heroes.map((s, i) => <Sketch key={s.id} name={sketchFor(s.name, i)} size={44} wash={tones[i % 3]} ink={pal.ink} />)}
+            </div>
           </div>
-          <h1 className="jp-city">{trip.city}</h1>
           <p className="jp-brush">{trip.city} {trip.days.length === 1 ? 'one-day trip' : `${trip.days.length}-day trip`}{trip.days.length > 1 ? ` · day ${day.number}` : ''}{day.title && day.title !== 'The day' ? ` · ${day.title.toLowerCase()}` : ''}</p>
           <span className="jp-title-wash" aria-hidden />
         </header>

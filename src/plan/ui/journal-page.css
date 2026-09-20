@@ -214,14 +214,17 @@
 }
 @keyframes jp-settle { to { opacity: 1; transform: none; } }
 
-.jp-title { position: absolute; left: 3%; top: 2.6%; z-index: 4; width: 23%; }
+/* The title box grows with the name rather than being cut to a fixed width:
+   "Tokyo" and "Frederick Horsman Varley" are the same element. */
+.jp-title { position: absolute; left: 3%; top: 2.6%; z-index: 4; width: max-content; max-width: 40%; }
+.jp-title-row { display: flex; align-items: flex-start; flex-wrap: wrap; column-gap: calc(var(--u) * .5); row-gap: 2px; }
 .jp-title-wash {
   position: absolute; left: -14px; top: 6px; width: 250px; height: 82px; z-index: -1; border-radius: 40% 55% 45% 50% / 55% 45% 55% 45%;
   background: var(--wash-day, #d9b98a); opacity: .38; filter: blur(1px); transform: rotate(-3deg);
 }
-.jp-city { margin: 0; font-family: 'Caveat', cursive; font-weight: 700; font-size: calc(var(--u) * 4.38); line-height: .9; letter-spacing: .01em; color: var(--line); }
+.jp-city { margin: 0; font-family: 'Caveat', cursive; font-weight: 700; font-size: calc(var(--u) * 4.38); line-height: .9; letter-spacing: .01em; color: var(--line); white-space: nowrap; }
 .jp-brush { margin: 3px 0 0 3px; font-family: 'Nanum Brush Script', 'Caveat', cursive; font-size: calc(var(--u) * 1.85); line-height: 1; color: var(--ink-day, #8a5a2b); }
-.jp-title-marks { position: absolute; right: -6%; top: 2px; display: flex; gap: 2px; opacity: .85; }
+.jp-title-marks { display: flex; gap: 2px; opacity: .85; flex: none; padding-top: 2px; }
 
 .jp-stamp {
   position: absolute; right: 3.2%; top: 2.6%; z-index: 4; padding: 8px 10px 6px; transform: rotate(7deg);
