@@ -1,5 +1,5 @@
 import { report, observeCrew } from '../telemetry'
-import type { Beat, Leg, Plan, Stop, Target, Wish } from '../types'
+import type { Beat, Direction, Leg, Plan, Stop, Target, Wish } from '../types'
 import { HHMM, MINS, TRANSPORT_LABEL } from '../types'
 import type { Agent, CrewEvent } from './events'
 import { verdict } from './events'
@@ -40,6 +40,10 @@ export type PipelineOptions = {
       days that may never be flown; a revision speaks only what it rewrote (`written`). Whatever this misses, because
       a clip failed or the trip is older than this, is spoken when its day first flies (tts.voiceDay). */
   voice?: boolean
+  /** How the Director gets to look at the city (the app gives fly/directing's `direct`). It resolves with where each
+      shot of the day should be taken from: everything, or what had been chosen when `until` settled, or null if the
+      city could not be looked at. Without it (the fixture script has no city to look at) nothing is directed here. */
+  direct?: (plan: Plan, opts: { until: Promise<unknown>; note?: (subject: string, nth: number, total: number) => void }) => Promise<Direction | null>
   signal?: AbortSignal
 }
 

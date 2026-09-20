@@ -5,7 +5,7 @@ import type { Agent, CrewEvent, Issue } from '../plan/events'
    are agents (a model wrote the sentence) and which are tools (code counted it):
    a person deserves to know which is which. */
 
-export type Prop = 'globe' | 'spyglass' | 'compass' | 'clock' | 'lens' | 'quill' | 'stamp' | 'mic'
+export type Prop = 'globe' | 'spyglass' | 'compass' | 'clock' | 'lens' | 'quill' | 'stamp' | 'mic' | 'camera'
 export type Hat = 'cap' | 'hood' | 'beret' | 'bun' | 'band' | 'none'
 
 export type Member = {
@@ -28,6 +28,7 @@ export const CREW: Member[] = [
   { id: 'Narrator',   name: 'Narrator',     kind: 'agent', colour: '#c8a2ff', role: 'Writing what the guide will say',      prop: 'quill',    hat: 'beret', skin: '#d9ad86' },
   { id: 'Auditor',    name: 'Auditor',      kind: 'tool',  colour: '#a6e86b', role: 'Tracing every sentence to a source',   prop: 'stamp',    hat: 'cap',   skin: '#efd2b6' },
   { id: 'Voice',      name: 'Voice',        kind: 'agent', colour: '#ff9ad5', role: 'Recording the narration',              prop: 'mic',      hat: 'none',  skin: '#c08d69' },
+  { id: 'Director',   name: 'Director',     kind: 'agent', colour: '#ff9a4d', role: 'Walking round each place to choose the shot', prop: 'camera', hat: 'beret', skin: '#e0b892' },
 ]
 export const MEMBER = Object.fromEntries(CREW.map(m => [m.id, m])) as Record<Agent, Member>
 

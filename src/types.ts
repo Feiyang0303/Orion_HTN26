@@ -233,9 +233,17 @@ export type Plan = {
       about the day as a whole. Empty if it could not be written. */
   preface: string
   generatedAt: string        // ISO
+  /** Where the Director chose to take each shot from, having looked (fly/director.vision.ts). Absent on a plan
+      nobody has looked at, and whatever it does not cover is looked at when the day is first flown. */
+  direction?: Direction
   /** Honest labelling for the UI: which parts were code, which were models. */
   provenance: { router: 'code'; timekeeper: 'code'; scout: string; critic: string; narrator: string; tts: string }  // e.g. "elevenlabs:eleven_v3"
 }
+
+/** The Director's choices for one day. `for` is the stops they were made for, in order: the choices are keyed by a
+    stop's position, so they hold only for as long as the day is still those stops in that order. Each choice ranks
+    the sides a shot could be taken from (indices into shots.CANDIDATE_SIDES), best first, and says why. */
+export type Direction = { for: string; choices: Record<string, { ranking: number[]; reason: string }> }
 
 /* ---- the trip ------------------------------------------------------------ */
 

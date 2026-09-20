@@ -31,6 +31,8 @@ const SCRIPT: [number, CrewEvent][] = [
   [22.0, S('Narrator', 'agent', 'done', '5 pages written')],
   [22.2, S('Voice', 'agent', 'working', 'Recording 12 lines')],
   [26.0, S('Voice', 'agent', 'done', '12 lines recorded')],
+  [26.2, S('Director', 'agent', 'working', 'Day 1: walking round the Louvre (3 of 14)')],
+  [33.0, S('Director', 'agent', 'done', 'Day 1: all 14 shots chosen by looking')],
 ]
 const PLACES = [[48.8584, 2.2945], [48.8606, 2.3376], [48.853, 2.3499], [48.8738, 2.295], [48.8867, 2.3431], [48.86, 2.3266], [48.8566, 2.3122]].map(([lat, lon]) => ({ lat, lon }))
 

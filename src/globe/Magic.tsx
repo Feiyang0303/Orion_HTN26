@@ -17,6 +17,7 @@ import { MEMBER, type Status } from '../crew/roster'
  *   Narrator    words rise from the city as a spiral of light
  *   Auditor     hexagonal shields flash out and are gone
  *   Voice       sound rings roll outward
+ *   Director    a viewfinder walks round each place, side by side, and flashes when it takes one
  *
  * They are pure decoration in the sense that nothing depends on them, and pure
  * information in the sense that every one of them is on exactly when its step is. */
@@ -51,6 +52,7 @@ export default function CityFX({ status, places }: { status: MutableRefObject<Re
       <Words status={status} />
       <Shields status={status} />
       <SoundRings status={status} />
+      <Viewfinder status={status} spots={spots} />
     </group>
   )
 }
@@ -257,6 +259,34 @@ function SoundRings({ status }: { status: MutableRefObject<Record<Agent, Status>
           <ringGeometry args={[.94, 1, 56]} /><meshBasicMaterial color={c} transparent side={THREE.DoubleSide} blending={add} depthWrite={false} />
         </mesh>
       ))}
+    </group>
+  )
+}
+
+/** The Director's: an upright frame that stands on each side of a place in turn, facing it, as the real one does. */
+function Viewfinder({ status, spots }: { status: MutableRefObject<Record<Agent, Status>>; spots: THREE.Vector3[] }) {
+  const SIDES = 6, PER_SIDE = .45
+  const g = useRef<THREE.Group>(null)
+  const frame = useRef<THREE.Mesh>(null), flash = useRef<THREE.Mesh>(null)
+  const { tick } = useWork(status, 'Director')
+  const c = MEMBER.Director.colour
+  const goal = useMemo(() => new THREE.Vector3(), [])
+  useFrame(({ clock }, dt) => {
+    const w = tick(dt), t = clock.elapsedTime
+    g.current!.visible = w > .02
+    const n = Math.floor(t / PER_SIDE), u = (t / PER_SIDE) % 1
+    const p = spots.length ? spots[Math.floor(n / SIDES) % spots.length] : goal.set(0, 0, 0)
+    const a = (n % SIDES) / SIDES * Math.PI * 2
+    g.current!.position.lerp(goal.set(p.x + Math.cos(a) * .075, .06, p.z + Math.sin(a) * .075), .2)
+    g.current!.rotation.y = Math.atan2(-Math.cos(a), -Math.sin(a))          // the frame's face turned to the place
+    ;(frame.current!.material as THREE.MeshBasicMaterial).opacity = .9 * w
+    ;(flash.current!.material as THREE.MeshBasicMaterial).opacity = Math.max(0, 1 - u * 5) * .55 * w   // the shutter
+  })
+  return (
+    <group ref={g}>
+      {/* a four-sided ring is a diamond until it is turned; it is widened after turning, or it would shear */}
+      <group scale={[1.3, 1, 1]}><mesh ref={frame} rotation={[0, 0, Math.PI / 4]}><ringGeometry args={[.04, .046, 4]} /><meshBasicMaterial color={c} transparent side={THREE.DoubleSide} blending={add} depthWrite={false} /></mesh></group>
+      <mesh ref={flash} scale={[1.3, 1, 1]}><planeGeometry args={[.056, .056]} /><meshBasicMaterial color={c} transparent side={THREE.DoubleSide} blending={add} depthWrite={false} /></mesh>
     </group>
   )
 }

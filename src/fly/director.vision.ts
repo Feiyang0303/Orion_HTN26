@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import type { Plan } from '../types'
+import type { Direction, Plan } from '../types'
 import type { TilesHandle } from './GoogleTiles'
 import type { GroundPlacer } from './ground'
 import { keyStop } from './anchors'
@@ -19,8 +19,13 @@ import { log, report } from '../telemetry'
  * still framed and checked for line of sight by the arithmetic), renders a small picture from
  * each, and shows them to a model that can see, with the line the guide will be saying. The
  * model ranks them. The best is the side the shot is taken from; a second line about the same
- * thing takes the next best, so the camera still moves. The choice is remembered with the trip,
- * because it costs a call and depends on nothing that changes.
+ * thing takes the next best, so the camera still moves.
+ *
+ * It is one of the crew, and does this in the planning stage with the rest of them: the city is
+ * already loading behind the crew, and DirectorDesk runs this there, one day at a time, as each is
+ * written. What it chooses is kept on the plan (`direction`) and so with the trip, because it costs
+ * a call and depends on nothing that changes. The flight runs it too, for whatever planning did
+ * not get to: a trip older than this, a day rebuilt by the editor, a place that ran out of time.
  *
  * Nothing here can make the flight worse than it was: it only ever chooses between positions
  * the arithmetic already allows, a place nobody has looked at yet is shot the old way, and a
@@ -45,25 +50,32 @@ Do not describe the city or add facts. The reason is about the picture.`
 
 type Job = { key: string; stop: number; target?: string; beats: (number | null)[]; name: string; about: string; line: string }
 type Pose = { eye: THREE.Vector3; look: THREE.Vector3 }
-type Verdict = { ranking: number[]; reason: string }
+type Verdict = Direction['choices'][string]
 
 export class VisionDirector {
   /** Why each chosen shot was chosen, keyed like the shot: shown with the shot, so the choice can be seen being made. */
   readonly reasons = new Map<string, string>()
   /** Called when a choice lands, so whatever was worked out from the old positions can be worked out again. */
   onChoice: () => void = () => {}
+  /** Called as it starts to walk round something, with that thing's name and which of `total` it is (from 1). */
+  onLook: (subject: string, nth: number) => void = () => {}
+  /** How many things there were to look at when it began, not counting those already chosen. */
+  readonly total: number
 
   private jobs: Job[]
   private staged: { job: Job; poses: Pose[]; cams: THREE.PerspectiveCamera[]; at: number } | null = null
   private asking = 0
   private at: number | null = null
   private readonly store: string
+  private readonly stopsKey: string
+  private readonly verdicts: Direction['choices'] = {}
   private readonly target = new THREE.WebGLRenderTarget(W, H)
   private readonly pixels = new Uint8Array(W * H * 4)
   private readonly canvas = Object.assign(document.createElement('canvas'), { width: W, height: H })
   private readonly toSrgb = Uint8ClampedArray.from({ length: 256 }, (_, v) => { const c = v / 255; return 255 * (c <= .0031308 ? c * 12.92 : 1.055 * c ** (1 / 2.4) - .055) })
 
-  constructor(private plan: Plan, tl: Timeline, private shots: Shots, private ground: GroundPlacer) {
+  /** `widesFirst`: look at every stop whole before any one thing at a stop, for when there may not be time for it all. */
+  constructor(private plan: Plan, tl: Timeline, private shots: Shots, private ground: GroundPlacer, opts: { widesFirst?: boolean } = {}) {
     // One job per thing the camera will look at: each stop seen whole, then each thing at it the guide speaks about.
     this.jobs = []
     for (const seg of tl.segments) {
@@ -77,13 +89,19 @@ export class VisionDirector {
         this.jobs.push({ key, stop: seg.stop, target: b.beat.targetId, beats: [b.index], name: t?.name ?? stop.name, about: t?.summary ?? stop.blurb ?? '', line: b.beat.text })
       }
     }
-    // What was chosen for this day before is chosen still.
-    this.store = `orion.director:${plan.id}:${plan.stops.map(s => s.id).join(',')}`
-    try {
-      const kept = JSON.parse(localStorage.getItem(this.store) ?? '{}') as Record<string, Verdict>
-      this.jobs = this.jobs.filter(job => { const v = kept[job.key]; if (v) this.apply(job, v); return !v })
-    } catch { /* nothing kept, or nowhere to keep it */ }
+    if (opts.widesFirst) this.jobs = [...this.jobs.filter(j => j.beats[0] === null), ...this.jobs.filter(j => j.beats[0] !== null)]
+    // What was chosen for this day before is chosen still: by the crew while it was planned (kept on the plan), or
+    // in a flight on this machine (kept here). Both are keyed by position, so they hold only for these stops in this order.
+    this.stopsKey = plan.stops.map(s => s.id).join(',')
+    this.store = `orion.director:${plan.id}:${this.stopsKey}`
+    let kept: Direction['choices'] = plan.direction?.for === this.stopsKey ? { ...plan.direction.choices } : {}
+    try { kept = { ...JSON.parse(localStorage.getItem(this.store) ?? '{}') as Direction['choices'], ...kept } } catch { /* nothing kept here, or nowhere to keep it */ }
+    this.jobs = this.jobs.filter(job => { const v = kept[job.key]; if (v) this.apply(job, v); return !v })
+    this.total = this.jobs.length
   }
+
+  /** Everything chosen so far, in the form the plan keeps it. */
+  get direction(): Direction { return { for: this.stopsKey, choices: { ...this.verdicts } } }
 
   get waiting() { return this.jobs.length + (this.staged ? 1 : 0) + this.asking }
 
@@ -120,6 +138,7 @@ export class VisionDirector {
       return c
     })
     this.staged = { job, poses, cams, at: now }
+    this.onLook(job.name, this.total - this.jobs.length)
   }
 
   /** Give the loader its cameras back: the flight is over, or the day has changed. */
@@ -164,6 +183,7 @@ export class VisionDirector {
   }
 
   private apply(job: Job, v: Verdict) {
+    this.verdicts[job.key] = v
     const best = v.ranking.slice(0, SIDES_USED)
     job.beats.forEach((b, k) => {
       const key = shotKey(job.stop, b)
