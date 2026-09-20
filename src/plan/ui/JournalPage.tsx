@@ -53,7 +53,7 @@ function projector(points: LatLon[]) {
   const xs = lons.map(l => l * kx), ys = lats
   const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys)
   const spanX = Math.max(maxX - minX, 0.004), spanY = Math.max(maxY - minY, 0.004)
-  const s = Math.min((MAP.x1 - MAP.x0) / spanX, (MAP.y1 - MAP.y0) / spanY) * 0.78
+  const s = Math.min((MAP.x1 - MAP.x0) / spanX, (MAP.y1 - MAP.y0) / spanY) * 0.84
   const cx = (MAP.x0 + MAP.x1) / 2, cy = (MAP.y0 + MAP.y1) / 2
   const mx = (minX + maxX) / 2, my = (minY + maxY) / 2
   return (p: LatLon): Pt => ({ x: cx + (p.lon * kx - mx) * s, y: cy - (p.lat - my) * s })
@@ -93,28 +93,93 @@ export default function JournalPage({ day, trip, open, onFly, weather, notes }: 
       ...day.legs.flatMap(l => l.polyline), ...(day.approach?.polyline ?? []), ...(day.back?.polyline ?? []),
     ]
     if (!all.length) return null
-    const P = projector(all)
+    const P0 = projector(all)
+
+    /* The map is a sketch, not a survey, and it is allowed to lie a little
+       about distance so that it can tell the truth about order. A day whose
+       hotel, first stop and second stop are all within four hundred metres,
+       with the last stop two kilometres off, projects to three pins on top of
+       each other and one far away — and nothing placed around a pile of pins
+       can be read. So the pins are eased apart until none is closer than
+       PIN_GAP to another, and every other point on the map — the path, the
+       tables — is carried along with the pins nearest to it, so the path
+       still runs into the pin it runs into. Far from any pin nothing moves. */
+    const PIN_GAP = 84, REACH = 120
+    const anchorsLL: LatLon[] = [...day.stops, ...(bed ? [bed] : [])]
+    const a0 = anchorsLL.map(P0)
+    const shift = a0.map(() => ({ x: 0, y: 0 }))
+    for (let pass = 0; pass < 80; pass++) {
+      let moved = false
+      for (let i = 0; i < a0.length; i++) for (let j = i + 1; j < a0.length; j++) {
+        const ax = a0[i].x + shift[i].x, ay = a0[i].y + shift[i].y
+        const bx = a0[j].x + shift[j].x, by = a0[j].y + shift[j].y
+        let dx = bx - ax, dy = by - ay
+        let d = Math.hypot(dx, dy)
+        if (d >= PIN_GAP) continue
+        if (d < 1e-3) { dx = 1; dy = 0.6; d = Math.hypot(dx, dy) }
+        const push = (PIN_GAP - d) / 2 + 0.5
+        shift[i].x -= dx / d * push; shift[i].y -= dy / d * push
+        shift[j].x += dx / d * push; shift[j].y += dy / d * push
+        moved = true
+      }
+      if (!moved) break
+    }
+    const warp = (q: Pt): Pt => {
+      let sx = 0, sy = 0, sw = 0
+      for (let i = 0; i < a0.length; i++) {
+        const w = Math.exp(-((q.x - a0[i].x) ** 2 + (q.y - a0[i].y) ** 2) / (2 * REACH * REACH))
+        sx += shift[i].x * w; sy += shift[i].y * w; sw += w
+      }
+      // a point far from every pin is carried by nothing; a point at a pin is carried by that pin
+      const k = sw < 1e-6 ? 0 : Math.min(1, sw) / sw
+      return { x: q.x + sx * k, y: q.y + sy * k }
+    }
+    const P = (ll: LatLon): Pt => warp(P0(ll))
     const legs = [...(day.approach ? [day.approach] : []), ...day.legs, ...(day.back ? [day.back] : [])]
     const route = legs.map(l => wobble(l.polyline.map(P), r, 1.2))
+    const stops = day.stops.map((s, i) => ({ ...P(s), s, i, sketch: sketchFor(s.name, i) }))
+    const home = bed ? { ...P(bed), name: bed.name } : null
+    /* The meal marks: a table is chosen for being a minute from a stop, so
+       its mark lands on that stop's pin every time. It is stepped away from
+       whatever it is on — the pin, the hotel, another mark — just far enough
+       to be its own thing, in the direction it already leans. */
+    const marks: Pt[] = [...stops, ...(home ? [home] : [])]
+    const tables = day.tables.map(t => {
+      const q = P(t)
+      for (let pass = 0; pass < 40; pass++) {
+        let moved = false
+        for (const o of marks) {
+          let dx = q.x - o.x, dy = q.y - o.y, d = Math.hypot(dx, dy)
+          if (d >= 34) continue
+          if (d < 1e-3) { dx = 0.8; dy = 0.6; d = 1 }
+          q.x += dx / d * (34 - d + 0.5); q.y += dy / d * (34 - d + 0.5)
+          moved = true
+        }
+        if (!moved) break
+      }
+      marks.push(q)
+      return { ...q, t }
+    })
     /* A way-glyph per leg that has room for one: beside the path's middle,
-       a step off it so it does not sit on the stones or the pins. */
+       a step off it so it does not sit on the stones or the pins. It tries
+       either side of the path, near and then further out, and is not drawn
+       at all if every one of those is on a pin, a mark or another badge:
+       its minutes are in the schedule either way. */
     const glyphs: { x: number; y: number; mode: Transport; min: number }[] = []
+    const onSomething = (g: Pt) =>
+      marks.some(o => Math.abs(o.x - g.x) < 52 && Math.abs(o.y - g.y) < 36)
+      || glyphs.some(o => Math.abs(o.x - g.x) < 78 && Math.abs(o.y - g.y) < 44)
     for (const l of legs) {
       const a = P(l.polyline[0]), b = P(l.polyline[l.polyline.length - 1]), m = P(mid(l.polyline))
       const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy)
       if (len < 70) continue
       const nx = -dy / len, ny = dx / len
-      const g = { x: m.x + nx * 18, y: m.y + ny * 18, mode: l.transport, min: Math.round(l.durationSec / 60) }
-      /* Two legs that double back on each other have their middles in nearly
-         the same place, and two badges printed on top of one another say less
-         than one does. The minutes are in the schedule either way, so the
-         second is simply not drawn. */
-      if (glyphs.some(o => Math.abs(o.x - g.x) < 78 && Math.abs(o.y - g.y) < 44)) continue
-      glyphs.push(g)
+      for (const step of [18, -18, 40, -40]) {
+        const g = { x: m.x + nx * step, y: m.y + ny * step, mode: l.transport, min: Math.round(l.durationSec / 60) }
+        if (onSomething(g)) continue
+        glyphs.push(g); break
+      }
     }
-    const stops = day.stops.map((s, i) => ({ ...P(s), s, i, sketch: sketchFor(s.name, i) }))
-    const home = bed ? { ...P(bed), name: bed.name } : null
-    const tables = day.tables.map(t => ({ ...P(t), t }))
 
     // Streets: a loose, seeded grid the path can be seen to run along.
     const streets: string[] = []
@@ -175,7 +240,7 @@ export default function JournalPage({ day, trip, open, onFly, weather, notes }: 
       ...stops.map(st => at(st, 46, 46)),                     // the numbered pins
       ...tables.map(t => at(t, 36, 36)),                      // the meal marks
       ...(home ? [at(home, 40, 40)] : []),
-      ...glyphs.map(g => at(g, 70, 40)),                      // footprints and minutes
+      ...glyphs.map(g => at(g, 74, 42)),                      // footprints and minutes
     ]
     /* Measured, not guessed: reserving less than a thing occupies is the same
        as not reserving it. The figure and its two lines of caption come to
@@ -219,7 +284,7 @@ export default function JournalPage({ day, trip, open, onFly, weather, notes }: 
       const b = clamp({ x: x - w / 2, y: y - h / 2 - 104, w, h })
       loose.push(b); return b
     }
-    const homeBox = home ? put(home.x, home.y, 140, 124) : null
+    const homeBox = home ? put(home.x, home.y, 164, 156) : null
     const stopBoxes = stops.map(st => put(st.x, st.y))
 
     /* Pass two: unpick whatever is still on top of something.
