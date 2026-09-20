@@ -4,7 +4,7 @@ import { deleteTrip, listTrips, loadTrip, sendToHeadset, type Saved, type Summar
 import type { Day } from '../../types'
 import Icon from '../../ui/Icon'
 import Journal from './Journal'
-import { Sketch, SketchDefs, cityMark } from './Sketches'
+import { Sketch, SketchDefs, Sticker, dressCover } from './Sketches'
 import './journal-library.css'
 
 const NAME_KEY = 'orion.journal-name'
@@ -158,11 +158,22 @@ export default function JournalLibrary({ onClose, onPlan, onOpenTrip, onFly, onC
                 {trips.map((trip, index) => (
                   <motion.li key={trip.id} layout initial={{ opacity: 0, y: 22 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, x: 30 }} transition={{ delay: Math.min(index * .07, .35), duration: .5 }} style={{ ['--chapter' as string]: index }}>
                     <button type="button" className="jl-chapter" onClick={() => void openChapter(trip.id)} disabled={opening === trip.id}>
-                      {/* The city, drawn. A shelf of chapters that differ only in
-                          the word at the top is a list; a landmark is what makes
-                          one of them findable at a glance. */}
-                      <Sketch name={cityMark(trip.city, index)} size={142} className="jl-mark"
-                        wash="rgba(150,101,61,.34)" wash2="rgba(126,62,43,.22)" ink="rgba(74,56,36,.6)" />
+                      {/* The city, drawn — and dressed. The large landmark low in
+                          the corner, a smaller one elsewhere, and a few stickers,
+                          all chosen and placed by the trip's own id so no two
+                          covers match and a cover never changes under you. */}
+                      {dressCover(trip.city, trip.id, index).map((piece, k) => piece.kind === 'mark'
+                        ? (
+                          <span key={k} className={k === 0 ? 'jl-mark-at' : 'jl-mark-at is-second'} aria-hidden
+                            style={k === 0 ? undefined : { left: `${piece.x}%`, top: `${piece.y}%`, ['--tilt' as string]: `${piece.tilt}deg` }}>
+                            <Sketch name={piece.name} size={Math.round(piece.size)} className="jl-mark"
+                              wash="rgba(150,101,61,.34)" wash2="rgba(126,62,43,.22)" ink="rgba(74,56,36,.6)" />
+                          </span>
+                        ) : (
+                          <Sticker key={k} name={piece.name} size={piece.size} className="jl-sticker"
+                            wash={piece.tint} ink="rgba(60,40,22,.62)"
+                            style={{ left: `${piece.x}%`, top: `${piece.y}%`, ['--tilt' as string]: `${piece.tilt}deg`, ['--k' as string]: k }} />
+                        ))}
                       {/* A postcard is held in with corners, and a stamp has been cancelled. */}
                       <i className="jl-corner is-tl" aria-hidden />
                       <i className="jl-corner is-br" aria-hidden />

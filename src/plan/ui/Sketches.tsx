@@ -12,10 +12,11 @@
 
 export type SketchName =
   | 'cathedral' | 'temple' | 'tower' | 'palace' | 'bridge' | 'park' | 'market' | 'arch'
-  | 'fountain' | 'castle' | 'hill' | 'square' | 'theatre' | 'statue' | 'hotel' | 'cafe' | 'gallery' | 'lattice'
+  | 'fountain' | 'castle' | 'hill' | 'square' | 'theatre' | 'statue' | 'hotel' | 'cafe' | 'gallery' | 'lattice' | 'needle'
 
 const RULES: [RegExp, SketchName][] = [
-  [/eiffel|tokyo tower|sky ?tree|space needle|cn tower|lattice/i, 'lattice'],
+  [/cn tower|space needle|sky ?tree|skytree|fernsehturm|tv tower|oriental pearl|sky tower|kl tower|macau tower|calgary tower|stratosphere/i, 'needle'],
+  [/eiffel|tokyo tower|lattice/i, 'lattice'],
   [/pagoda|temple|shrine|-ji\b|-dera\b|jinja|taisha|wat\b|stupa/i, 'temple'],
   [/cathedral|basilica|duomo|minster|abbey|church|chapel|sainte-chapelle|notre-dame|mosque|synagogue/i, 'cathedral'],
   [/tower|spire|obelisk|campanile|belfry|clock/i, 'tower'],
@@ -44,6 +45,54 @@ export function sketchFor(name: string, fallback: number = 0): SketchName {
  * pictures when the city is named, so it has to be looked up rather than
  * matched. An unlisted city falls through to whatever its name suggests, and
  * then to the spares, so every cover gets something. */
+/* Cities with more than one thing they are known by. The first is the cover's
+   large drawing; the rest are drawn smaller, and which one a cover gets is
+   chosen by the trip so two Toronto covers differ. Anything not listed here
+   falls through to the single mark below. */
+const CITY_SET: [RegExp, SketchName[]][] = [
+  [/^tokyo/i, ['lattice', 'temple', 'arch']],
+  [/^toronto/i, ['needle', 'castle', 'gallery']],
+  [/^kyoto/i, ['temple', 'arch', 'castle']],
+  [/^paris\b/i, ['lattice', 'cathedral', 'arch']],
+  [/^london/i, ['tower', 'bridge', 'palace']],
+  [/^new york/i, ['statue', 'bridge', 'tower']],
+  [/^rome|^roma\b/i, ['theatre', 'fountain', 'cathedral']],
+  [/^barcelona/i, ['cathedral', 'park', 'fountain']],
+  [/^amsterdam/i, ['bridge', 'gallery', 'market']],
+  [/^venice|^venezia/i, ['bridge', 'cathedral', 'square']],
+  [/^istanbul/i, ['cathedral', 'market', 'bridge']],
+  [/^sydney/i, ['theatre', 'bridge', 'fountain']],
+  [/^san francisco/i, ['bridge', 'hill', 'square']],
+  [/^berlin/i, ['arch', 'needle', 'gallery']],
+  [/^seattle/i, ['needle', 'market', 'fountain']],
+  [/^shanghai/i, ['needle', 'temple', 'bridge']],
+  [/^athens/i, ['temple', 'hill', 'theatre']],
+  [/^seoul/i, ['palace', 'needle', 'market']],
+  [/^prague|^praha/i, ['bridge', 'castle', 'square']],
+  [/^edinburgh/i, ['castle', 'hill', 'square']],
+  [/^vienna|^wien\b/i, ['palace', 'theatre', 'cathedral']],
+  [/^lisbon|^lisboa/i, ['hill', 'castle', 'square']],
+  [/^bangkok/i, ['temple', 'palace', 'market']],
+  [/^osaka/i, ['castle', 'market', 'needle']],
+  [/^dubai/i, ['lattice', 'needle', 'market']],
+  [/^singapore/i, ['park', 'needle', 'fountain']],
+  [/^chicago/i, ['fountain', 'tower', 'bridge']],
+  [/^florence|^firenze/i, ['cathedral', 'bridge', 'gallery']],
+  [/^budapest/i, ['bridge', 'palace', 'cathedral']],
+  [/^bruges|^brugge/i, ['bridge', 'tower', 'market']],
+  [/^copenhagen/i, ['statue', 'castle', 'park']],
+  [/^marrakech|^marrakesh/i, ['market', 'arch', 'palace']],
+  [/^vancouver/i, ['park', 'bridge', 'hill']],
+  [/^montreal|^montréal/i, ['cathedral', 'hill', 'market']],
+  [/^washington/i, ['tower', 'palace', 'statue']],
+  [/^hong kong/i, ['tower', 'hill', 'market']],
+]
+export function citySet(city: string, fallback = 0): SketchName[] {
+  const name = city.split(',')[0].trim()
+  for (const [r, set] of CITY_SET) if (r.test(name)) return set
+  return [cityMark(city, fallback)]
+}
+
 const CITY_MARK: [RegExp, SketchName][] = [
   [/^tokyo|^paris\b|^toronto|^seattle|^shanghai|^dubai|^kuala/i, 'lattice'],
   [/^kyoto|^nara\b|^athens|^bangkok|^beijing|^chiang|^luang/i, 'temple'],
@@ -149,6 +198,14 @@ const ART: Record<SketchName, { wash: React.ReactNode; ink: React.ReactNode }> =
       <path d="M36 104 C46 70 52 46 56 18 H64 C68 46 74 70 84 104" /><path d="M58 18 L60 6 L62 18" />
       <path d="M42 84 H78 M46 62 H74 M50 42 H70" /><path d="M44 84 L60 62 L76 84 M48 62 L60 42 L72 62 M52 42 L60 26 L68 42" />
       <path d="M46 104 C52 92 68 92 74 104" /><path d="M22 104 H98" />
+    </>,
+  },
+  needle: {
+    wash: <><path d="M52 104 L57 40 H63 L68 104 Z" /><ellipse cx="60" cy="40" rx="18" ry="7" /></>,
+    ink: <>
+      <path d="M50 104 C54 84 56 62 57 44 M70 104 C66 84 64 62 63 44" />
+      <path d="M42 40 a18 7 0 1 0 36 0 a18 7 0 1 0 -36 0" /><path d="M44 36 a16 5 0 0 1 32 0" /><path d="M46 44 C50 50 70 50 74 44" />
+      <path d="M60 33 V8 M58 12 H62 M57 18 H63" /><path d="M30 104 H90" /><path d="M56 60 H64 M55 76 H65 M54 92 H66" />
     </>,
   },
   palace: {
@@ -385,4 +442,165 @@ export function TransportGlyph({ mode, size = 22, ink = '#5c4a33' }: { mode: 'wa
   return (
     <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke={ink} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" filter="url(#ink)" aria-hidden>{g}</svg>
   )
+}
+
+/* ------------------------------------------------------------- the stickers */
+
+/* The small things that end up stuck on a postcard: a star, a flower, a heart,
+ * a strip of tape. Drawn in the same hand as the landmarks — pencil under ink,
+ * a wash behind — but simpler, because a sticker is a glance and not a study.
+ * Each is on the same 120-unit square so it can be scaled like a sketch. */
+
+export type StickerName =
+  | 'star' | 'sparkle' | 'flower' | 'daisy' | 'heart' | 'sun' | 'cloud' | 'plane' | 'leaf'
+  | 'tape' | 'ticket' | 'wave' | 'moon' | 'camera' | 'pin'
+
+const STICKER: Record<StickerName, { wash: React.ReactNode; ink: React.ReactNode }> = {
+  star: {
+    wash: <path d="M60 14 L72 46 L106 48 L79 69 L88 103 L60 84 L32 103 L41 69 L14 48 L48 46 Z" />,
+    ink: <path d="M60 16 L71 46 L104 48 L78 68 L87 101 L60 83 L33 101 L42 68 L16 48 L49 46 Z" />,
+  },
+  sparkle: {
+    wash: <path d="M60 10 C64 44 76 56 110 60 C76 64 64 76 60 110 C56 76 44 64 10 60 C44 56 56 44 60 10 Z" />,
+    ink: <><path d="M60 12 C64 44 76 56 108 60 C76 64 64 76 60 108 C56 76 44 64 12 60 C44 56 56 44 60 12 Z" /><path d="M92 20 l3 8 l8 3 l-8 3 l-3 8 l-3 -8 l-8 -3 l8 -3 Z" /></>,
+  },
+  flower: {
+    wash: <><circle cx="60" cy="38" r="15" /><circle cx="82" cy="54" r="15" /><circle cx="74" cy="80" r="15" /><circle cx="46" cy="80" r="15" /><circle cx="38" cy="54" r="15" /></>,
+    ink: <><circle cx="60" cy="38" r="14" /><circle cx="82" cy="54" r="14" /><circle cx="74" cy="80" r="14" /><circle cx="46" cy="80" r="14" /><circle cx="38" cy="54" r="14" /><circle cx="60" cy="60" r="9" /></>,
+  },
+  daisy: {
+    wash: <circle cx="60" cy="60" r="34" />,
+    ink: <>
+      <circle cx="60" cy="60" r="10" />
+      <path d="M60 50 C50 30 70 30 60 50 M70 54 C90 40 92 60 70 54 M70 66 C92 62 86 84 70 66 M60 70 C70 92 50 92 60 70 M50 66 C28 82 30 60 50 66 M50 54 C30 58 34 36 50 54" />
+    </>,
+  },
+  heart: {
+    wash: <path d="M60 100 C20 72 10 50 24 32 C36 18 54 24 60 38 C66 24 84 18 96 32 C110 50 100 72 60 100 Z" />,
+    ink: <path d="M60 98 C22 72 12 50 25 33 C36 20 54 26 60 40 C66 26 84 20 95 33 C108 50 98 72 60 98 Z" />,
+  },
+  sun: {
+    wash: <circle cx="60" cy="60" r="24" />,
+    ink: <><circle cx="60" cy="60" r="22" /><path d="M60 14 V26 M60 94 V106 M14 60 H26 M94 60 H106 M27 27 L36 36 M84 84 L93 93 M93 27 L84 36 M36 84 L27 93" /></>,
+  },
+  cloud: {
+    wash: <path d="M30 84 a16 16 0 0 1 4 -31 a22 22 0 0 1 42 -8 a18 18 0 0 1 14 39 Z" />,
+    ink: <path d="M30 82 a16 16 0 0 1 4 -31 a22 22 0 0 1 42 -8 a18 18 0 0 1 14 39 H30" />,
+  },
+  plane: {
+    wash: <path d="M14 66 L104 24 L74 96 L62 70 Z" />,
+    ink: <><path d="M14 66 L104 24 L74 96 L62 70 Z" /><path d="M62 70 L104 24" /><path d="M20 90 C34 80 40 78 52 74" strokeDasharray="4 5" /></>,
+  },
+  leaf: {
+    wash: <path d="M22 98 C22 46 58 22 100 22 C100 66 66 98 22 98 Z" />,
+    ink: <><path d="M22 98 C22 46 58 22 100 22 C100 66 66 98 22 98 Z" /><path d="M24 96 C46 72 66 54 96 26" /><path d="M40 78 C52 76 58 70 60 62 M56 58 C66 58 72 54 76 46" /></>,
+  },
+  tape: {
+    wash: <path d="M8 44 L112 36 L114 74 L10 82 Z" />,
+    ink: <path d="M8 44 L112 36 M10 82 L114 74 M8 44 L10 82 M112 36 L114 74" strokeDasharray="3 4" />,
+  },
+  ticket: {
+    wash: <path d="M14 34 H106 V54 a8 8 0 0 0 0 16 V86 H14 V70 a8 8 0 0 0 0 -16 Z" />,
+    ink: <><path d="M14 34 H106 V54 a8 8 0 0 0 0 16 V86 H14 V70 a8 8 0 0 0 0 -16 Z" /><path d="M72 40 V80" strokeDasharray="4 4" /><path d="M26 52 H58 M26 62 H50 M26 72 H54" /></>,
+  },
+  wave: {
+    wash: <path d="M10 70 C24 52 36 52 50 70 C64 88 76 88 90 70 C100 58 106 58 112 62 V96 H10 Z" />,
+    ink: <><path d="M10 70 C24 52 36 52 50 70 C64 88 76 88 90 70 C100 58 106 58 112 62" /><path d="M10 88 C24 70 36 70 50 88 C64 106 76 106 90 88" /></>,
+  },
+  moon: {
+    wash: <path d="M74 14 A46 46 0 1 0 106 76 A34 34 0 0 1 74 14 Z" />,
+    ink: <><path d="M74 16 A46 46 0 1 0 104 76 A34 34 0 0 1 74 16 Z" /><path d="M28 30 l2 6 l6 2 l-6 2 l-2 6 l-2 -6 l-6 -2 l6 -2 Z" /></>,
+  },
+  camera: {
+    wash: <><rect x="14" y="38" width="92" height="60" rx="8" /><rect x="42" y="26" width="30" height="14" rx="4" /></>,
+    ink: <><rect x="14" y="38" width="92" height="60" rx="8" /><path d="M42 38 V30 a4 4 0 0 1 4 -4 H66 a4 4 0 0 1 4 4 V38" /><circle cx="60" cy="68" r="17" /><circle cx="60" cy="68" r="9" /><path d="M86 50 H96" /></>,
+  },
+  pin: {
+    wash: <path d="M60 110 C36 78 24 62 24 46 A36 36 0 0 1 96 46 C96 62 84 78 60 110 Z" />,
+    ink: <><path d="M60 108 C36 78 24 62 24 46 A36 36 0 0 1 96 46 C96 62 84 78 60 108 Z" /><circle cx="60" cy="46" r="13" /></>,
+  },
+}
+
+export function Sticker({ name, size = 30, wash = '#c9a27a', ink = '#3f3020', className = '', style }: {
+  name: StickerName; size?: number; wash?: string; ink?: string; className?: string; style?: React.CSSProperties
+}) {
+  const art = STICKER[name]
+  return (
+    <svg className={`st ${className}`} viewBox="-6 -6 132 132" width={size} height={size} aria-hidden style={style}>
+      <g className="st-wash" fill={wash} filter="url(#wash)" opacity=".55">{art.wash}</g>
+      <g className="st-pencil" {...PEN} strokeWidth={1.3} color="#8a8078" opacity=".5" filter="url(#pencil)" transform="translate(-1 1)">{art.ink}</g>
+      <g className="st-ink" {...PEN} strokeWidth={1.9} color={ink} filter="url(#ink)">{art.ink}</g>
+    </svg>
+  )
+}
+
+/* ------------------------------------------------- what goes on one cover */
+
+/* A cover is dressed by a small generator seeded by the trip, so every cover
+ * is different and the same cover is the same every time it is opened. It
+ * chooses the city's large landmark, one of its smaller ones, and three or
+ * four stickers, each placed in one of a few spots the writing does not use,
+ * with its own tilt, size and tint. Nothing here is random at render time:
+ * the seed is the trip's id, and the id does not change. */
+
+export type CoverPiece =
+  | { kind: 'mark'; name: SketchName; x: number; y: number; size: number; tilt: number }
+  | { kind: 'sticker'; name: StickerName; x: number; y: number; size: number; tilt: number; tint: string }
+
+/** mulberry32: a small, good-enough PRNG, seeded from a string. */
+function seeded(seed: string) {
+  let h = 1779033703 ^ seed.length
+  for (let i = 0; i < seed.length; i++) { h = Math.imul(h ^ seed.charCodeAt(i), 3432918353); h = (h << 13) | (h >>> 19) }
+  let a = h >>> 0
+  return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296 }
+}
+
+/* Where a sticker may go, in percent of the card, chosen to sit clear of the
+   tab, the stamp, the name, the two lines under it, the call to action and the
+   large landmark in the lower right. */
+const SPOTS: { x: number; y: number }[] = [
+  { x: 48, y: 5 }, { x: 58, y: 9 }, { x: 68, y: 4 },      // the top band, between tab and stamp
+  { x: 88, y: 40 }, { x: 78, y: 32 },                     // right of the name, above the landmark
+  { x: 58, y: 62 }, { x: 68, y: 72 },                     // to the right of the date line
+  { x: 48, y: 90 }, { x: 60, y: 94 },                     // between the call to action and the landmark
+  { x: 6, y: 62 }, { x: 8, y: 80 },                       // the left margin, low
+]
+const TINTS = ['#b75a4a', '#c9973f', '#7c9a6a', '#6c8fa6', '#9a6d9c', '#c47a63']
+const STICKERS: StickerName[] = ['star', 'sparkle', 'flower', 'daisy', 'heart', 'sun', 'cloud', 'plane', 'leaf', 'tape', 'ticket', 'wave', 'moon', 'camera', 'pin']
+
+export function dressCover(city: string, seed: string, fallback = 0): CoverPiece[] {
+  const rnd = seeded(`${city}|${seed}`)
+  const pick = <T,>(list: T[]) => list[Math.floor(rnd() * list.length)]
+  const set = citySet(city, fallback)
+  const out: CoverPiece[] = []
+
+  // The large landmark, low in the right corner, leaning a little.
+  out.push({ kind: 'mark', name: set[0], x: 100, y: 100, size: 142, tilt: -4 + rnd() * 3 })
+
+  // A smaller second landmark, when the city has one, in one of two places.
+  if (set.length > 1) {
+    const second = pick(set.slice(1))
+    // Below the stamp on the right, or to the right of the date line: the two
+    // places on a card where a small drawing meets neither the name nor the
+    // large landmark.
+    const where = rnd() < .5 ? { x: 79, y: 50 } : { x: 60, y: 66 }
+    out.push({ kind: 'mark', name: second, x: where.x, y: where.y, size: 56 + rnd() * 14, tilt: -8 + rnd() * 16 })
+  }
+
+  // Three or four stickers, each in its own spot.
+  const spots = SPOTS.slice()
+  const n = 3 + (rnd() < .5 ? 1 : 0)
+  const used = new Set<StickerName>()
+  for (let i = 0; i < n && spots.length; i++) {
+    const at = spots.splice(Math.floor(rnd() * spots.length), 1)[0]
+    let name = pick(STICKERS)
+    for (let tries = 0; used.has(name) && tries < 6; tries++) name = pick(STICKERS)
+    used.add(name)
+    out.push({
+      kind: 'sticker', name,
+      x: at.x + (rnd() - .5) * 6, y: at.y + (rnd() - .5) * 6,
+      size: 22 + rnd() * 14, tilt: -28 + rnd() * 56, tint: pick(TINTS),
+    })
+  }
+  return out
 }

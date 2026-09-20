@@ -131,13 +131,23 @@
    the corner, behind the writing, part of the cover rather than an illustration
    stuck on it. It is decoration, so it is not announced to a screen reader; the
    city's name is right there in text. */
-.jl-mark {
-  position: absolute; right: 2px; bottom: -10px; z-index: 0;
-  opacity: .82; pointer-events: none;
-  transform: rotate(-3deg);
-  transition: transform .5s var(--ease);
+/* The large landmark keeps its corner. The second sits wherever the trip put
+   it, smaller and fainter, so it reads as a second thought in the margin. */
+.jl-mark-at { position: absolute; right: 2px; bottom: -10px; z-index: 0; pointer-events: none; line-height: 0; transform: rotate(-3deg); transition: transform .5s var(--ease); }
+.jl-mark-at.is-second { right: auto; bottom: auto; transform: translate(-50%, -50%) rotate(var(--tilt, 0deg)); opacity: .55; }
+.jl-mark { display: block; opacity: .82; }
+.jl-chapter:hover:not(:disabled) .jl-mark-at { transform: rotate(-2deg) translateY(-4px) scale(1.035); }
+.jl-chapter:hover:not(:disabled) .jl-mark-at.is-second { transform: translate(-50%, -50%) rotate(var(--tilt, 0deg)) translateY(-3px); }
+/* Stickers: stuck on with a little tilt, over the writing the way a real one
+   would be, and each pops on a beat after its card settles. */
+.jl-sticker {
+  position: absolute; z-index: 2; pointer-events: none;
+  transform: translate(-50%, -50%) rotate(var(--tilt, 0deg));
+  filter: drop-shadow(0 1px 1px rgba(60,40,20,.25));
+  animation: jl-stick .55s cubic-bezier(.2, 1.4, .4, 1) both;
+  animation-delay: calc(.9s + var(--chapter, 0) * .14s + var(--k, 0) * .08s);
 }
-.jl-chapter:hover:not(:disabled) .jl-mark { transform: rotate(-2deg) translateY(-4px) scale(1.035); }
+@keyframes jl-stick { from { opacity: 0; transform: translate(-50%, -50%) rotate(calc(var(--tilt, 0deg) - 12deg)) scale(.4); } to { opacity: 1; transform: translate(-50%, -50%) rotate(var(--tilt, 0deg)) scale(1); } }
 /* A sketch starts undrawn — strokes wound back to full dash-offset, washes at
    opacity 0 — and only a live journal page tells it to draw itself. Here the
    shelf tells it: as each chapter settles, its landmark is pencilled, inked
@@ -196,5 +206,6 @@
   .jl-mark .sk-pencil path, .jl-mark .sk-ink path, .jl-mark .sk-pencil circle, .jl-mark .sk-ink circle,
   .jl-mark .sk-pencil ellipse, .jl-mark .sk-ink ellipse { animation: none; stroke-dashoffset: 0; }
   .jl-mark .sk-wash, .jl-mark .sk-wash2 { animation: none; opacity: .5; }
+  .jl-sticker { animation: none; }
   .jl-chapters > li { --tilt: 0deg; }
 }
