@@ -176,38 +176,60 @@ async function duckFromLibrary(key, wantedName = '') {
   throw new Error('the library ducks could not be added')
 }
 
+/* One voice, every time. On Vercel each warm instance resolves this for
+   itself, and a day's clips are voiced six at a time across whichever
+   instances answer — so the resolution has to land on the same voice from
+   every instance, or one stop is a duck and the next is Gigi. Hence: the
+   account's own "Orion Goose" is always preferred once it exists; when two
+   instances race to add one, both then re-list and take the lowest id; and
+   a lookup that fails on the network is not cached, so the next request
+   tries again rather than pinning a fallback for the life of the instance.
+   The surest fix is to pin the id: the startup log says which to set. */
 let resolvedGoose = null
 let gooseIsDuck = false
+const DUCKISH = v => /duck|orion goose/i.test(`${v?.name ?? ''} ${v?.description ?? ''}`)
+const ownDuck = voices => voices.filter(v => (v.name ?? '').trim().toLowerCase() === DUCK_NAME.toLowerCase()).sort((a, b) => a.voice_id < b.voice_id ? -1 : 1)[0]
 async function gooseVoiceId(key) {
   if (resolvedGoose) return resolvedGoose
-  try {
-    const voices = await listVoices(key)
-    const want = GOOSE_WANTS.trim().toLowerCase()
-    const named = n => voices.find(v => (v.name ?? '').trim().toLowerCase() === n)
-      || voices.find(v => (v.name ?? '').toLowerCase().includes(n))
-    if (want === 'duck' || want.startsWith('library:')) {
-      const pick = want.startsWith('library:') ? want.slice(8).trim() : ''
-      const mine = pick ? null : named(DUCK_NAME.toLowerCase()) || voices.find(v => /duck/i.test(`${v.name} ${v.description ?? ''}`))
+  let voices
+  try { voices = await listVoices(key) } catch { return voiceId(key) }   // not cached: try again next time
+  const want = GOOSE_WANTS.trim()
+  const lower = want.toLowerCase()
+  const named = n => voices.find(v => (v.name ?? '').trim().toLowerCase() === n)
+    || voices.find(v => (v.name ?? '').toLowerCase().includes(n))
+  let chosen = voices.find(v => v.voice_id === want)
+  let how = 'pinned by id'
+  if (!chosen && (lower === 'duck' || lower.startsWith('library:'))) {
+    chosen = ownDuck(voices)
+    how = 'the account\'s own'
+    if (!chosen) {
       try {
-        resolvedGoose = mine?.voice_id || await duckFromLibrary(key, pick)
-        gooseIsDuck = true
-        console.log(`[tts] the goose speaks as ${mine ? `"${mine.name}"` : `"${DUCK_NAME}"`}, a duck`)
-        return resolvedGoose
+        const added = await duckFromLibrary(key, lower.startsWith('library:') ? want.slice(8).trim() : '')
+        const again = await listVoices(key).catch(() => [])
+        chosen = ownDuck(again) || { voice_id: added, name: DUCK_NAME }
+        how = 'added from the library'
       } catch (e) {
         console.warn(`[tts] no duck voice (${e.message}); the goose is a small voice pitched up instead`)
       }
     }
-    resolvedGoose = voices.find(v => v.voice_id === GOOSE_WANTS)?.voice_id
-      || (want !== 'duck' && named(want)?.voice_id)
-      || GOOSE_LIKE.map(named).find(v => v && !NOT_AMERICAN(v))?.voice_id
-      || voices.find(v => AMERICAN(v) && LIGHT(v))?.voice_id
-      || voices.find(AMERICAN)?.voice_id
-      || await voiceId(key)
-    const chosen = voices.find(v => v.voice_id === resolvedGoose)
-    console.log(`[tts] the goose speaks as ${chosen ? `"${chosen.name}"${chosen.labels?.accent ? ` (${chosen.labels.accent})` : ''}` : 'the guide\'s own voice'}${chosen && want !== 'duck' && chosen.name.toLowerCase() !== want ? ` — no voice called "${GOOSE_WANTS}" on this account` : ''}`)
-    if (chosen && NOT_AMERICAN(chosen)) console.warn(`[tts] "${chosen.name}" is ${chosen.labels.accent}, not American: set ELEVENLABS_GOOSE_VOICE to an American voice from GET /api/voices`)
-  } catch {
-    resolvedGoose = await voiceId(key)
+  } else if (!chosen && lower !== 'duck') {
+    chosen = named(lower)
+    how = 'by name'
+  }
+  if (!chosen) {
+    chosen = GOOSE_LIKE.map(named).find(v => v && !NOT_AMERICAN(v))
+      || voices.find(v => AMERICAN(v) && LIGHT(v))
+      || voices.find(AMERICAN)
+    how = 'the stand-in'
+  }
+  resolvedGoose = chosen?.voice_id || await voiceId(key)
+  gooseIsDuck = !!chosen && DUCKISH(chosen)
+  if (chosen) {
+    console.log(`[tts] the goose speaks as "${chosen.name}" (${how}${chosen.labels?.accent ? `, ${chosen.labels.accent}` : ''}${gooseIsDuck ? ', a duck' : ', pitched up'}).`
+      + (want !== chosen.voice_id ? ` To make every instance agree, set ELEVENLABS_GOOSE_VOICE=${chosen.voice_id}` : ''))
+    if (!gooseIsDuck && NOT_AMERICAN(chosen)) console.warn(`[tts] "${chosen.name}" is ${chosen.labels.accent}, not American: set ELEVENLABS_GOOSE_VOICE to an American voice from GET /api/voices`)
+  } else {
+    console.warn('[tts] the goose is using the guide\'s own voice: no goose voice could be found on this account')
   }
   return resolvedGoose
 }
@@ -551,6 +573,7 @@ const routes = {
     const goose = await gooseVoiceId(key)
     json(res, 200, {
       goose: voices.find(v => v.voice_id === goose)?.name ?? null,
+      gooseId: goose,
       duck: gooseIsDuck,
       rate: gooseRate(),
       wanted: GOOSE_WANTS,
