@@ -76,6 +76,13 @@ namespace Orion
             return deck;
         }
 
+        /// <summary>Another trip has been sent: this one gives way to it, behind a blink.</summary>
+        public void Replace(Trip trip)
+        {
+            fadeGoal = 1;
+            fadeThen = () => { days = trip.days; city = trip.city; SetDay(0); };
+        }
+
         void SetDay(int index)
         {
             dayAt = index; day = days[index];

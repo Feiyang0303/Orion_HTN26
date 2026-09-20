@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using Orion.Flight;
 using Orion.World;
 using UnityEngine;
@@ -37,10 +38,12 @@ namespace Orion
             marks.Build(rig.Head.transform);
             var client = new TripClient(config.apiBase);
             var narration = Narration.Make(rig.Head.transform, client);
+            FlightDeck deck = null;
             void Begin(Trip trip)
             {
-                if (trip?.days == null || trip.days.Length == 0 || trip.days[0].stops.Length == 0) rig.Captions.Show("ORION", "That trip has no stops", "Send another from Orion on the web, then open this again.", null);
-                else FlightDeck.Begin(trip, world, rig, marks, narration);
+                if (trip?.days == null || trip.days.Length == 0 || trip.days[0].stops.Length == 0) rig.Captions.Show("ORION", "That trip has no stops", "Send another from Orion on the web.", null);
+                else if (deck == null) deck = FlightDeck.Begin(trip, world, rig, marks, narration);
+                else deck.Replace(trip);
             }
 
 #if UNITY_EDITOR
@@ -54,10 +57,31 @@ namespace Orion
             }
 #endif
             rig.Captions.Show("ORION", "Looking for your trip…", "", null);
-            StartCoroutine(client.Current(
-                Begin,
-                onNone: () => rig.Captions.Show("ORION", "No trip has been sent yet", "In Orion on the web, open a trip and send it to VR. Then open this again.", null),
-                onError: error => rig.Captions.Show("ORION", "Orion could not be reached", error, null)));
+            StartCoroutine(Follow(client, rig, Begin));
         }
+
+        /// <summary>Play whichever trip the web app last sent to VR, and go on asking: press VR on another trip and this
+        /// one gives way to it; open the app before anything has been sent and it begins when something is.</summary>
+        static IEnumerator Follow(TripClient client, Rig rig, Action<Trip> begin)
+        {
+            string playing = null;
+            while (true)
+            {
+                string latest = null, failed = null;
+                yield return client.CurrentId(id => latest = id, error => failed = error);
+                if (failed != null) { if (playing == null) rig.Captions.Show("ORION", "Orion could not be reached", failed, null); }
+                else if (latest == null) { if (playing == null) rig.Captions.Show("ORION", "No trip has been sent yet", "In Orion on the web, open a trip and press VR. It will begin here.", null); }
+                else if (latest != playing)
+                {
+                    Trip trip = null;
+                    yield return client.Trip(latest, t => trip = t, error => failed = error);
+                    if (trip != null) { playing = latest; Debug.Log($"[orion] trip {latest}: {trip.city}"); begin(trip); }
+                    else if (playing == null) rig.Captions.Show("ORION", "That trip could not be fetched", failed, null);
+                }
+                yield return new WaitForSecondsRealtime(Every);
+            }
+        }
+
+        const float Every = 8;          // seconds between asking the web app whether another trip has been sent
     }
 }

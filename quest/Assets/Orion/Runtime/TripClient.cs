@@ -13,19 +13,25 @@ namespace Orion
         readonly string apiBase;
         public TripClient(string apiBase) { this.apiBase = apiBase.TrimEnd('/'); }
 
-        /// <summary>The trip last sent to VR from the web app. `onNone` if nothing has been sent yet.</summary>
-        public IEnumerator Current(Action<Trip> onTrip, Action onNone, Action<string> onError)
+        /// <summary>Which trip was last sent to VR from the web app (its VR button): its id, or null if none has been yet.
+        /// `onError` if the server could not be asked.</summary>
+        public IEnumerator CurrentId(Action<string> onId, Action<string> onError)
         {
             using var current = UnityWebRequest.Get($"{apiBase}/api/vr/current");
+            current.timeout = 15;
             yield return current.SendWebRequest();
-            if (current.responseCode == 404) { onNone(); yield break; }
-            if (current.result != UnityWebRequest.Result.Success) { onError(current.error); yield break; }
-            string id = JsonUtility.FromJson<CurrentTrip>(current.downloadHandler.text).id;
+            if (current.responseCode == 404) onId(null);
+            else if (current.result != UnityWebRequest.Result.Success) onError(current.error);
+            else onId(JsonUtility.FromJson<CurrentTrip>(current.downloadHandler.text).id);
+        }
 
+        public IEnumerator Trip(string id, Action<Trip> onTrip, Action<string> onError)
+        {
             using var get = UnityWebRequest.Get($"{apiBase}/api/trips/get?id={UnityWebRequest.EscapeURL(id)}");
+            get.timeout = 30;
             yield return get.SendWebRequest();
-            if (get.result != UnityWebRequest.Result.Success) { onError(get.error); yield break; }
-            onTrip(JsonUtility.FromJson<TripEnvelope>(get.downloadHandler.text).trip);
+            if (get.result != UnityWebRequest.Result.Success) onError(get.error);
+            else onTrip(JsonUtility.FromJson<TripEnvelope>(get.downloadHandler.text).trip);
         }
 
         [Serializable] class Line { public string text; }
