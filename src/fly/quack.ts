@@ -1,24 +1,36 @@
-/* The goose's voice: a small, clear, child's voice.
+/* The goose's voice, in the browser's hands.
  *
- * It is a human voice from ElevenLabs, pitched up here. An <audio> element
- * played faster with `preservesPitch` off goes up the way a sped-up record
- * does. Faster alone would be a chipmunk reading too quickly to follow, so
- * the proxy asks ElevenLabs for every line spoken slower by the inverse
- * amount (`ELEVENLABS_GOOSE_SPEED`, 1 / QUACK_RATE), and the two cancel:
- * normal pace, small voice.
+ * The voice itself comes from ElevenLabs, ideally a real cartoon duck from
+ * its library (the proxy finds and keeps one). When there is no duck to be
+ * had, a small human voice stands in and is pitched up here: an <audio>
+ * element played faster with `preservesPitch` off goes up the way a sped-up
+ * record does, and the proxy has asked for the lines slower by the inverse,
+ * so the pace comes out normal.
  *
- * QUACK_RATE itself lives in plan/pace.ts, which has no DOM in it, because
- * the planning pipeline needs it to work out clip durations and is also run
- * from node scripts. (A raspy cartoon-duck treatment was tried here and
- * taken out: it was not cute.) */
+ * Which of the two applies is the proxy's to say (plan/pace.ts keeps its
+ * answer), so the rate is set when the clip plays, by which time the flight
+ * has asked. */
 
-import { QUACK_RATE } from '../plan/pace'
+import { gooseRate, learnGooseRate } from '../plan/pace'
+import { net } from '../plan/net'
 
 export function quack(audio: HTMLAudioElement): HTMLAudioElement {
-  audio.playbackRate = QUACK_RATE
   audio.preservesPitch = false
   const a = audio as HTMLAudioElement & { mozPreservesPitch?: boolean; webkitPreservesPitch?: boolean }
   a.mozPreservesPitch = false
   a.webkitPreservesPitch = false
+  audio.playbackRate = gooseRate()
+  audio.addEventListener('play', () => { audio.playbackRate = gooseRate() })
   return audio
+}
+
+/* Asks the proxy once which voice the goose has, so a flight of saved clips —
+   which never calls /api/tts itself — plays them at the right rate. */
+let asked: Promise<void> | null = null
+export function primeGoose(): Promise<void> {
+  asked ??= fetch(`${net.apiBase}/api/voices`)
+    .then(r => r.ok ? r.json() : null)
+    .then((d: { rate?: number } | null) => { if (d) learnGooseRate(d.rate) })
+    .catch(() => { /* the default rate stands */ })
+  return asked
 }

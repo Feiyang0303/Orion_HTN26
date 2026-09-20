@@ -1,10 +1,10 @@
-import { postBytes } from './net'
-import { QUACK_RATE } from './pace'
+import { postBytesWith } from './net'
+import { gooseRate, learnGooseRate } from './pace'
 import type { Beat, Leg, Stop } from '../types'
 
 /* Voice. ElevenLabs via the proxy, mp3_44100_128, which is constant-bitrate,
    so duration is exactly bytes*8/128000 (plus a few ms of header) — and
-   the flight plays every clip QUACK_RATE faster than that (see fly/quack.ts).
+   the flight plays every clip gooseRate() faster than that (see plan/pace.ts).
    The paper journal never plays this; the flythrough does. */
 
 const BITRATE = 128_000
@@ -14,8 +14,9 @@ const CONCURRENT = 6
 export const estimateSec = (text: string) => text.trim().split(/\s+/).length / WORDS_PER_SEC
 
 export async function speak(text: string): Promise<{ bytes: ArrayBuffer; durationSec: number }> {
-  const bytes = await postBytes('tts', { text })
-  return { bytes, durationSec: +(bytes.byteLength * 8 / BITRATE / QUACK_RATE).toFixed(2) }
+  const { bytes, headers } = await postBytesWith('tts', { text })
+  learnGooseRate(headers.get('x-goose-rate'))
+  return { bytes, durationSec: +(bytes.byteLength * 8 / BITRATE / gooseRate()).toFixed(2) }
 }
 
 function limiter(max: number) {

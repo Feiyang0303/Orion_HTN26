@@ -17,7 +17,7 @@ import Fault from '../ui/Fault'
 import FlightHud, { type Control, type Hud } from './FlightHud'
 import GuideTalk from './GuideTalk'
 import Goose, { type GooseState } from './Goose'
-import { quack } from './quack'
+import { quack, primeGoose } from './quack'
 import MapRig, { type MapView } from './MapRig'
 import DirectorDesk from './DirectorDesk'
 import './fly.css'
@@ -84,6 +84,7 @@ function Rig({ plan, begin, quality, onStopReached, onFinish, onHud, control, ti
   // Fetch every line while the journal is still open. Starting a download only
   // when its shot begins can leave the clock moving while the voice buffers.
   useEffect(() => {
+    primeGoose()
     const beats = [
       plan.opening,
       ...plan.stops.flatMap(stop => stop.beats),

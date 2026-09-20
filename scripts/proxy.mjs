@@ -134,16 +134,50 @@ async function voiceId(key) {
    list, so the choice lives in .env as a word ("Gigi", "Lily") rather than an
    id nobody can read, and so a name the account does not have falls back to
    the guide's voice instead of to silence. Resolved once per run. */
-const GOOSE_WANTS = env('ELEVENLABS_GOOSE_VOICE') || 'Gigi'
-/* Voices that suit the goose, best first: light, young, American English.
-   Gigi is ElevenLabs' own animation voice; the others are bright American
-   voices that read like a friend rather than a broadcaster. British and
-   European accents are left out on purpose. */
+const GOOSE_WANTS = env('ELEVENLABS_GOOSE_VOICE') || 'duck'
+/* The goose wants a duck's voice. `duck` (the default) means: a cartoon duck
+   from the ElevenLabs voice library, found by search and added to the
+   account under the name below the first time, then reused. Any other value
+   is a voice on the account, by id or name. If no duck can be had — the
+   library search fails, or the account has no free voice slot — the goose
+   falls back on a light, young, American voice and is pitched up instead. */
+const DUCK_NAME = 'Orion Goose'
 const GOOSE_LIKE = ['gigi', 'jessica', 'laura', 'sarah', 'matilda', 'rachel', 'elli']
 const AMERICAN = v => /american/i.test(v.labels?.accent ?? '') && !/british|australian|irish|swedish|african/i.test(v.labels?.accent ?? '')
 const NOT_AMERICAN = v => !!v.labels?.accent && !AMERICAN(v)   // an unlabelled voice is given the benefit of the doubt
 const LIGHT = v => /young|middle/i.test(v.labels?.age ?? '') && /female|neutral/i.test(v.labels?.gender ?? '')
+
+/* A duck from the library: one that says so in its name or description,
+   speaks English, and is allowed on every plan; the most-used first. */
+async function libraryDucks(key, search = 'duck') {
+  const r = await fetch(`https://api.elevenlabs.io/v1/shared-voices?search=${encodeURIComponent(search)}&page_size=60&language=en`, { headers: { 'xi-api-key': key } })
+  if (!r.ok) throw new Error(`shared-voices ${r.status}`)
+  const { voices = [] } = await r.json()
+  const about = v => `${v.name ?? ''} ${v.descriptive ?? ''} ${v.description ?? ''} ${v.use_case ?? ''}`
+  return voices
+    .filter(v => /duck/i.test(about(v)) && v.free_users_allowed !== false && v.public_owner_id && v.voice_id)
+    .sort((a, b) => (/duck/i.test(b.name ?? '') - /duck/i.test(a.name ?? '')) || ((b.cloned_by_count ?? 0) - (a.cloned_by_count ?? 0)))
+}
+
+/* `library:<name>` in ELEVENLABS_GOOSE_VOICE picks one of them by name. */
+async function duckFromLibrary(key, wantedName = '') {
+  const h = { 'xi-api-key': key }
+  let ducks = await libraryDucks(key, wantedName || 'duck')
+  if (wantedName) ducks = ducks.filter(v => (v.name ?? '').toLowerCase().includes(wantedName.toLowerCase()))
+  if (!ducks.length) throw new Error(wantedName ? `no duck called "${wantedName}" in the library` : 'no duck in the library')
+  for (const duck of ducks.slice(0, 3)) {
+    const add = await fetch(`https://api.elevenlabs.io/v1/voices/add/${duck.public_owner_id}/${duck.voice_id}`, {
+      method: 'POST', headers: { ...h, 'content-type': 'application/json' }, body: JSON.stringify({ new_name: DUCK_NAME }),
+    })
+    const data = await add.json().catch(() => ({}))
+    if (add.ok && data.voice_id) { console.log(`[tts] added "${duck.name}" from the voice library as "${DUCK_NAME}"`); return data.voice_id }
+    console.warn(`[tts] could not add "${duck.name}" from the library (${add.status}: ${JSON.stringify(data).slice(0, 140)})`)
+  }
+  throw new Error('the library ducks could not be added')
+}
+
 let resolvedGoose = null
+let gooseIsDuck = false
 async function gooseVoiceId(key) {
   if (resolvedGoose) return resolvedGoose
   try {
@@ -151,20 +185,40 @@ async function gooseVoiceId(key) {
     const want = GOOSE_WANTS.trim().toLowerCase()
     const named = n => voices.find(v => (v.name ?? '').trim().toLowerCase() === n)
       || voices.find(v => (v.name ?? '').toLowerCase().includes(n))
+    if (want === 'duck' || want.startsWith('library:')) {
+      const pick = want.startsWith('library:') ? want.slice(8).trim() : ''
+      const mine = pick ? null : named(DUCK_NAME.toLowerCase()) || voices.find(v => /duck/i.test(`${v.name} ${v.description ?? ''}`))
+      try {
+        resolvedGoose = mine?.voice_id || await duckFromLibrary(key, pick)
+        gooseIsDuck = true
+        console.log(`[tts] the goose speaks as ${mine ? `"${mine.name}"` : `"${DUCK_NAME}"`}, a duck`)
+        return resolvedGoose
+      } catch (e) {
+        console.warn(`[tts] no duck voice (${e.message}); the goose is a small voice pitched up instead`)
+      }
+    }
     resolvedGoose = voices.find(v => v.voice_id === GOOSE_WANTS)?.voice_id
-      || named(want)?.voice_id
+      || (want !== 'duck' && named(want)?.voice_id)
       || GOOSE_LIKE.map(named).find(v => v && !NOT_AMERICAN(v))?.voice_id
       || voices.find(v => AMERICAN(v) && LIGHT(v))?.voice_id
       || voices.find(AMERICAN)?.voice_id
       || await voiceId(key)
     const chosen = voices.find(v => v.voice_id === resolvedGoose)
-    console.log(`[tts] the goose speaks as ${chosen ? `"${chosen.name}"${chosen.labels?.accent ? ` (${chosen.labels.accent})` : ''}` : 'the guide\'s own voice'}${chosen && chosen.name.toLowerCase() !== want ? ` — no voice called "${GOOSE_WANTS}" on this account` : ''}`)
+    console.log(`[tts] the goose speaks as ${chosen ? `"${chosen.name}"${chosen.labels?.accent ? ` (${chosen.labels.accent})` : ''}` : 'the guide\'s own voice'}${chosen && want !== 'duck' && chosen.name.toLowerCase() !== want ? ` — no voice called "${GOOSE_WANTS}" on this account` : ''}`)
     if (chosen && NOT_AMERICAN(chosen)) console.warn(`[tts] "${chosen.name}" is ${chosen.labels.accent}, not American: set ELEVENLABS_GOOSE_VOICE to an American voice from GET /api/voices`)
   } catch {
     resolvedGoose = await voiceId(key)
   }
   return resolvedGoose
 }
+
+/* How much faster (and so higher) the flight should play the goose's clips.
+   A real duck voice is played as it comes; a human voice standing in for
+   one is asked for slower (GOOSE_SPEED) and played faster by the inverse,
+   which lifts it without hurrying it. The flight learns this from every
+   /api/tts response and from /api/voices. */
+const GOOSE_SPEED = Number(env('ELEVENLABS_GOOSE_SPEED')) || 0.82
+const gooseRate = () => gooseIsDuck ? 1 : +(1 / GOOSE_SPEED).toFixed(3)
 
 /* Strip the audio tags out of a line. v3 reads "[warmly] it is right there" as
    a delivery note; every other model reads it aloud, brackets and all. */
@@ -237,20 +291,16 @@ const v3Stability = mood => {
   return m.stability <= 0.32 ? 0 : 0.5
 }
 
-/* The goose is small: the flight plays every clip a little fast with the
-   browser's pitch-preservation off, which lifts the voice. So the lines are
-   asked for slower by the same amount, and the pace comes out normal. The
-   two numbers are a pair: this one and QUACK_RATE in src/plan/pace.ts.
-   It is also even: a child's voice acting hard is not cute, so the goose is
-   held at least at Natural on v3 and kept steady with little style elsewhere. */
-const GOOSE_SPEED = Number(env("ELEVENLABS_GOOSE_SPEED")) || 0.82
-let speedTakes = true   // until a model refuses it, in which case the goose is just a little quick
+/* A model that refuses a speed is asked once more without one; the flight is
+   told the rate that actually applies, so the pace only comes out quick if the
+   pitch is wanted more than the pace. */
+let speedTakes = true
 
 async function speak(key, voice, text, model, mood, withStyle, speed = 1) {
   const m = MOOD[mood] || MOOD.warm
   const v3 = /_v3/.test(model)
   const pace = speedTakes && speed !== 1 ? { speed } : {}
-  const goose = speed !== 1
+  const goose = speed !== 1 || gooseIsDuck
   const stability = goose ? Math.max(m.stability, 0.6) : m.stability
   const style = goose ? Math.min(m.style, 0.2) : m.style
   const r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voice}?output_format=mp3_44100_128`, {
@@ -297,7 +347,7 @@ async function tts(req, res) {
   if (!text || typeof text !== 'string') throw new HttpError(400, 'text required')
   // Everything the flight says is the goose; `character: 'guide'` is the old voice, kept for anything that wants it.
   const voice = character === 'guide' ? await voiceId(key) : await gooseVoiceId(key)
-  const speed = character === 'guide' ? 1 : GOOSE_SPEED
+  const speed = character === 'guide' || gooseIsDuck ? 1 : GOOSE_SPEED
   const { fast, rich, tags, style } = await models(key)
 
   let upstream
@@ -321,7 +371,7 @@ async function tts(req, res) {
   }
 
   if (!upstream.ok) throw new HttpError(502, `elevenlabs ${upstream.status}: ${(await upstream.text()).slice(0, 200)}`)
-  res.writeHead(200, { 'content-type': 'audio/mpeg' }).end(Buffer.from(await upstream.arrayBuffer()))
+  res.writeHead(200, { 'content-type': 'audio/mpeg', 'x-goose-rate': String(character === 'guide' ? 1 : gooseRate()) }).end(Buffer.from(await upstream.arrayBuffer()))
 }
 
 /* ---- Routes ------------------------------------------------------------- */
@@ -489,12 +539,20 @@ const routes = {
     keys: { openai: !!env('OPENAI_API_KEY'), elevenlabs: !!env('ELEVENLABS_API_KEY'), routes: !!routesKey() },
   }),
   /** The account's voices, names only, and which one the goose resolved to — so a choice made in .env can be checked. */
+  /* The ducks the library offers, with previews to listen to: pick one with ELEVENLABS_GOOSE_VOICE=library:<name>. */
+  'GET /api/voices/ducks': async (_req, res) => {
+    const key = requireEnv('ELEVENLABS_API_KEY')
+    const ducks = await libraryDucks(key)
+    json(res, 200, { ducks: ducks.map(v => ({ name: v.name, accent: v.accent, gender: v.gender, age: v.age, about: v.descriptive, useCase: v.use_case, preview: v.preview_url, cloned: v.cloned_by_count ?? 0 })) })
+  },
   'GET /api/voices': async (_req, res) => {
     const key = requireEnv('ELEVENLABS_API_KEY')
     const voices = await listVoices(key)
     const goose = await gooseVoiceId(key)
     json(res, 200, {
       goose: voices.find(v => v.voice_id === goose)?.name ?? null,
+      duck: gooseIsDuck,
+      rate: gooseRate(),
       wanted: GOOSE_WANTS,
       voices: voices.map(v => ({ id: v.voice_id, name: v.name, category: v.category, labels: v.labels ?? {} })),
     })

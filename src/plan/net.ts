@@ -38,3 +38,8 @@ async function postProxy(path: string, body: unknown): Promise<Response> {
 
 export const postJson = async <T>(path: string, body: unknown): Promise<T> => (await postProxy(path, body)).json() as Promise<T>
 export const postBytes = async (path: string, body: unknown): Promise<ArrayBuffer> => (await postProxy(path, body)).arrayBuffer()
+/** The bytes and the response headers, for a caller that reads something off them. */
+export const postBytesWith = async (path: string, body: unknown): Promise<{ bytes: ArrayBuffer; headers: Headers }> => {
+  const res = await postProxy(path, body)
+  return { bytes: await res.arrayBuffer(), headers: res.headers }
+}
