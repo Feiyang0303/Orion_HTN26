@@ -41,6 +41,7 @@ namespace Orion
         readonly List<(float t, Vector3 eye, Vector3 look)> coming = new List<(float, Vector3, Vector3)>();
         readonly List<(Vector3, Vector3)> ahead = new List<(Vector3, Vector3)>();
         bool ready, groundMoved; float builtAt = float.MinValue, sweep;
+        bool voiced;                                           // every beat has its clip and its true length, so the timeline is the real one
 
         // the clock
         float t; bool playing = true;
@@ -62,7 +63,6 @@ namespace Orion
         const float SnapTurn = Mathf.PI / 6;
         float turned; int flickHeld;
         (int stop, int beat, bool playing, bool travelling, bool ready, bool smooth, int day)? shown;      // what the panels last showed
-        int fetchedFor = -1;
 
         public static FlightDeck Begin(Trip trip, City world, Rig rig, Marks marks, Narration narration)
         {
@@ -82,8 +82,11 @@ namespace Orion
             world.CentreOn(day.origin);
             ground.SetAnchors(Anchor.For(day));
             marks.SetStops(day, Jump);
-            placed = false; ready = false; groundMoved = true; builtAt = float.MinValue; fetchedFor = -1;
-            Jump(0);
+            placed = false; ready = false; groundMoved = true; builtAt = float.MinValue;
+            Restart();
+            // The city and the voice are fetched side by side; the day begins when both are there.
+            voiced = false;
+            StartCoroutine(narration.Voice(day, () => { timeline = new Timeline(day, Ride.StraightSec); voiced = true; Restart(); }));
         }
 
         void Jump(int stop)
@@ -93,9 +96,12 @@ namespace Orion
             groundMoved = true;                                  // the route is redrawn, so legs ahead of here are lit again
         }
 
+        /// <summary>From the top: the welcome, if the day has one.</summary>
+        void Restart() { Jump(0); t = 0; }
+
         void TogglePlay()
         {
-            if (t >= timeline.Total) Jump(0); else { playing = !playing; shown = null; }
+            if (t >= timeline.Total) Restart(); else { playing = !playing; shown = null; }
         }
 
         static void Leave() => Application.Quit();
@@ -134,7 +140,7 @@ namespace Orion
                     }
                     if (!any) { shots.Dwell(seg.Index, null, null, 0, out var e, out var l, check: false); coming.Add((seg.T0, e, l)); }
                 }
-                else if (rides[seg.Index].T > 0)
+                else if (seg.Kind == SegmentKind.Travel && rides[seg.Index].T > 0)
                     foreach (float f in new[] { .1f, .3f, .5f, .7f, .9f })
                     {
                         shots.Carry(seg.Index, trails[seg.Index], rides[seg.Index].At(f * rides[seg.Index].T).s, out var e, out var l);
@@ -149,7 +155,7 @@ namespace Orion
         /// first vantage on it.</summary>
         (int stop, int? first, string target) ViewAt(Segment seg, float at)
         {
-            var dwell = seg.Kind == SegmentKind.Dwell ? seg : timeline.DwellOf(seg.Index);
+            var dwell = seg.Kind == SegmentKind.Dwell ? seg : timeline.DwellOf(seg.Index);      // a leg is seen off from the stop it leaves; a welcome or goodbye is said at its stop
             if (dwell.Beats.Length == 0) return (dwell.Index, null, null);
             var slot = Array.Find(dwell.Beats, b => at < b.T1) ?? dwell.Beats[dwell.Beats.Length - 1];
             string target = slot.Beat.targetId ?? "";
@@ -180,14 +186,16 @@ namespace Orion
             // The guide waits for the city: for there to be one at all, and then, on arriving at a stop, for the place
             // to come into focus before it starts talking about it (a headset takes its time over that), though never for long.
             float loaded = world.LoadProgress;
-            bool arriving = on.Kind == SegmentKind.Dwell && t - on.T0 < 1;
+            bool arriving = on.Kind != SegmentKind.Travel && t - on.T0 < 1;
             if (!arriving) settling = 0;
             else if (settling >= 0 && placed) settling = (settling < .5f || loaded < SettledAt) && settling < SettleMaxSec ? settling + dt : -1;
             // Pausing on a leg slows the clock at the rate a ride is allowed to brake, and playing again picks it up as gently.
             // Anywhere else nothing is moving, so the clock simply stops and starts.
             float goal = playing ? 1 : 0;
             rate = ride != null ? Mathf.MoveTowards(rate, goal, dt * Ride.Push / Mathf.Max(ride.SpeedAt((t - on.T0) / (on.T1 - on.T0) * ride.T), Ride.Push)) : goal;
-            if (ready && placed && !(arriving && settling >= 0)) t = Mathf.Min(timeline.Total, t + dt * rate * (ride != null ? (on.T1 - on.T0) / ride.T : 1));
+            // The clock never runs fast: a leg given longer than its ride (so the guide can finish what it says on the way) is
+            // simply ridden more slowly.
+            if (ready && placed && voiced && !(arriving && settling >= 0)) t = Mathf.Min(timeline.Total, t + dt * rate * (ride != null ? Mathf.Min(1, (on.T1 - on.T0) / ride.T) : 1));
             if (t >= timeline.Total && playing) { playing = false; shown = null; }
             var (seg, u) = timeline.At(t);
             if (!smooth && seg.Kind == SegmentKind.Travel) { t = seg.T1; (seg, u) = timeline.At(t); ride = null; }     // "Ride: blinks": a leg is not ridden at all
@@ -273,7 +281,6 @@ namespace Orion
             marks.Show(cur, !travelling, t, guide, lit);
 
             /* narration: one clip per beat, started where the clock says it should be */
-            if (fetchedFor != cur) { fetchedFor = cur; narration.Fetch(day, cur, cur + 1); }
             narration.Tick(beat, t, playing && placed);
 
             /* what the panels show */
@@ -286,7 +293,7 @@ namespace Orion
             rig.Captions.Show(
                 $"STOP {Mathf.Min(cur + 1, count)} OF {count}{(travelling ? "  ·  ON THE WAY" : "")}",
                 stop.name,
-                !ready ? $"Finding {city}…" : beat?.Beat.text ?? (travelling ? "" : "…"),
+                !ready || !voiced ? $"Finding {city}…" : beat?.Beat.text ?? (travelling ? "" : "…"),
                 targetName);
             rig.Console.Set(playing, smooth,
                 days.Length > 1 ? $"Day {day.number}{(string.IsNullOrEmpty(day.title) ? "" : " · " + day.title)}" : null,

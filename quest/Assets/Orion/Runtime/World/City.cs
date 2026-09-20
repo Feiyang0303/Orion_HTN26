@@ -41,7 +41,7 @@ namespace Orion.World
         public int Layer => tiles.gameObject.layer;
         readonly List<Camera> ahead = new List<Camera>();
 
-        /// <summary>The city, or null if this device has already asked Google for it as often as it may today (see TileBudget).</summary>
+        /// <summary>The city, or null if this device has already asked Google for it as often as it may today (see DailyBudget).</summary>
         public static City Make(string googleTilesKey)
         {
             if (made) throw new InvalidOperationException("There is one city per run: a second would be a second request to Google.");
@@ -53,7 +53,7 @@ namespace Orion.World
             string other = Environment.GetEnvironmentVariable("ORION_TILESET_URL");
             if (!string.IsNullOrEmpty(other)) url = other;
 #endif
-            if (url.Contains("googleapis.com") && !TileBudget.TrySpend()) return null;
+            if (url.Contains("googleapis.com") && !DailyBudget.Tiles.TrySpend()) return null;
 
             var city = new GameObject("City").AddComponent<City>();
             city.Georeference = city.gameObject.AddComponent<CesiumGeoreference>();

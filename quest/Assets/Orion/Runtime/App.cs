@@ -28,7 +28,7 @@ namespace Orion
             var world = City.Make(config.googleTilesKey);
             if (world == null)
             {
-                rig.Captions.Show("ORION", "That is enough for today", $"This headset has loaded the city {TileBudget.PerDay} times today, and each load is a billed request to Google. It will again tomorrow (Pacific time).", null);
+                rig.Captions.Show("ORION", "That is enough for today", $"This headset has loaded the city {DailyBudget.Tiles.PerDay} times today, and each load is a billed request to Google. It will again tomorrow (Pacific time).", null);
                 return;
             }
             world.Refused += status => rig.Captions.Show("ORION", "Google would not serve the city",
