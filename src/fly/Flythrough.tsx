@@ -8,7 +8,7 @@ import { GroundPlacer } from './ground'
 import { anchorsFor, keyStop, keyTarget } from './anchors'
 import RouteLine from './RouteLine'
 import { Governor, PROFILE, storeQuality, storedQuality, type Quality, type Shot as Detail } from './quality'
-import { activeBeat, buildTimeline, type Segment } from './timeline'
+import { activeBeat, buildTimeline, shotBeat, type Segment } from './timeline'
 import { smootherstep } from './geo'
 import { Preloader, Shots, routeOn, shotKey, type Shot } from './shots'
 import { VisionDirector } from './director.vision'
@@ -35,6 +35,9 @@ const PRELOAD_AHEAD_SEC = 30       // tiles for shots this far ahead are fetched
 const PRELOAD_ON = new URLSearchParams(location.search).get('preload') !== '0'
 const DIRECTOR_ON = new URLSearchParams(location.search).get('director') !== '0'      // the director that looks (director.vision.ts)
 const noHit = () => null
+const TAU = Math.PI * 2
+const MAX_TURN = 0.55      // radians a second the camera may swing round its subject: half a turn takes six seconds
+const DIVE_TURN = 1.2      // the opening dive is one deliberate sweep, already eased, and may turn faster
 
 type RigProps = FlyProps & { quality: Quality; plan: Plan; onHud: (h: Hud) => void; control: React.MutableRefObject<Control>; tiles: React.MutableRefObject<TilesHandle | null>; loadTick: number }
 
@@ -69,6 +72,7 @@ function Rig({ plan, begin, quality, onStopReached, onFinish, onHud, control, ti
     sweep: 0, beatKey: '', audio: null as HTMLAudioElement | null, audioFailed: false, wasPaused: false,
     inited: false, planAngle: 0, planEye: new THREE.Vector3(), planLook: new THREE.Vector3(),
     look: new THREE.Vector3(), hud: '', highlightKey: '',
+    bearing: 0, reach: 0, height: 0,          // where the camera is round what it looks at: see the camera, below
   })
   const audioCache = useRef(new Map<string, HTMLAudioElement>())
   const audioFor = useCallback((url: string) => {
@@ -299,19 +303,38 @@ function Rig({ plan, begin, quality, onStopReached, onFinish, onHud, control, ti
       const e = smootherstep(u)
       eye.lerpVectors(st.planEye, eye, e); look.lerpVectors(st.planLook, look, e); smooth = 6
     } else if (seg.kind === 'dwell') {
-      shots.dwell(seg.stop, beat?.index ?? null, beat?.beat.targetId, st.t - seg.t0, st.t, eye, look)
+      const held = shotBeat(seg, st.t)
+      shots.dwell(seg.stop, held?.index ?? null, held?.beat.targetId, st.t - seg.t0, st.t, eye, look)
     } else if (!chasePose(seg, u, eye, look)) {
       shots.dwell(seg.leg, null, undefined, 0, st.t, eye, look)
     }
     st.riding = st.started && seg.kind === 'travel' ? { leg: seg.leg, s: smootherstep(u) * (shots.route.legPaths[seg.leg]?.length ?? 0) } : null
+    /* The camera is kept as a place round what it looks at (a bearing, a reach, a height), not as a point in space.
+       Easing the point itself takes the straight line from one shot to the next, and between two sides of the same
+       building the straight line goes over the top of it: the view whips through half a turn in a moment and back
+       again as it settles, which is what a sudden pan is. Turning the bearing instead takes the camera round the
+       thing, the short way, and no faster than a person pans. What it looks at, how far off and how high are eased
+       as before, so the chase still runs down its streets; only the swing on a corner or a change of side is slowed. */
     if (!st.inited) {
       // The flight starts from wherever the map left the camera, and glides from there.
       st.look.copy(camera.position).addScaledVector(camera.getWorldDirection(new THREE.Vector3()), 600)
+      const ox = camera.position.x - st.look.x, oz = camera.position.z - st.look.z
+      st.bearing = Math.atan2(oz, ox); st.reach = Math.hypot(ox, oz); st.height = camera.position.y - st.look.y
       st.inited = true
     }
     const k = 1 - Math.exp(-dt * smooth)
-    camera.position.lerp(eye, k); st.look.lerp(look, k)
+    st.look.lerp(look, k)
+    const ox = eye.x - look.x, oz = eye.z - look.z, reach = Math.hypot(ox, oz)
+    if (reach > 5) {                                        // straight overhead there is no bearing to turn to
+      const turn = ((Math.atan2(oz, ox) - st.bearing) % TAU + TAU + Math.PI) % TAU - Math.PI       // the short way round
+      const most = (seg.kind === 'dive' ? DIVE_TURN : MAX_TURN) * dt
+      st.bearing += THREE.MathUtils.clamp(turn * k, -most, most)
+    }
+    st.reach += (reach - st.reach) * k
+    st.height += (eye.y - look.y - st.height) * k
+    camera.position.set(st.look.x + Math.cos(st.bearing) * st.reach, st.look.y + st.height, st.look.z + Math.sin(st.bearing) * st.reach)
     camera.lookAt(st.look)
+    if (import.meta.env.DEV) (window as unknown as { __cam: unknown }).__cam = { yaw: st.bearing, t: st.t, kind: seg.kind }
 
     // ---- highlight follows the active beat's target ----------------------
     const dwellStop = seg.kind === 'dwell' ? seg.stop : -1

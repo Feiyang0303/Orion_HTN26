@@ -15,11 +15,17 @@ import type { Beat, Plan } from '../types'
  */
 
 export const DIVE_SEC = 5      // planning view → first stop
-export const LEAD_SEC = 0.4    // just enough for the new view to read before the guide speaks
-export const BEAT_GAP = 0.04   // the clips already contain a natural sentence-ending breath
-export const TAIL_SEC = 0.2    // let the last word land, then keep moving
-export const HOLD_LEAD_SEC = 0.4     // before the welcome and the goodbye
-export const BRIDGE_LEAD_SEC = 0.15  // the camera is visibly under way before the bridge begins
+/* The pauses. They were once next to nothing (a fortieth of a second between two things said at a place, a third of
+   a second between a place's last word and the line for the way onward), on the reasoning that every clip ends on a
+   breath of its own. It does, but a breath is not a change of subject: the guide finished a thought about one thing
+   and was already on the next, and a place was left the instant its last word was out. These are what a person
+   leaves: a look before speaking on arrival, a beat between two things, a moment on the last word before moving,
+   and the move visibly under way before it is talked over. */
+export const LEAD_SEC = 1.2    // arrive, let the view settle and be looked at, then speak
+export const BEAT_GAP = 0.35   // between two things said at one place
+export const TAIL_SEC = 0.6    // let the last word land before the camera leaves
+export const HOLD_LEAD_SEC = 0.8     // before the welcome and the goodbye
+export const BRIDGE_LEAD_SEC = 0.8   // the camera is visibly under way before the bridge begins
 export const FLY_MPS = 35      // cruising speed between stops (eased, so peak is higher)
 export const MIN_TRAVEL_SEC = 4
 /* A leg with nothing to say is crossed quickly. */
@@ -113,6 +119,15 @@ export function buildTimeline(plan: Plan, travelSec = flatTravelSec): Timeline {
 
 /** The beat being spoken at time t, or null during lead-in and gaps. Travel
     segments carry at most one — the leg's bridge line. */
+/** The beat whose shot the camera holds at time t in a dwell: the one being said, or in a pause the one just said
+    (the first, before anything has been). A pause is not a change of shot: for a while the camera made for the stop's
+    wide view in every gap and swung back when the next line began, which at these lengths of gap is a lurch each way. */
+export function shotBeat(seg: Extract<Segment, { kind: 'dwell' }>, t: number): BeatSlot | null {
+  let held: BeatSlot | null = seg.beats[0] ?? null
+  for (const b of seg.beats) if (t >= b.t0) held = b
+  return held
+}
+
 export function activeBeat(seg: Segment, t: number): BeatSlot | null {
   return seg.kind === 'dive' ? null : seg.beats.find(b => t >= b.t0 && t < b.t1) ?? null
 }
