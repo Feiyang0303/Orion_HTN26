@@ -4,8 +4,7 @@ import CrewStage from './CrewStage'
 import TripView from './TripView'
 import Journal from './Journal'
 import Icon from '../../ui/Icon'
-import { vrLink } from '../../vr/share'
-import { newId, saveTrip, type Saved } from '../../trips/store'
+import { newId, saveTrip, sendToHeadset, type Saved } from '../../trips/store'
 import { dayColour } from '../../ui/palette'
 import type { MapView } from '../../fly/MapRig'
 import type { CrewEvent } from '../events'
@@ -150,14 +149,15 @@ export default function Studio({ wish, mode, origin, saved: given, onTrip, onFly
     if (kept) onJournal()
   }, [trip, openingJournal, persist, onJournal])
 
-  const [vr, setVr] = useState<{ state: 'idle' | 'busy' | 'ready' | 'failed'; url?: string; why?: string }>({ state: 'idle' })
+  const [vr, setVr] = useState<{ state: 'idle' | 'busy' | 'ready' | 'failed'; why?: string }>({ state: 'idle' })
   const openInVr = useCallback(async () => {
     if (!trip) return
     setVr({ state: 'busy' })
     try {
       // The server has to have the trip before it can be marked for VR: marking one it had never seen was a 404, "no such trip".
       if (!(await persist(trip))) throw new Error('not saved')
-      setVr({ state: 'ready', url: await vrLink(tripKey.current) })
+      await sendToHeadset(tripKey.current)
+      setVr({ state: 'ready' })
     } catch (e) { setVr({ state: 'failed', why: keepError.current || (e instanceof Error ? e.message : String(e)) }) }
   }, [trip, persist])
 
@@ -259,12 +259,7 @@ export default function Studio({ wish, mode, origin, saved: given, onTrip, onFly
           {{ saving: 'Saving…', saved: 'Saved to your trips', local: 'Saved until the server restarts', failed: 'Couldn’t save this trip', idle: '' }[keep]}
         </span>
         {keep === 'failed' && trip && <button className="o-btn quiet small" onClick={() => void persist(trip)}>Try again</button>}
-        {vr.state === 'ready' && vr.url && (
-          <p className="tv-vr o-glass">
-            Open this on the headset’s browser: <a href={vr.url} target="_blank" rel="noreferrer">{vr.url}</a>
-            {!vr.url.startsWith('https:') && <em> VR needs https: restart with “npm run vr”.</em>}
-          </p>
-        )}
+        {vr.state === 'ready' && <p className="tv-vr o-glass">Sent. Open Orion on the headset to fly it.</p>}
         {vr.state === 'failed' && <p className="tv-vr o-glass">Couldn’t prepare the trip for VR{vr.why ? `: ${vr.why}` : '.'}</p>}
       </div>
       <TripView trip={trip!} day={dayIx} onDay={setDayIx} onFly={onFly} onFocus={setFocus} planning={asking || swapping}

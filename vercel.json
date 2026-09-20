@@ -5,8 +5,7 @@
   "outputDirectory": "dist",
   "build": { "env": { "NODEJS_HELPERS": "0" } },
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api?__path=$1" },
-    { "source": "/vr", "destination": "/index.html" }
+    { "source": "/api/(.*)", "destination": "/api?__path=$1" }
   ],
   "headers": [
     { "source": "/(.*)", "headers": [{ "key": "Document-Policy", "value": "js-profiling" }] }

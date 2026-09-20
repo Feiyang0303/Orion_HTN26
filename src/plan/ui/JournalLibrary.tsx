@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import { deleteTrip, listTrips, loadTrip, type Saved, type Summary } from '../../trips/store'
+import { deleteTrip, listTrips, loadTrip, sendToHeadset, type Saved, type Summary } from '../../trips/store'
 import type { Day } from '../../types'
 import Icon from '../../ui/Icon'
-import { vrLink } from '../../vr/share'
 import Journal from './Journal'
 import { Sketch, SketchDefs, cityMark } from './Sketches'
 import './journal-library.css'
@@ -35,7 +34,7 @@ export default function JournalLibrary({ onClose, onPlan, onOpenTrip, onFly, onC
   const [opening, setOpening] = useState<string | null>(null)
   const [selected, setSelected] = useState<Saved | null>(null)
   const [remove, setRemove] = useState<string | null>(null)
-  const [vr, setVr] = useState<{ id: string; state: 'busy' | 'ready' | 'failed'; url?: string; copied?: boolean } | null>(null)
+  const [vr, setVr] = useState<{ id: string; state: 'busy' | 'ready' | 'failed' } | null>(null)
   const [error, setError] = useState('')
   const [name, setName] = useState(savedName)
 
@@ -84,10 +83,8 @@ export default function JournalLibrary({ onClose, onPlan, onOpenTrip, onFly, onC
   const sendToVr = async (id: string) => {
     setVr({ id, state: 'busy' })
     try {
-      const url = await vrLink(id)
-      let copied = false
-      try { await navigator.clipboard.writeText(url); copied = true } catch { /* the visible link is the fallback */ }
-      setVr({ id, state: 'ready', url, copied })
+      await sendToHeadset(id)
+      setVr({ id, state: 'ready' })
     } catch { setVr({ id, state: 'failed' }) }
   }
 
@@ -192,12 +189,7 @@ export default function JournalLibrary({ onClose, onPlan, onOpenTrip, onFly, onC
                         </>
                       )}
                     </div>
-                    {vr?.id === trip.id && vr.state === 'ready' && vr.url && (
-                      <div className="jl-vr" role="status">
-                        <span>{vr.copied ? 'VR link copied' : 'Open on the headset'}</span>
-                        <a href={vr.url} target="_blank" rel="noreferrer">{vr.url}</a>
-                      </div>
-                    )}
+                    {vr?.id === trip.id && vr.state === 'ready' && <p className="jl-vr" role="status">Sent. Open Orion on the headset to fly it.</p>}
                     {vr?.id === trip.id && vr.state === 'failed' && <p className="jl-vr is-error" role="alert">Couldn’t prepare this trip for VR.</p>}
                   </motion.li>
                 ))}

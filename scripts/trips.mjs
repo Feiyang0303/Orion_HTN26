@@ -118,7 +118,7 @@ export function tripRoutes({ json, readJson, readBuf, HttpError }) {
         if (d) await store.remove(id)
         json(res, 200, { ok: true })
       },
-      /** Which trip /vr shows. Setting it replaces the last one: there is one headset session at a time. It is kept
+      /** Which trip the headset app plays. Setting it replaces the last one: there is one headset session at a time. It is kept
           with the trips and not in this process, because when hosted the headset's request may reach another one. */
       'POST /api/vr/current': async (req, res) => {
         const id = idOf(req)

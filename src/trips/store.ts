@@ -82,3 +82,8 @@ export async function listTrips(): Promise<{ trips: Summary[]; persistent: boole
 export async function deleteTrip(id: string): Promise<void> {
   await call(`/api/trips/delete?id=${encodeURIComponent(id)}`, { method: 'DELETE' })
 }
+
+/** Makes this the trip the headset app plays. There is one headset session at a time, so sending one replaces the last. */
+export async function sendToHeadset(id: string): Promise<void> {
+  await call(`/api/vr/current?id=${encodeURIComponent(id)}`, { method: 'POST' })
+}

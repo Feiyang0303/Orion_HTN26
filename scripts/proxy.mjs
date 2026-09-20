@@ -9,7 +9,6 @@
  *   POST /api/routes/walk     { from: LatLon, to: LatLon, transport? } -> { encodedPolyline, distanceM, durationSec, how?, steps? } | { none: true }
  */
 import { createServer } from 'node:http'
-import { networkInterfaces } from 'node:os'
 import { randomBytes } from 'node:crypto'
 import * as Sentry from '@sentry/node'
 import { loadEnv, scrub } from './shared.mjs'
@@ -40,13 +39,6 @@ const readBuf = (req, max = 20e6) => new Promise((resolve, reject) => {
     .on('end', () => resolve(Buffer.concat(chunks))).on('error', reject)
 })
 const trips = tripRoutes({ json, readJson: (req, max) => readJson(req, max), readBuf, HttpError })
-
-/* ---- Where a headset finds this machine ---- */
-/** The machine's address on the local network, for the link a headset opens. */
-function lan(_req, res) {
-  const ips = Object.values(networkInterfaces()).flat().filter(i => i && i.family === 'IPv4' && !i.internal).map(i => i.address)
-  json(res, 200, { ips })
-}
 
 /* ---- LLM ---------------------------------------------------------------- */
 async function llm(req, res) {
@@ -439,7 +431,6 @@ const routes = {
   'GET /api/wiki': handleWiki,
   'POST /api/overpass': (req, res) => handleOverpass(req, res, readJson),
   ...trips.routes,
-  'GET /api/lan': lan,
   'POST /api/llm': llm,
   'POST /api/tts': tts,
   'POST /api/routes/matrix': routesMatrix,
