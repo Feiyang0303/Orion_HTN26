@@ -13,6 +13,9 @@ namespace Orion
 
         void Start()
         {
+            // A stack trace with every line of log is dear on a headset, and Cesium's physics meshes draw a warning per coarse tile.
+            Application.SetStackTraceLogType(LogType.Log, StackTraceLogType.None);
+            Application.SetStackTraceLogType(LogType.Warning, StackTraceLogType.None);
             Application.targetFrameRate = 72;                    // in a headset the compositor sets the pace; anywhere else, this does
             var rig = Rig.Make();
             rig.Veil.Fade = 0;

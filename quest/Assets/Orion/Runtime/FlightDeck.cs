@@ -25,6 +25,7 @@ namespace Orion
     {
         const float PreloadAheadSec = 12; const int PreloadMost = 2;
         const float SettledAt = 95, SettleMaxSec = 8;          // a stop is in focus when this much (%) of what is wanted has loaded; and it is waited for no longer than this
+        const float RebuildSec = 3;                            // once under way, the route and the shots are re-placed on refined ground no more often than this
         const float WaitingHeight = 400;                       // where a person waits, above the first stop, while there is no city yet
 
         Day[] days; string city;
@@ -55,6 +56,7 @@ namespace Orion
         Vector3 eye, look, was, drift; float yaw; bool placed, cutting;
 
         bool pauseHeld; float leaveHeld;
+        int frames; float worst, since;                        // for the line of log that says how it is running
         // Looking round without turning round: a flick of either thumbstick turns the person's space by a step, at once
         // (a turn that sweeps is the kind that makes people ill). It lasts until the next vantage, which opens facing its subject.
         const float SnapTurn = Mathf.PI / 6;
@@ -158,7 +160,7 @@ namespace Orion
         {
             float raw = Time.deltaTime, dt = Mathf.Min(raw, .05f);
             if (ground.Step(Time.time)) groundMoved = true;
-            if (groundMoved && Time.time - builtAt > .5f) Place();
+            if (groundMoved && Time.time - builtAt > (ready ? RebuildSec : .5f)) Place();
 
             /* the buttons that need no aiming: A or X pauses the guide, holding B or Y leaves */
             bool pause = rig.Hands[0].Primary || rig.Hands[1].Primary;
@@ -249,9 +251,18 @@ namespace Orion
             {
                 sweep = 0;
                 ahead.Clear();
-                foreach (var c in coming) if (c.t >= t - 1 && c.t <= t + PreloadAheadSec && ahead.Count < PreloadMost) ahead.Add((c.eye, c.look));
+                // While this view is still arriving, every request is for it. Once it has (or a move is seconds away), the
+                // loader is pointed at what comes next, however far off, so the next place is already sharp on arrival.
+                bool settled = loaded >= SettledAt;
+                foreach (var c in coming) if (c.t > t - 1 && (settled || c.t <= t + PreloadAheadSec) && ahead.Count < (settled ? PreloadMost : 1) && c.t > t) ahead.Add((c.eye, c.look));
                 world.LookAhead(ahead);
                 rig.Console.ShowStats($"city {loaded:0}%  ·  {1 / Mathf.Max(raw, .001f):0} fps");
+            }
+            frames++; worst = Mathf.Max(worst, raw); since += raw;
+            if (since >= 5)
+            {
+                Debug.Log($"[orion] {frames / since:0} fps, worst frame {worst * 1000:0} ms, city {loaded:0}%, clock {t:0.0}/{timeline.Total:0.0}, {(travelling ? "leg" : "stop")} {seg.Index}, ready {ready}, placed {placed}");
+                frames = 0; worst = 0; since = 0;
             }
 
             /* the guide: the light you follow down a leg, and a beam on whatever it is talking about */

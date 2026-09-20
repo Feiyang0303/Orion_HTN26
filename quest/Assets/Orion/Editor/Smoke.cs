@@ -86,7 +86,7 @@ namespace Orion.Editor
         static void Save(RenderTexture texture, string path)
         {
             RenderTexture.active = texture;
-            var image = new Texture2D(texture.width, texture.height, TextureFormat.RGBA32, false);
+            var image = new Texture2D(texture.width, texture.height, TextureFormat.RGB24, false);
             image.ReadPixels(new Rect(0, 0, texture.width, texture.height), 0, 0);
             RenderTexture.active = null;
             File.WriteAllBytes(path, image.EncodeToPNG());

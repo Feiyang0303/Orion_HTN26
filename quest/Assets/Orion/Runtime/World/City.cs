@@ -17,7 +17,9 @@ namespace Orion.World
         // Screen-space error, in the headset's own pixels. One value for the whole flight: Cesium reloads the entire
         // tileset when this is set, a fresh request to Google each time, so it is set once and never touched again.
         const float ScreenSpaceError = 12;
-        const long CacheBytes = 512L * 1024 * 1024;
+        // What the tile cache may hold. A headset with memory to spare (a Quest Pro or 3 has 8–12 GB) keeps more of the
+        // city, so a place already seen is not fetched again; a Quest 2 cannot.
+        static long CacheBytes => (SystemInfo.systemMemorySize >= 7000 ? 1280L : 512L) * 1024 * 1024;
         const int PreloadPx = 700;
 
         /// <summary>Google would not serve the city: the HTTP status it answered with (429 is a used-up quota).</summary>
@@ -64,9 +66,9 @@ namespace Orion.World
             t.showCreditsOnScreen = true;                        // Google's terms: the attribution stays in view (see Credits)
             t.maximumScreenSpaceError = ScreenSpaceError;
             t.maximumCachedBytes = CacheBytes;
-            t.maximumSimultaneousTileLoads = 12;
+            t.maximumSimultaneousTileLoads = 24;
             t.preloadAncestors = true;
-            t.preloadSiblings = true;
+            t.preloadSiblings = false;                           // every request spent on a neighbour is one not spent on what is in view
             t.enableFrustumCulling = true;
             t.enableFogCulling = false;                          // Cesium's fog drops far tiles by its own reckoning, leaving a hard edge; the far plane and Orion's haze end the city instead
             t.enforceCulledScreenSpaceError = true;

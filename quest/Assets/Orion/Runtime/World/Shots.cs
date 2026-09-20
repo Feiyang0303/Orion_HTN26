@@ -76,7 +76,9 @@ namespace Orion.World
             var key = (stop, target ?? "");
             if (!sizes.TryGetValue(key, out var size)) size = (string.IsNullOrEmpty(target) ? Anchor.Stop(stop) : Anchor.Target(stop, target), null, float.MinValue);
             Vector3 tg = Cell(size.anchor, stop);
-            if (size.h == null || now - size.at > 4) sizes[key] = size = (size.anchor, ground.Measure(tg), now);      // re-measured now and then: the surface sharpens as finer tiles arrive
+            // Measured when it is being looked at, and again now and then, because the surface sharpens as finer tiles arrive.
+            // A prediction takes what is known: seventeen rays apiece for every shot of the day is not worth a guess.
+            if (check && (size.h == null || now - size.at > 4)) sizes[key] = size = (size.anchor, ground.Measure(tg), now);
             Frame fr = Frame.For(size.h, beatIndex == null);
             Vector3 lookAt = look = new Vector3(tg.x, tg.y + fr.LookUp, tg.z);
             Vector3 hd = HeadingIn(stop);
