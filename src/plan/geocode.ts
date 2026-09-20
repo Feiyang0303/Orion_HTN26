@@ -36,7 +36,16 @@ const queue = politeQueue(1100)
 type Row = {
   display_name: string; name?: string; lat: string; lon: string
   importance?: number; namedetails?: Record<string, string>
+  /** What kind of thing the record is: 'city', 'town', 'country', 'state'… */
+  addresstype?: string
 }
+
+/* A city-state has two records of the same name and the same importance: the country and the city. The country's
+   point is the middle of its territory, which for Singapore is a reservoir in a forest nearly nine kilometres from
+   everything anyone flies there to see, further than a day's trip is allowed to reach, so the Scout's famous places
+   were all thrown away as outside the area and the day was whatever single thing happened to stand near the
+   reservoir. When a city is what was asked for, a record that is a whole country or region loses to one that is not. */
+const TERRITORY = new Set(['country', 'state', 'region', 'province', 'county', 'state_district'])
 
 /* English first, then whatever the place calls itself. Nominatim otherwise
    answers in the browser's language, which is how a Toronto journal came back
@@ -80,6 +89,7 @@ export async function locate(query: string, near?: LatLon, signal?: AbortSignal,
   const shaped = (await search(params, signal)).map(r => ({
     name: englishName(r), full: r.display_name,
     lat: Number(r.lat), lon: Number(r.lon), importance: r.importance ?? 0,
+    territory: !!opts.settlement && TERRITORY.has(r.addresstype ?? ''),
   })).filter(r => Number.isFinite(r.lat) && Number.isFinite(r.lon))
 
   if (!shaped.length) {
@@ -89,7 +99,7 @@ export async function locate(query: string, near?: LatLon, signal?: AbortSignal,
   // Nearest wins when we have a centre; importance decides otherwise. Ranking
   // by importance alone puts the famous Cambridge in England when the person
   // is plainly planning a day in Massachusetts.
-  shaped.sort((a, b) => near ? metresBetween(near, a) - metresBetween(near, b) : b.importance - a.importance)
+  shaped.sort((a, b) => near ? metresBetween(near, a) - metresBetween(near, b) : Number(a.territory) - Number(b.territory) || b.importance - a.importance)
 
   const best = shaped[0]
   const alternatives = shaped.slice(1)
