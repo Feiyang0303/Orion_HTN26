@@ -19,7 +19,8 @@ import * as THREE from 'three'
  * And it is a goose — a Canada goose, the one that owns Waterloo — which is
  * mostly a neck: a long S-curve from a low body up to a small head, ink-dark
  * from the bill to the shoulders with the white chinstrap across the cheeks,
- * a brown back, a pale breast, black bill and feet, white under the tail,
+ * a brown back, a pale breast, black feet, white under the tail, and — the one
+ * liberty taken — an amber bill, so the mouth can be seen chattering,
  * wings folded along the back. Everything is a sphere, a cone or a tube;
  * nothing has to be downloaded for it to turn up.
  *
@@ -41,7 +42,9 @@ const BACK = '#8a7156'
 const BACK_SHADE = '#6e5843'
 const BREAST = '#d9c8a9'
 const UNDERTAIL = '#f0e4cc'
-const BILL = '#1a1411'
+const BILL = '#e9a04e'       // the one bright thing on the dark head: the mouth has to be seen moving
+const MOUTH = '#4a1f1a'
+const FOOT = '#1a1411'
 const INK = '#0f0b09'
 const LINE = '#1c1410'
 const BLUSH = '#d99a8a'
@@ -145,7 +148,7 @@ function Bird({ state }: { state: GooseState }) {
       head.current.rotation.z += ((thinking ? 0.24 : 0) - head.current.rotation.z) * k(5)
       head.current.rotation.y += ((paused ? -0.3 : 0) - head.current.rotation.y) * k(4)
     }
-    const open = talking ? Math.max(0, Math.sin(t * 11) * 0.5 + Math.sin(t * 17.3) * 0.3 + 0.2) * 0.32 : 0
+    const open = talking ? Math.max(0, Math.sin(t * 11) * 0.5 + Math.sin(t * 17.3) * 0.3 + 0.2) * 0.45 : 0
     if (billTop.current) billTop.current.rotation.x += (-open * 0.5 - billTop.current.rotation.x) * k(20)
     if (billBottom.current) billBottom.current.rotation.x += (open - billBottom.current.rotation.x) * k(20)
     // Wings rest folded along the back and lift from the shoulder.
@@ -219,6 +222,7 @@ function Bird({ state }: { state: GooseState }) {
         ))}
         {/* the bill: flat and forward, in two halves */}
         <group position={[0, -0.04, 0.26]}>
+          <Part geometry={geo.strap} color={MOUTH} ramp={ramp} position={[0, 0, 0.08]} scale={[0.42, 0.2, 0.7]} line={0} />
           <group ref={billTop}>
             <Part geometry={geo.billTop} color={BILL} ramp={ramp} position={[0, 0.035, 0.21]} rotation={[Math.PI / 2, 0, 0]} scale={[1.2, 1, 0.62]} line={1.07} />
           </group>
@@ -238,8 +242,8 @@ function Bird({ state }: { state: GooseState }) {
         </group>
       </group>
       {/* feet, webbed and tucked */}
-      <Part geometry={geo.foot} color={BILL} ramp={ramp} position={[-0.15, -0.46, 0.14]} rotation={[0.25, 0, 0]} scale={[1.3, 0.32, 1.8]} line={1.07} />
-      <Part geometry={geo.foot} color={BILL} ramp={ramp} position={[0.15, -0.46, 0.14]} rotation={[0.25, 0, 0]} scale={[1.3, 0.32, 1.8]} line={1.07} />
+      <Part geometry={geo.foot} color={FOOT} ramp={ramp} position={[-0.15, -0.46, 0.14]} rotation={[0.25, 0, 0]} scale={[1.3, 0.32, 1.8]} line={1.07} />
+      <Part geometry={geo.foot} color={FOOT} ramp={ramp} position={[0.15, -0.46, 0.14]} rotation={[0.25, 0, 0]} scale={[1.3, 0.32, 1.8]} line={1.07} />
       {/* sparks */}
       <instancedMesh ref={sparks} args={[geo.spark, undefined, SPARKS]} position={[0, 1.1, 0.5]}>
         <meshBasicMaterial color={STAR} transparent opacity={0.9} />

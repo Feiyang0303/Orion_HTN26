@@ -17,6 +17,7 @@ import Fault from '../ui/Fault'
 import FlightHud, { type Control, type Hud } from './FlightHud'
 import GuideTalk from './GuideTalk'
 import Goose, { type GooseState } from './Goose'
+import { quack } from '../plan/quack'
 import MapRig, { type MapView } from './MapRig'
 import DirectorDesk from './DirectorDesk'
 import './fly.css'
@@ -73,7 +74,7 @@ function Rig({ plan, begin, quality, onStopReached, onFinish, onHud, control, ti
   const audioFor = useCallback((url: string) => {
     let audio = audioCache.current.get(url)
     if (!audio) {
-      audio = new Audio(url)
+      audio = quack(new Audio(url))
       audio.preload = 'auto'
       audioCache.current.set(url, audio)
       audio.load()

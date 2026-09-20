@@ -235,23 +235,38 @@ const v3Stability = mood => {
   return m.stability <= 0.32 ? 0 : 0.5
 }
 
-async function speak(key, voice, text, model, mood, withStyle) {
+/* The goose is a duck: the flight plays every clip a little fast with the
+   browser's pitch-preservation off, which lifts the voice. So the lines are
+   asked for slower by the same amount, and the pace comes out normal. The
+   two numbers are a pair: this one and QUACK_RATE in src/plan/quack.ts. */
+const GOOSE_SPEED = Number(env('ELEVENLABS_GOOSE_SPEED')) || 0.82
+let speedTakes = true   // until a model refuses it, in which case the goose is just a quick duck
+
+async function speak(key, voice, text, model, mood, withStyle, speed = 1) {
   const m = MOOD[mood] || MOOD.warm
   const v3 = /_v3/.test(model)
-  return fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voice}?output_format=mp3_44100_128`, {
+  const pace = speedTakes && speed !== 1 ? { speed } : {}
+  const r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voice}?output_format=mp3_44100_128`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'xi-api-key': key, accept: 'audio/mpeg' },
     body: JSON.stringify({
       text: text.trim().slice(0, 5000),
       model_id: model,
       voice_settings: v3
-        ? { stability: v3Stability(mood), similarity_boost: 0.75, use_speaker_boost: true }
+        ? { stability: v3Stability(mood), similarity_boost: 0.75, use_speaker_boost: true, ...pace }
         : {
             stability: m.stability, similarity_boost: 0.75, use_speaker_boost: true,
             ...(withStyle ? { style: m.style } : {}),
+            ...pace,
           },
     }),
   })
+  if (!r.ok && pace.speed && (r.status === 400 || r.status === 422)) {
+    console.warn(`[tts] ${model} would not take a speed (${r.status}); the goose will speak at its own pace from here`)
+    speedTakes = false
+    return speak(key, voice, text, model, mood, withStyle)
+  }
+  return r
 }
 
 /* The written pages are spoken by the fast model: there are dozens of them and
@@ -275,25 +290,26 @@ async function tts(req, res) {
   if (!text || typeof text !== 'string') throw new HttpError(400, 'text required')
   // Everything the flight says is the goose; `character: 'guide'` is the old voice, kept for anything that wants it.
   const voice = character === 'guide' ? await voiceId(key) : await gooseVoiceId(key)
+  const speed = character === 'guide' ? 1 : GOOSE_SPEED
   const { fast, rich, tags, style } = await models(key)
 
   let upstream
   if (expressive) {
     // Tags are delivery notes to v3 and words to be read aloud to anything else.
-    upstream = await speak(key, voice, tags ? text : untag(text), rich, mood, style)
+    upstream = await speak(key, voice, tags ? text : untag(text), rich, mood, style, speed)
     if (!upstream.ok) {
       const why = (await upstream.text()).slice(0, 160)
       console.warn(`[tts] ${rich} refused (${upstream.status}: ${why}); speaking with ${fast} instead`)
       tuned = { fast, rich: fast, tags: false, style: false }   // do not ask it again this run
-      upstream = await speak(key, voice, untag(text), fast, mood, false)
+      upstream = await speak(key, voice, untag(text), fast, mood, false, speed)
     }
   } else {
     const pageModel = /v3/.test(fast)
-    upstream = await speak(key, voice, pageModel ? text : untag(text), fast, 'read', false)
+    upstream = await speak(key, voice, pageModel ? text : untag(text), fast, 'read', false, speed)
     if (!upstream.ok && fast !== 'eleven_flash_v2_5') {
       const why = (await upstream.text()).slice(0, 160)
       console.warn(`[tts] ${fast} refused (${upstream.status}: ${why}); speaking pages with eleven_flash_v2_5`)
-      upstream = await speak(key, voice, untag(text), 'eleven_flash_v2_5', 'read', false)
+      upstream = await speak(key, voice, untag(text), 'eleven_flash_v2_5', 'read', false, speed)
     }
   }
 

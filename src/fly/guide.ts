@@ -1,6 +1,7 @@
 import type { Plan, Stop, Table } from '../types'
 import { askJson } from '../plan/json'
 import { postBytes } from '../plan/net'
+import { quack } from '../plan/quack'
 import { report } from '../telemetry'
 
 /* The guide you can interrupt.
@@ -146,7 +147,7 @@ export async function voice(spoken: string, mood = 'warm'): Promise<HTMLAudioEle
   try {
     const bytes = await postBytes('tts', { text: spoken, expressive: true, mood })
     const url = URL.createObjectURL(new Blob([bytes], { type: 'audio/mpeg' }))
-    const audio = new Audio(url)
+    const audio = quack(new Audio(url))
     audio.addEventListener('ended', () => URL.revokeObjectURL(url), { once: true })
     return audio
   } catch (e) {

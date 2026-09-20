@@ -1,8 +1,10 @@
 import { postBytes } from './net'
+import { QUACK_RATE } from './quack'
 import type { Beat, Leg, Stop } from '../types'
 
 /* Voice. ElevenLabs via the proxy, mp3_44100_128, which is constant-bitrate,
-   so duration is exactly bytes*8/128000 (plus a few ms of header).
+   so duration is exactly bytes*8/128000 (plus a few ms of header) — and
+   the flight plays every clip QUACK_RATE faster than that (see quack.ts).
    The paper journal never plays this; the flythrough does. */
 
 const BITRATE = 128_000
@@ -13,7 +15,7 @@ export const estimateSec = (text: string) => text.trim().split(/\s+/).length / W
 
 export async function speak(text: string): Promise<{ bytes: ArrayBuffer; durationSec: number }> {
   const bytes = await postBytes('tts', { text })
-  return { bytes, durationSec: +(bytes.byteLength * 8 / BITRATE).toFixed(2) }
+  return { bytes, durationSec: +(bytes.byteLength * 8 / BITRATE / QUACK_RATE).toFixed(2) }
 }
 
 function limiter(max: number) {
