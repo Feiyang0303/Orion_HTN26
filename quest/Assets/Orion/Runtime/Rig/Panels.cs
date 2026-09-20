@@ -1,9 +1,11 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.Reflection;
+using System.Text.RegularExpressions;
 using CesiumForUnity;
 using TMPro;
 using UnityEngine;
-using UnityEngine.UIElements;
 
 namespace Orion
 {
@@ -106,30 +108,73 @@ namespace Orion
         }
     }
 
-    /// <summary>Google's and the data providers' attribution, which has to stay in view. Cesium draws its
-    /// credits as a screen overlay, and a headset has no screen: so its overlay is drawn into a texture
-    /// instead, and the texture shown on a strip under the captions.</summary>
-    public static class Credits
+    /// <summary>Google's and the data providers' attribution, which has to stay in view. Cesium shows its credits on a
+    /// screen overlay, which a headset never sees, and keeps the data providers behind a link nobody can click here. So
+    /// its credits are read, not shown: the logo, the credits and the providers, on a strip under the captions. Cesium
+    /// keeps them internal, so they are read by name (and kept from being stripped by Assets/Orion/link.xml).</summary>
+    public class Credits : MonoBehaviour
     {
-        const int Px = 1024, PxHigh = 160;          // tall enough for the credits to wrap onto three rows: they are anchored to the bottom, and the logo is in the first
-        const float TextScale = 1.5f;               // Cesium's credits are 11 px, sized for a monitor
-        const float W = .95f;
+        const float W = .95f, H = .07f, Pad = .04f, LogoH = .022f, Front = -.004f;
+        const BindingFlags Any = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+
+        TextMeshPro text;
+        Renderer logo;
+        string shown = "";
+        float next;
 
         public static void Make(Transform rig)
         {
-            var overlay = CesiumCreditSystem.GetDefaultCreditSystem().GetComponent<UIDocument>();
-            var texture = new RenderTexture(Px, PxHigh, 0) { name = "Credits" };
-            var settings = UnityEngine.Object.Instantiate(overlay.panelSettings);
-            settings.targetTexture = texture;
-            settings.scaleMode = PanelScaleMode.ConstantPixelSize;
-            settings.scale = TextScale;
-            settings.clearColor = true;
-            settings.colorClearValue = Color.clear;
-            overlay.panelSettings = settings;
-
-            var strip = Look.Draw("Credits", rig, Meshes.Quad(W, W * PxHigh / Px), new Material(Look.ShaderNamed("OrionTexture")) { mainTexture = texture });
-            strip.transform.localPosition = new Vector3(0, .78f, .928f);           // hung from the caption panel's lower edge, in its plane
-            strip.transform.localRotation = Quaternion.Euler(31.5f, 0, 0);
+            var c = new GameObject("Credits").AddComponent<Credits>();
+            c.transform.SetParent(rig, false);
+            c.transform.localPosition = new Vector3(0, .815f, .951f);          // hung from the caption panel's lower edge, in its plane
+            c.transform.localRotation = Quaternion.Euler(31.5f, 0, 0);
+            Look.Draw("Back", c.transform, Meshes.Quad(W, H), Look.Flat(Look.Panel.Alpha(.78f)));
+            c.logo = Look.Draw("Logo", c.transform, Meshes.Quad(1, 1), new Material(Look.ShaderNamed("OrionTexture"))).GetComponent<Renderer>();
+            c.logo.enabled = false;
+            c.text = Look.Text("Text", c.transform, .015f, Look.Body, TextAlignmentOptions.Left, new Vector2(W - 2 * Pad, H - .01f));
+            c.text.overflowMode = TextOverflowModes.Ellipsis;
         }
+
+        static object Get(object of, string property) => of.GetType().GetProperty(property, Any).GetValue(of);
+
+        void Update()
+        {
+            if (Time.unscaledTime < next) return;
+            next = Time.unscaledTime + 1;
+
+            // Asked for afresh each time: Cesium replaces its default credit system when a tileset is made.
+            var system = CesiumCreditSystem.GetDefaultCreditSystem();
+            var images = (List<Texture2D>)Get(system, "images");
+            Texture2D mark = null;
+            var words = new List<string>();
+            foreach (string list in new[] { "onScreenCredits", "popupCredits" })
+                foreach (object credit in (IEnumerable)Get(system, list))
+                    foreach (object part in (IEnumerable)Get(credit, "components"))
+                    {
+                        int image = (int)Get(part, "imageId");
+                        string said = Regex.Replace((string)Get(part, "text") ?? "", "<.*?>", "").Trim();
+                        if (image >= 0 && image < images.Count && images[image] != null) mark ??= images[image];
+                        else if (said.Length > 1 && !words.Contains(said)) words.Add(said);
+                    }
+
+            string all = string.Join("  ·  ", words);
+            if (all == shown && mark == logo.sharedMaterial.mainTexture) return;
+            shown = all;
+            float logoW = mark ? LogoH * mark.width / mark.height : 0;
+            logo.enabled = mark;
+            if (mark)
+            {
+                logo.sharedMaterial.mainTexture = mark;
+                logo.transform.localScale = new Vector3(logoW, LogoH, 1);
+                logo.transform.localPosition = new Vector3(-W / 2 + Pad + logoW / 2, 0, Front);
+            }
+            float left = -W / 2 + Pad + (mark ? logoW + .015f : 0);
+            text.rectTransform.sizeDelta = new Vector2(W / 2 - Pad - left, H - .01f);
+            text.transform.localPosition = new Vector3((left + W / 2 - Pad) / 2, 0, Front);
+            text.text = all;
+        }
+
+        /// <summary>What the strip is showing, for the smoke run to report.</summary>
+        public string Shown => $"{(logo.enabled ? "[logo] " : "")}{shown}";
     }
 }

@@ -10,8 +10,7 @@ namespace Orion.World
     /* The real city: Google's Photorealistic 3D Tiles, streamed by Cesium. A headset has a mobile
      * GPU and a fraction of a laptop's memory, so: nothing is fetched beyond the haze, what is
      * out of view is kept only coarsely so there is a city there if they turn round, and the cache
-     * is bounded. Photogrammetry has its lighting baked in, and the tiles say so (KHR_materials_unlit),
-     * which Cesium honours with its unlit material. */
+     * is bounded. Photogrammetry has its lighting baked in, so the tiles are drawn unlit (Orion/Tiles). */
 
     public class City : MonoBehaviour
     {
@@ -69,19 +68,17 @@ namespace Orion.World
             t.preloadAncestors = true;
             t.preloadSiblings = true;
             t.enableFrustumCulling = true;
-            t.enableFogCulling = true;
+            t.enableFogCulling = false;                          // Cesium's fog drops far tiles by its own reckoning, leaving a hard edge; the far plane and Orion's haze end the city instead
             t.enforceCulledScreenSpaceError = true;
             t.culledScreenSpaceError = 64;
             t.createPhysicsMeshes = true;                        // the ground is found by rays onto them (see Ground)
             t.generateSmoothNormals = false;
+            t.opaqueMaterial = new Material(Look.ShaderNamed("OrionTiles"));      // unlit, with the haze Cesium's own lacks
 
             Cesium3DTileset.OnCesium3DTilesetLoadFailure += city.OnLoadFailure;
 
-            RenderSettings.fog = true;
-            RenderSettings.fogMode = FogMode.Linear;
-            RenderSettings.fogColor = Look.Haze;
-            RenderSettings.fogStartDistance = Rig.Far * .4f;
-            RenderSettings.fogEndDistance = Rig.Far;
+            Shader.SetGlobalColor("_OrionHaze", Look.Haze.linear);
+            Shader.SetGlobalVector("_OrionHazeRange", new Vector4(Rig.Far * .35f, Rig.Far * .95f));
             RenderSettings.skybox = new Material(Look.ShaderNamed("OrionSky"));
             return city;
         }

@@ -16,7 +16,7 @@ namespace Orion.Editor
     public static class Smoke
     {
         const string Flag = "Orion.Smoke";
-        static readonly float[] Moments = { 6, 14, 22, 30, 38, 46, 56, 66, 78, 92 };
+        static readonly float[] Moments = { 8, 16, 30, 50, 75, 100 };
         static double started;
         static int taken;
 
@@ -64,13 +64,32 @@ namespace Orion.Editor
                 + $"colliders {(tiles ? tiles.GetComponentsInChildren<MeshCollider>().Length : 0)}  rig {(rig ? rig.transform.position.ToString("0") : "none")} yaw {(rig ? rig.transform.eulerAngles.y : 0):0}  "
                 + $"google loads today {Orion.World.TileBudget.SpentToday}/{Orion.World.TileBudget.PerDay}  veil {Object.FindFirstObjectByType<Veil>()?.Fade:0.00}  guide {GameObject.Find("Guide") != null}  beam {GameObject.Find("Beam") != null}  fps {1 / Time.smoothDeltaTime:0}  ||  {captions}");
 
+            Save(Shoot(head), $"Logs/smoke-{taken}.png");
+            // The same moment with the head level, as a person's would be: the horizon, the haze, the panels below.
+            var was = head.transform.rotation;
+            head.transform.rotation = Quaternion.Euler(0, was.eulerAngles.y, 0);
+            Save(Shoot(head), $"Logs/smoke-{taken}-level.png");
+            head.transform.rotation = Quaternion.Euler(35, was.eulerAngles.y, 0);
+            Save(Shoot(head), $"Logs/smoke-{taken}-down.png");
+            head.transform.rotation = was;
+
+            Debug.Log($"[smoke] credits: {Object.FindFirstObjectByType<Credits>()?.Shown}");
+        }
+
+        static RenderTexture Shoot(Camera head)
+        {
             var target = new RenderTexture(1280, 720, 24);
             head.targetTexture = target; head.Render(); head.targetTexture = null;
-            RenderTexture.active = target;
-            var image = new Texture2D(target.width, target.height, TextureFormat.RGB24, false);
-            image.ReadPixels(new Rect(0, 0, target.width, target.height), 0, 0);
+            return target;
+        }
+
+        static void Save(RenderTexture texture, string path)
+        {
+            RenderTexture.active = texture;
+            var image = new Texture2D(texture.width, texture.height, TextureFormat.RGBA32, false);
+            image.ReadPixels(new Rect(0, 0, texture.width, texture.height), 0, 0);
             RenderTexture.active = null;
-            File.WriteAllBytes($"Logs/smoke-{taken}.png", image.EncodeToPNG());
+            File.WriteAllBytes(path, image.EncodeToPNG());
         }
     }
 }

@@ -1,12 +1,12 @@
 # ninja log v5
-9	212	1789860902742118615	FramePacing/CMakeFiles/swappywrapper.dir/UnitySwappyWrapper.cpp.o	aa77cc299e901c15
-213	343	1789860902849692438	/Users/danielzhang/Documents/Orion_HTN26/quest/Library/Bee/Android/Prj/IL2CPP/Gradle/unityLibrary/build/intermediates/cxx/RelWithDebInfo/3t543w36/obj/arm64-v8a/libswappywrapper.so	8368b0df496be177
-2	1033	1789860903558520962	GameActivity/CMakeFiles/game.dir/UGAInputKeyEvent.cpp.o	48ff0f3933a0cc22
-1	1045	1789860903572592864	GameActivity/CMakeFiles/game.dir/UGAEntry.cpp.o	43b47dbc79c6a3d4
-1	1099	1789860903622814207	GameActivity/CMakeFiles/game.dir/UGAConfiguration.cpp.o	cc38ba9d7a1452b
-3	1125	1789860903652177132	GameActivity/CMakeFiles/game.dir/UGAInputMotionEvent.cpp.o	49ec46135a15b99a
-1	1149	1789860903676233912	GameActivity/CMakeFiles/game.dir/UGADebug.cpp.o	d19f48a2eb32341e
-6	1174	1789860903700694564	GameActivity/CMakeFiles/game.dir/UGASoftKeyboard.cpp.o	7e630badf8191f85
-2	1262	1789860903789354130	GameActivity/CMakeFiles/game.dir/UGAInput.cpp.o	54e211491ebbb574
-0	1413	1789860903940172198	GameActivity/CMakeFiles/game.dir/UGAApplication.cpp.o	7edbab676d0668cb
-1413	1478	1789860904004980899	/Users/danielzhang/Documents/Orion_HTN26/quest/Library/Bee/Android/Prj/IL2CPP/Gradle/unityLibrary/build/intermediates/cxx/RelWithDebInfo/3t543w36/obj/arm64-v8a/libgame.so	6e92f80a190c1fc2
+1	145	1789863152298594789	FramePacing/CMakeFiles/swappywrapper.dir/UnitySwappyWrapper.cpp.o	aa77cc299e901c15
+145	353	1789863152441928971	/Users/danielzhang/Documents/Orion_HTN26/quest/Library/Bee/Android/Prj/IL2CPP/Gradle/unityLibrary/build/intermediates/cxx/RelWithDebInfo/3t543w36/obj/arm64-v8a/libswappywrapper.so	8368b0df496be177
+1	716	1789863152866120145	GameActivity/CMakeFiles/game.dir/UGAInputKeyEvent.cpp.o	48ff0f3933a0cc22
+1	726	1789863152876061274	GameActivity/CMakeFiles/game.dir/UGAEntry.cpp.o	43b47dbc79c6a3d4
+1	726	1789863152878165382	GameActivity/CMakeFiles/game.dir/UGAConfiguration.cpp.o	cc38ba9d7a1452b
+1	748	1789863152898941006	GameActivity/CMakeFiles/game.dir/UGAInputMotionEvent.cpp.o	49ec46135a15b99a
+1	759	1789863152910859411	GameActivity/CMakeFiles/game.dir/UGADebug.cpp.o	d19f48a2eb32341e
+1	782	1789863152932909400	GameActivity/CMakeFiles/game.dir/UGASoftKeyboard.cpp.o	7e630badf8191f85
+1	840	1789863152991872635	GameActivity/CMakeFiles/game.dir/UGAInput.cpp.o	54e211491ebbb574
+0	910	1789863153061203369	GameActivity/CMakeFiles/game.dir/UGAApplication.cpp.o	7edbab676d0668cb
+910	951	1789863153103981692	/Users/danielzhang/Documents/Orion_HTN26/quest/Library/Bee/Android/Prj/IL2CPP/Gradle/unityLibrary/build/intermediates/cxx/RelWithDebInfo/3t543w36/obj/arm64-v8a/libgame.so	6e92f80a190c1fc2
