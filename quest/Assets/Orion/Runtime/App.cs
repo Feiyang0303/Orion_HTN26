@@ -23,6 +23,11 @@ namespace Orion
             catch (InvalidOperationException e) { rig.Captions.Show("ORION", "This build has no key", e.Message, null); return; }
 
             var world = City.Make(config.googleTilesKey);
+            if (world == null)
+            {
+                rig.Captions.Show("ORION", "That is enough for today", $"This headset has loaded the city {TileBudget.PerDay} times today, and each load is a billed request to Google. It will again tomorrow (Pacific time).", null);
+                return;
+            }
             world.Refused += status => rig.Captions.Show("ORION", "Google would not serve the city",
                 status == 429 ? "The map key has used up its tile requests for today (HTTP 429). They come back at midnight Pacific." : $"The tile server answered HTTP {status}.", null);
             var marks = new GameObject("Marks").AddComponent<Marks>();

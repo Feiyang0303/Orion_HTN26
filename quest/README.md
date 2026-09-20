@@ -44,6 +44,14 @@ frame, and one headless play-mode run used the entire day's quota in under two m
 every property once, the app caps its frame rate outside a headset, a refusal is shown on the caption
 panel, and `./build.sh smoke` stops at the first refusal.
 
+Guards against a repeat, in order of how much they are worth:
+1. **On the key, in Google Cloud (do this):** cap "3D Tiles root requests per day" (Map Tiles API → Quotas) at a few
+   hundred, and add a Billing budget alert. Only this protects the web app too, and only this cannot be got round.
+2. `City` keeps the `Cesium3DTileset` private; a test fails if any other runtime file names the type, or if `City` sets a
+   tileset property outside `Make`. There is one `City` per run, enforced.
+3. `TileBudget`: each device loads Google's tileset at most 40 times a (Pacific) day, counted before the request is made.
+   Past that the app says so and does not ask. A normal run spends one.
+
 ## The Google tiles key
 
 The build reads `VITE_GOOGLE_MAPS_KEY` from the web app's `.env` one directory up (or

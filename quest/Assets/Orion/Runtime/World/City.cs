@@ -25,18 +25,26 @@ namespace Orion.World
         public event Action<long> Refused;
 
         public CesiumGeoreference Georeference { get; private set; }
-        public Cesium3DTileset Tiles { get; private set; }
+
+        // Nothing outside this class can reach the tileset. Most of its setters reload it, and every reload is a billable
+        // request to Google: so its properties are set here, once, and the rest of the app gets only what it can read.
+        Cesium3DTileset tiles;
+        static bool made;
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void NewRun() => made = false;          // the editor can start a run without reloading this class
+
+        /// <summary>How much of what is wanted has loaded, 0 to 100.</summary>
+        public float LoadProgress => tiles.ComputeLoadProgress();
+        /// <summary>The layer the city's colliders are on.</summary>
+        public int Layer => tiles.gameObject.layer;
         readonly List<Camera> ahead = new List<Camera>();
 
+        /// <summary>The city, or null if this device has already asked Google for it as often as it may today (see TileBudget).</summary>
         public static City Make(string googleTilesKey)
         {
-            var city = new GameObject("City").AddComponent<City>();
-            city.Georeference = city.gameObject.AddComponent<CesiumGeoreference>();
-
-            var go = new GameObject("Google Photorealistic 3D Tiles");
-            go.transform.SetParent(city.transform, false);
-            var t = city.Tiles = go.AddComponent<Cesium3DTileset>();
-            t.tilesetSource = CesiumDataSource.FromUrl;
+            if (made) throw new InvalidOperationException("There is one city per run: a second would be a second request to Google.");
+            made = true;
             string url = $"https://tile.googleapis.com/v1/3dtiles/root.json?key={googleTilesKey}";
 #if UNITY_EDITOR
             // Offline development: ORION_TILESET_URL flies over another tileset (with ORION_FIXTURE, a trip that is on it), so the
@@ -44,6 +52,15 @@ namespace Orion.World
             string other = Environment.GetEnvironmentVariable("ORION_TILESET_URL");
             if (!string.IsNullOrEmpty(other)) url = other;
 #endif
+            if (url.Contains("googleapis.com") && !TileBudget.TrySpend()) return null;
+
+            var city = new GameObject("City").AddComponent<City>();
+            city.Georeference = city.gameObject.AddComponent<CesiumGeoreference>();
+
+            var go = new GameObject("Google Photorealistic 3D Tiles");
+            go.transform.SetParent(city.transform, false);
+            var t = city.tiles = go.AddComponent<Cesium3DTileset>();
+            t.tilesetSource = CesiumDataSource.FromUrl;
             t.url = url;
             t.showCreditsOnScreen = true;                        // Google's terms: the attribution stays in view (see Credits)
             t.maximumScreenSpaceError = ScreenSpaceError;
@@ -73,7 +90,7 @@ namespace Orion.World
         // status is read out of that message, because the struct's own httpStatusCode says 200 for a refused root request.
         void OnLoadFailure(Cesium3DTilesetLoadFailureDetails failure)
         {
-            if (failure.tileset != Tiles) return;
+            if (failure.tileset != tiles) return;
             var said = Regex.Match(failure.message ?? "", @"status code (\d+)");
             Refused?.Invoke(said.Success ? long.Parse(said.Groups[1].Value) : failure.httpStatusCode);
         }
@@ -87,7 +104,7 @@ namespace Orion.World
         /// views coming up, make it fetch those views in advance, and drop them as the flight moves past.</summary>
         public void LookAhead(IReadOnlyList<(Vector3 eye, Vector3 look)> views)
         {
-            var manager = CesiumCameraManager.GetOrCreate(Tiles.gameObject);
+            var manager = CesiumCameraManager.GetOrCreate(tiles.gameObject);
             while (ahead.Count < views.Count)
             {
                 var cam = new GameObject($"Look ahead {ahead.Count}").AddComponent<Camera>();

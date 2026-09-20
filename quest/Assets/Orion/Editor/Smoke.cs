@@ -56,13 +56,13 @@ namespace Orion.Editor
         static void Report()
         {
             var head = Camera.main;
-            var tiles = Object.FindFirstObjectByType<Cesium3DTileset>();
+            var tiles = Object.FindFirstObjectByType<Cesium3DTileset>();          // read only: see City
             var rig = GameObject.Find("Rig");
             string captions = string.Join(" | ", Object.FindObjectsByType<TextMeshPro>(FindObjectsSortMode.None)
                 .Where(t => t.transform.parent != null && t.transform.parent.name == "Captions").Select(t => $"{t.name}: {t.text}"));
             Debug.Log($"[smoke {EditorApplication.timeSinceStartup - started:0}s] city {(tiles ? tiles.ComputeLoadProgress() : -1):0}%  tile renderers {(tiles ? tiles.GetComponentsInChildren<MeshRenderer>().Length : 0)}  "
                 + $"colliders {(tiles ? tiles.GetComponentsInChildren<MeshCollider>().Length : 0)}  rig {(rig ? rig.transform.position.ToString("0") : "none")} yaw {(rig ? rig.transform.eulerAngles.y : 0):0}  "
-                + $"veil {Object.FindFirstObjectByType<Veil>()?.Fade:0.00}  guide {GameObject.Find("Guide") != null}  beam {GameObject.Find("Beam") != null}  fps {1 / Time.smoothDeltaTime:0}  ||  {captions}");
+                + $"google loads today {Orion.World.TileBudget.SpentToday}/{Orion.World.TileBudget.PerDay}  veil {Object.FindFirstObjectByType<Veil>()?.Fade:0.00}  guide {GameObject.Find("Guide") != null}  beam {GameObject.Find("Beam") != null}  fps {1 / Time.smoothDeltaTime:0}  ||  {captions}");
 
             var target = new RenderTexture(1280, 720, 24);
             head.targetTexture = target; head.Render(); head.targetTexture = null;

@@ -63,7 +63,7 @@ namespace Orion
             var deck = rig.gameObject.AddComponent<FlightDeck>();
             deck.days = trip.days; deck.city = trip.city;
             deck.world = world; deck.rig = rig; deck.marks = marks; deck.narration = narration;
-            deck.ground = new Ground(world.Georeference, world.Tiles);
+            deck.ground = new Ground(world);
             deck.shots = new Shots(deck.ground);
             deck.SetDay(0);
             return deck;
@@ -170,7 +170,7 @@ namespace Orion
             Ride ride = on.Kind == SegmentKind.Travel && on.Index < rides.Count && rides[on.Index].T > 0 ? rides[on.Index] : null;
             // The guide waits for the city: for there to be one at all, and then, on arriving at a stop, for the place
             // to come into focus before it starts talking about it (a headset takes its time over that), though never for long.
-            float loaded = world.Tiles.ComputeLoadProgress();
+            float loaded = world.LoadProgress;
             bool arriving = on.Kind == SegmentKind.Dwell && t - on.T0 < 1;
             if (!arriving) settling = 0;
             else if (settling >= 0 && placed) settling = (settling < .5f || loaded < SettledAt) && settling < SettleMaxSec ? settling + dt : -1;

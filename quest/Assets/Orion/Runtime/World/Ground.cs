@@ -26,18 +26,18 @@ namespace Orion.World
         const float RayStartHeight = 1500, RayRange = 5000, RecheckSec = 2.5f;
 
         readonly CesiumGeoreference georeference;
-        readonly Cesium3DTileset tileset;
+        readonly City city;
         readonly int mask;
         readonly Dictionary<string, Placed> cells = new Dictionary<string, Placed>();
         readonly Queue<Anchor> queue = new Queue<Anchor>();
         List<Anchor> anchors = new List<Anchor>();
         float lastFull = -RecheckSec, lastProgress = -1, knownGround;
 
-        public Ground(CesiumGeoreference georeference, Cesium3DTileset tileset)
+        public Ground(City city)
         {
-            this.georeference = georeference;
-            this.tileset = tileset;
-            mask = 1 << tileset.gameObject.layer;
+            this.city = city;
+            georeference = city.Georeference;
+            mask = 1 << city.Layer;
         }
 
         public bool TryGet(string key, out Placed placed) => cells.TryGetValue(key, out placed);
@@ -70,7 +70,7 @@ namespace Orion.World
             // cheap), and a stale one corrects itself. When nothing is arriving, only the unlanded are retried.
             if (queue.Count == 0)
             {
-                float progress = tileset.ComputeLoadProgress();
+                float progress = city.LoadProgress;
                 if (progress != lastProgress && now - lastFull > RecheckSec) { lastFull = now; lastProgress = progress; Requeue(); }
                 else foreach (var a in anchors) if (!IsGrounded(a)) queue.Enqueue(a);
             }
