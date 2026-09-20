@@ -32,15 +32,17 @@ export function smoothHeights(pts: Vector3[]): Vector3[] {
 }
 
 export type LegStyle = {
-  /** Pixel width for line-based drawing. */
-  width: number
-  /** World metres of dash and gap, or null for a solid line. */
+  /** The ribbon laid along the street: its width on the ground in metres, and the least it may
+      look on screen in pixels, so a route is still a route from two kilometres up. */
+  widthM: number
+  minPx: number
+  /** World metres of mark and gap along it, or null for an unbroken ribbon. */
   dash: { on: number; off: number } | null
-  /** A wider, fainter line under the main one. */
+  /** A wider, fainter one under it. */
   glow: boolean
   opacity: number
-  /** How fast the travelling light moves along the line, metres a second. */
-  pulseMps: number
+  /** How fast light moves along it in the direction of travel, and the comet with it, metres a second. */
+  flowMps: number
   /** For 3D tubes: radius as a fraction of the drawing unit, and bead spacing if drawn as beads. */
   tube: number
   beads: number | null
@@ -50,11 +52,11 @@ export type LegStyle = {
     A leg that is only an estimate is drawn broken and faint, so a guess never looks like a route. */
 export function legStyle(transport: Transport, estimated = false): LegStyle {
   const base: Record<Transport, LegStyle> = {
-    walk: { width: 3.4, dash: { on: 9, off: 15 }, glow: false, opacity: .95, pulseMps: 40, tube: .0022, beads: .0075 },
-    cycle: { width: 3.8, dash: { on: 34, off: 16 }, glow: false, opacity: .95, pulseMps: 90, tube: .0026, beads: .016 },
-    transit: { width: 5.6, dash: null, glow: true, opacity: .95, pulseMps: 170, tube: .0034, beads: null },
-    drive: { width: 6.8, dash: null, glow: true, opacity: .95, pulseMps: 220, tube: .0042, beads: null },
+    walk: { widthM: 5, minPx: 5.5, dash: { on: 8, off: 5 }, glow: false, opacity: .95, flowMps: 18, tube: .0022, beads: .0075 },
+    cycle: { widthM: 5, minPx: 5.8, dash: { on: 30, off: 8 }, glow: false, opacity: .95, flowMps: 45, tube: .0026, beads: .016 },
+    transit: { widthM: 9, minPx: 8.5, dash: null, glow: true, opacity: .95, flowMps: 90, tube: .0034, beads: null },
+    drive: { widthM: 11, minPx: 9.5, dash: null, glow: true, opacity: .95, flowMps: 70, tube: .0042, beads: null },
   }
   const s = base[transport] ?? base.walk      // old plans on disk predate the field
-  return estimated ? { ...s, dash: { on: 12, off: 14 }, glow: false, opacity: .5, beads: s.beads ?? .012 } : s
+  return estimated ? { ...s, dash: { on: 14, off: 16 }, glow: false, opacity: .45, beads: s.beads ?? .012 } : s
 }

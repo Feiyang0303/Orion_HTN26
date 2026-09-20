@@ -58,6 +58,7 @@ function Rig({ plan, begin, quality, onStopReached, onFinish, onHud, control, ti
   // Playback state lives in refs: it changes every frame, React does not need to know.
   const s = useRef({
     t: 0, started: false, reached: -1, finished: false,
+    riding: null as null | { leg: number; s: number },      // where the flight is along the leg it is on: the route draws its comet there
     sweep: 0, beatKey: '', audio: null as HTMLAudioElement | null, wasPaused: false,
     inited: false, planAngle: 0, planEye: new THREE.Vector3(), planLook: new THREE.Vector3(),
     look: new THREE.Vector3(), hud: '', highlightKey: '',
@@ -219,6 +220,7 @@ function Rig({ plan, begin, quality, onStopReached, onFinish, onHud, control, ti
     } else if (!chasePose(seg, u, eye, look)) {
       shots.dwell(seg.leg, null, undefined, 0, st.t, eye, look)
     }
+    st.riding = st.started && seg.kind === 'travel' ? { leg: seg.leg, s: smootherstep(u) * (shots.route.legPaths[seg.leg]?.length ?? 0) } : null
     if (!st.inited) {
       // The flight starts from wherever the map left the camera, and glides from there.
       st.look.copy(camera.position).addScaledVector(camera.getWorldDirection(new THREE.Vector3()), 600)
@@ -265,7 +267,8 @@ function Rig({ plan, begin, quality, onStopReached, onFinish, onHud, control, ti
   const curLeg = Math.max(0, Math.min(plan.legs.length - 1, hudLeg(s.current.hud)))
   return (
     <>
-      {legPaths.map((p, i) => <RouteLine key={i} pts={p.pts} colour="#f0b45e" transport={plan.legs[i].transport} estimated={plan.legs[i].estimated} dim={i < curLeg} lift={2} />)}
+      {legPaths.map((p, i) => <RouteLine key={i} pts={p.pts} colour="#f0b45e" transport={plan.legs[i].transport} estimated={plan.legs[i].estimated} steps={plan.legs[i].steps} dim={i < curLeg} lift={2}
+        head={() => s.current.riding?.leg === i ? s.current.riding.s : null} />)}
       {plan.stops.map((stop, i) => {
         const c = ground.get(keyStop(i)); if (!c) return null
         return (

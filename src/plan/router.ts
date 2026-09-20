@@ -1,5 +1,5 @@
 import { breadcrumb } from '../telemetry'
-import type { Budget, LatLon, Leg, Transport, TransportWish, Wish } from '../types'
+import type { Budget, LatLon, Leg, LegStep, Transport, TransportWish, Wish } from '../types'
 import { postJson } from './net'
 import { decodePolyline, metresBetween } from './geo'
 
@@ -128,28 +128,56 @@ const LEG_TRIES = 3
 const LEG_CONCURRENCY = 3
 const pause = (ms: number) => new Promise(r => setTimeout(r, ms))
 
-type Point = { id: string; lat: number; lon: number }
+/* And when the map honestly has no route that way, there is nearly always another way. Whole
+   countries have no timetables or cycle network on Google's map, and every far leg there used
+   to come out as a straight line; a driving route can be five times the distance round a
+   restricted centre. So a leg that cannot be travelled as asked is travelled the next best
+   way, and says which: what the day prints and what the map draws is the way that was found. */
+const OTHERWISE: Record<Transport, Transport[]> = {
+  transit: ['drive', 'walk'], cycle: ['walk', 'drive'], drive: ['transit', 'walk'], walk: ['drive'],
+}
+/** A route this many times the straight distance is a way round something, not a way there. */
+const ROUNDABOUT = 3
 
-async function routeLeg(from: Point, to: Point, transport: Transport): Promise<Leg> {
-  for (let attempt = 0; attempt < LEG_TRIES; attempt++) {
+type Point = { id: string; lat: number; lon: number }
+type Routed = { encodedPolyline: string; distanceM: number; durationSec: number; how?: string; steps?: LegStep[] }
+
+/** One way of travelling a leg: the route, or null where the map has none. Asked again if the asking itself fails. */
+async function ask(from: Point, to: Point, transport: Transport): Promise<Routed | null> {
+  for (let attempt = 0; ; attempt++) {
     try {
-      const r = await postJson<{ encodedPolyline: string; distanceM: number; durationSec: number; how?: string }>(
-        'routes/walk', { from, to, transport })
-      return {
-        fromStopId: from.id, toStopId: to.id, polyline: decodePolyline(r.encodedPolyline),
-        distanceM: r.distanceM, durationSec: r.durationSec, transport, estimated: false,
-        // Which line, from which station: the guide says it on the way.
-        ...(r.how ? { how: r.how } : {}),
-      }
-    } catch {
-      if (attempt < LEG_TRIES - 1) await pause(300 * 2 ** attempt)      // 300 ms, then 600
+      const r = await postJson<Routed | { none: true }>('routes/walk', { from, to, transport })
+      return 'none' in r ? null : r
+    } catch (e) {
+      if (attempt >= LEG_TRIES - 1) throw e
+      await pause(300 * 2 ** attempt)      // 300 ms, then 600
     }
   }
-  breadcrumb('router', `leg fell back to a straight-line estimate after ${LEG_TRIES} tries`, { from: from.id, to: to.id, transport })
+}
+
+async function routeLeg(from: Point, to: Point, transport: Transport): Promise<Leg> {
+  const crow = metresBetween(from, to)
+  const leg = (r: Routed, by: Transport): Leg => ({
+    fromStopId: from.id, toStopId: to.id, polyline: decodePolyline(r.encodedPolyline),
+    distanceM: r.distanceM, durationSec: r.durationSec, transport: by, estimated: false,
+    // Which line, from which station: the guide says it on the way, and the map draws it.
+    ...(r.how ? { how: r.how } : {}), ...(r.steps ? { steps: r.steps } : {}),
+  })
+  let roundabout: Leg | null = null
+  for (const by of [transport, ...OTHERWISE[transport]]) {
+    let r: Routed | null = null
+    try { r = await ask(from, to, by) } catch { breadcrumb('router', 'a leg could not be asked for', { from: from.id, to: to.id, by }) }
+    if (!r) continue
+    if (crow > 400 && r.distanceM > crow * ROUNDABOUT) { roundabout ??= leg(r, by); continue }
+    if (by !== transport) breadcrumb('router', `no way by ${transport}; going by ${by}`, { from: from.id, to: to.id })
+    return leg(r, by)
+  }
+  if (roundabout) return roundabout
+  breadcrumb('router', 'leg fell back to a straight-line estimate: no way of travelling it was found', { from: from.id, to: to.id, transport })
   return {
     fromStopId: from.id, toStopId: to.id,
     polyline: [{ lat: from.lat, lon: from.lon }, { lat: to.lat, lon: to.lon }],
-    distanceM: Math.round(metresBetween(from, to) * DETOUR),
+    distanceM: Math.round(crow * DETOUR),
     durationSec: Math.round(guessSec(from, to, transport)),
     transport, estimated: true,
   }

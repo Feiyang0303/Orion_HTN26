@@ -161,6 +161,18 @@ export type Stop = LatLon & {
   breakMin?: number
 }
 
+/** One part of a leg travelled by transit: the walk to the platform, the ride, the walk out. */
+export type LegStep = {
+  mode: 'walk' | 'transit'
+  distanceM: number
+  /** The line ridden, in the operator's own colours where Google has them ("#ffcd00"). */
+  line?: { name: string; vehicle: string; colour?: string; textColour?: string }
+  /** Where the ride is boarded and left. */
+  from?: string
+  to?: string
+  stops?: number
+}
+
 /** legs[i] is the journey from stops[i] to stops[i+1]; legs.length === stops.length - 1. */
 export type Leg = {
   fromStopId: string
@@ -179,6 +191,10 @@ export type Leg = {
       from one who says "take the metro". Absent on foot and where transit
       details were not returned. */
   how?: string
+  /** A transit leg as its parts, in order, so the map can draw the ride as the line it is and
+      mark the two stations. Their distances share out the polyline between them. Absent on
+      every other kind of leg, and on trips saved before there were any. */
+  steps?: LegStep[]
   /** One line spoken on the way, so the day sounds like a journey rather than
       a set of pages read in a row. Absent when it could not be written; the
       flight then crosses this leg in silence. The journal never plays it. */

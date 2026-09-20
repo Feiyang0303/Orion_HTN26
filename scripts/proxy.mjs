@@ -6,7 +6,7 @@
  *   POST /api/llm             { role: 'scout'|'critic'|'narrator', system, user, maxTokens } -> { text }
  *   POST /api/tts             { text } -> audio/mpeg (ElevenLabs, mp3_44100_128)
  *   POST /api/routes/matrix   { points: LatLon[], transport? } -> { distanceM: (number|null)[][], durationSec: (number|null)[][] }
- *   POST /api/routes/walk     { from: LatLon, to: LatLon, transport? } -> { encodedPolyline, distanceM, durationSec }
+ *   POST /api/routes/walk     { from: LatLon, to: LatLon, transport? } -> { encodedPolyline, distanceM, durationSec, how?, steps? } | { none: true }
  */
 import { createServer } from 'node:http'
 import { networkInterfaces } from 'node:os'
@@ -292,6 +292,7 @@ async function routesMatrix(req, res) {
       origins: points.map(p => ({ waypoint: wp(p) })),
       destinations: points.map(p => ({ waypoint: wp(p) })),
       travelMode: modeOf(transport),
+      ...(modeOf(transport) === 'TRANSIT' ? { departureTime: nextMidMorning(points[0].lon) } : {}),
     }),
   })
   const rows = await upstream.json()
@@ -345,6 +346,48 @@ export function howOf(route) {
   return bits.length ? bits.join(', then ') : undefined
 }
 
+/* A leg by transit, as the things it is made of: the walk to the platform, the ride (which
+   line, in the operator's own colour, from where to where), the walk out. The map draws each
+   in its own manner. Google gives a walk as a dozen little turns; they are one walk here. */
+export function stepsOf(route) {
+  const out = []
+  for (const leg of route.legs ?? []) {
+    for (const step of leg.steps ?? []) {
+      const t = step.transitDetails, distanceM = step.distanceMeters ?? 0
+      if (!t) {
+        const last = out[out.length - 1]
+        if (last?.mode === 'walk') last.distanceM += distanceM; else out.push({ mode: 'walk', distanceM })
+        continue
+      }
+      const line = t.transitLine ?? {}
+      out.push({
+        mode: 'transit', distanceM,
+        line: {
+          name: line.nameShort || line.name || '',
+          vehicle: VEHICLE[line.vehicle?.type] || 'transit',
+          ...(line.color ? { colour: line.color } : {}),
+          ...(line.textColor ? { textColour: line.textColor } : {}),
+        },
+        ...(t.stopDetails?.departureStop?.name ? { from: t.stopDetails.departureStop.name } : {}),
+        ...(t.stopDetails?.arrivalStop?.name ? { to: t.stopDetails.arrivalStop.name } : {}),
+        ...(t.stopCount ? { stops: t.stopCount } : {}),
+      })
+    }
+  }
+  return out.some(s => s.mode === 'transit') ? out : undefined
+}
+
+/* Transit is timetabled, and Google answers for the moment it is asked: at three in the morning
+   that is a night bus, or nothing. A day out is travelled by day, so transit is asked for at the
+   next mid-morning where the place is (by its longitude: close enough to choose between a
+   timetable's day and its night, which is all this is for). */
+export function nextMidMorning(lon, now = Date.now()) {
+  const offset = Math.round(lon / 15) * 3600e3
+  const local = new Date(now + offset)
+  const at = Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate(), 10, 30)
+  return new Date((at > now + offset + 3600e3 ? at : at + 86400e3) - offset).toISOString()
+}
+
 async function routesWalk(req, res) {
   const key = routesKey()
   if (!key) throw new HttpError(501, 'GOOGLE_ROUTES_KEY is not set on the proxy.')
@@ -354,24 +397,30 @@ async function routesWalk(req, res) {
     method: 'POST',
     headers: {
       'content-type': 'application/json', 'x-goog-api-key': key,
-      // The transit step details are what let the guide name the line and the two
-      // stations. They are only returned for TRANSIT, and asking for them on a walk
-      // costs nothing but the field mask, so they are only asked for when they exist.
+      // The step details are what let the guide name the line and the two stations, and the map
+      // draw the ride in the line's own colour. They only exist for TRANSIT, so they are only asked for there.
       'x-goog-fieldmask': 'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline'
-        + (transit ? ',routes.legs.steps.transitDetails' : ''),
+        + (transit ? ',routes.legs.steps.distanceMeters,routes.legs.steps.transitDetails' : ''),
     },
-    body: JSON.stringify({ origin: wp(from), destination: wp(to), travelMode: modeOf(transport), polylineEncoding: 'ENCODED_POLYLINE' }),
+    body: JSON.stringify({
+      origin: wp(from), destination: wp(to), travelMode: modeOf(transport), polylineEncoding: 'ENCODED_POLYLINE',
+      ...(transit ? { departureTime: nextMidMorning(from.lon) } : {}),
+    }),
   })
   const data = await upstream.json()
   if (!upstream.ok) throw new HttpError(502, data?.error?.message ?? `routes ${upstream.status}`)
   const r = data.routes?.[0]
-  if (!r) throw new HttpError(502, 'no route found')
+  // No route this way is an answer, not a failure: plenty of cities have no timetables or cycle
+  // network on Google's map. The router asks for another way of travelling.
+  if (!r) return json(res, 200, { none: true })
   const how = transit ? howOf(r) : undefined
+  const steps = transit ? stepsOf(r) : undefined
   json(res, 200, {
     encodedPolyline: r.polyline.encodedPolyline,
     distanceM: r.distanceMeters ?? 0,
     durationSec: secs(r.duration),
     ...(how ? { how } : {}),
+    ...(steps ? { steps } : {}),
   })
 }
 
