@@ -13,7 +13,7 @@ import CityFX from './Magic'
  *
  * One globe, one canvas. At the kickoff the globe sits to one side, turning, and
  * lights up the city when there is one. When the crew is sent, the globe rises to
- * the middle, eight figures stand up around it on a platform, and each of them
+ * the middle, the crew stand up around it on a platform, and each of them
  * works on the city while their step runs: their light streams across to the
  * marker, and their spell plays out there. Nothing on this stage is a picture of
  * progress: every figure, stream and spell is driven by the crew's real events.
@@ -28,7 +28,9 @@ const RING = 4.3
    this does. Pulling the back of the ring in brings those two forward and down
    the screen instead, and it stops the front pair falling off the bottom edge. */
 const DEPTH = .75
-const angleOf = (i: number) => (i / CREW.length) * Math.PI * 2 + Math.PI / CREW.length
+// Nobody stands directly behind the globe, where it would hide them whole: an even crew straddles the back, and an
+// odd one puts its first member front and centre, which leaves the back straddled too.
+const angleOf = (i: number) => (i / CREW.length) * Math.PI * 2 + (CREW.length % 2 ? 0 : Math.PI / CREW.length)
 const CAMERA_DISTANCE = Math.hypot(6.2, 16.5)
 
 export default function GlobeScene({ mode, city, events, places, className }: {

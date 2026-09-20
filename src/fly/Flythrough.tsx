@@ -17,11 +17,13 @@ import Fault from '../ui/Fault'
 import FlightHud, { type Control, type Hud } from './FlightHud'
 import GuideTalk from './GuideTalk'
 import MapRig, { type MapView } from './MapRig'
+import DirectorDesk from './DirectorDesk'
 import './fly.css'
 
 /* The flight. Tiles sit under everything from the first frame (so they load
  * while the book is read); `begin` flips the camera from a slow planning hold
- * into the dive and the tour.
+ * into the dive and the tour. Before there is a flight the same canvas is the
+ * map the trip is planned on, and where the crew's Director does its looking.
  *
  * The shots themselves are in shots.ts. Here they are eased: the camera chases
  * each one through exponential smoothing, so nothing snaps.
@@ -451,7 +453,11 @@ export default function Flythrough(props: FlyProps & { map?: MapView }) {
           <GoogleTiles lat={origin.lat} lon={origin.lon} onLoadEnd={onLoadEnd} tilesRef={tilesRef} />
           {plan
             ? <Rig key={cityKey} {...props} plan={plan} quality={quality} onHud={setHud} control={control} tiles={tiles} loadTick={loadTick} />
-            : <MapRig key={cityKey} view={map} origin={origin} tiles={tiles} loadTick={loadTick} />}
+            : <>
+              <MapRig key={cityKey} view={map} origin={origin} tiles={tiles} loadTick={loadTick} />
+              {/* The crew's Director looks at the city from here while the trip is planned (directing.ts). */}
+              {DIRECTOR_ON && <DirectorDesk key={`desk:${cityKey}`} tiles={tiles} loadTick={loadTick} />}
+            </>}
         </Canvas>
       )}
       {probe === 'checking' && <div className="fly-status">Connecting to the map…</div>}

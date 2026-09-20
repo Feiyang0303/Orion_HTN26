@@ -44,6 +44,9 @@ export type Session = {
   signal?: AbortSignal
 }
 
+/** Settles when the run is called off, so that nothing goes on waiting for a trip nobody wants. */
+const aborted = (signal?: AbortSignal) => new Promise<void>(r => { if (!signal) return; if (signal.aborted) r(); else signal.addEventListener('abort', () => r(), { once: true }) })
+
 const say = (s: Session, agent: Agent, kind: 'tool' | 'agent', state: 'working' | 'done' | 'failed', detail: string) =>
   s.onEvent({ type: 'crew', agent, kind, state, detail })
 
@@ -208,13 +211,41 @@ async function buildDay(s: Session, draft: DayDraft, number: number, opts: Pipel
   return { ...plan, id: `${plan.id}-d${number}`, number, title: draft.title, tables }
 }
 
+/* The Director is the last of the crew to work on a day, because it chooses a shot for a line and needs the line. It
+   takes each day as it is written, while the others are still being, so most of its looking costs the person nothing.
+   What it has not finished when the last page is written it gets this much longer for; then the trip is handed over
+   with what was chosen, and the rest is looked at when the day is first flown. A person is waiting. */
+const DIRECTOR_GRACE_SEC = 40
+
+async function directDay(s: Session, day: Day, opts: PipelineOptions, until: Promise<unknown>): Promise<Day> {
+  if (!opts.direct) return day
+  const wanted = day.stops.reduce((n, st) => n + 1 + new Set(st.beats.map(b => b.targetId ?? 'stop')).size, 0)
+  say(s, 'Director', 'agent', 'working', `Day ${day.number}: waiting for the city to load`)
+  const direction = await opts.direct(day, {
+    until,
+    note: (subject, nth, total) => say(s, 'Director', 'agent', 'working', `Day ${day.number}: walking round ${subject} (${nth} of ${total})`),
+  })
+  const chosen = Object.keys(direction?.choices ?? {}).length
+  say(s, 'Director', 'agent', chosen ? 'done' : 'failed', chosen
+    ? `Day ${day.number}: ${chosen >= wanted ? `all ${chosen} shots` : `${chosen} of ${wanted} shots`} chosen by looking${chosen >= wanted ? '' : '; the rest when it is flown'}`
+    : `Day ${day.number}: the city could not be looked at, so its shots are chosen when it is flown`)
+  return direction ? { ...day, direction } : day
+}
+
 async function stagePlanImpl(s: Session, drafts: DayDraft[], opts: PipelineOptions): Promise<Trip> {
   const work = drafts.filter(d => d.stops.length)
-  const days = (await mapLimited(work, DAY_CONCURRENCY, async (d, i) => {
-    const day = await buildDay(s, d, i + 1, opts, { count: work.length, nextTitle: work[i + 1]?.title })
-    s.onEvent({ type: 'plan', plan: day })
-    return day
-  })).sort((a, b) => a.number - b.number)
+  let written!: () => void
+  const allWritten = new Promise<void>(r => { written = r })
+  const patience = allWritten.then(() => new Promise<void>(r => setTimeout(r, DIRECTOR_GRACE_SEC * 1000)))
+  const looking: Promise<Day>[] = []
+  try {
+    await mapLimited(work, DAY_CONCURRENCY, async (d, i) => {
+      const day = await buildDay(s, d, i + 1, opts, { count: work.length, nextTitle: work[i + 1]?.title })
+      s.onEvent({ type: 'plan', plan: day })
+      looking.push(directDay(s, day, opts, Promise.race([patience, aborted(s.signal)])))
+    })
+  } finally { written() }
+  const days = (await Promise.all(looking)).sort((a, b) => a.number - b.number)
   if (!days.length) throw new Error('The trip came out empty.')
   const trip = assemble(s, days)
   s.onEvent({ type: 'trip', trip })

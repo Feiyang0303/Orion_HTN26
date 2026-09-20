@@ -205,6 +205,7 @@ function PropMesh({ kind, colour, work }: { kind: Prop; colour: string; work: Re
       case 'lens': g.current!.position.x = Math.sin(t * (1 + w * 4)) * (.06 + .18 * w); break
       case 'quill': a.current!.position.x = Math.sin(t * 11) * .05 * w; a.current!.rotation.z = -.6 + Math.sin(t * 11) * .12 * w; break
       case 'stamp': a.current!.position.y = .12 + (w > .3 ? Math.max(0, Math.sin(t * 5)) * -.13 : 0); break
+      case 'camera': a.current!.rotation.z = b.current!.rotation.z = -t * (.4 + w * 6); g.current!.rotation.y = Math.sin(t * (.5 + w * 1.2)) * (.12 + .5 * w); break
       case 'mic': [a, b, c].forEach((r, i) => { const k = ((t * (.8 + w * 1.6) + i / 3) % 1); r.current!.scale.setScalar(.6 + k * 1.1 * (.4 + w)); (((r.current as THREE.Mesh).material) as THREE.MeshBasicMaterial).opacity = (1 - k) * (.15 + .5 * w) }); break
     }
   })
@@ -247,6 +248,17 @@ function PropMesh({ kind, colour, work }: { kind: Prop; colour: string; work: Re
           <mesh><cylinderGeometry args={[.11, .13, .1, 18]} /><primitive object={mat} attach="material" /></mesh>
           <mesh position={[0, .12, 0]}><cylinderGeometry args={[.035, .035, .16, 10]} /><primitive object={mat} attach="material" /></mesh>
         </group>
+      </>)}
+      {kind === 'camera' && (<>
+        <mesh material={soft}><boxGeometry args={[.4, .26, .2]} /></mesh>
+        <mesh position={[0, 0, .17]} rotation={[Math.PI / 2, 0, 0]}><cylinderGeometry args={[.1, .075, .16, 20]} /><primitive object={mat} attach="material" /></mesh>
+        {/* two reels on top, each with a spoke so that their turning can be seen */}
+        {[[a, -.1], [b, .12]].map(([r, x], i) => (
+          <group key={i} ref={r as React.RefObject<THREE.Group>} position={[x as number, .24, 0]}>
+            <mesh><torusGeometry args={[.1, .02, 8, 28]} /><primitive object={mat} attach="material" /></mesh>
+            <mesh><boxGeometry args={[.2, .018, .018]} /><primitive object={mat} attach="material" /></mesh>
+          </group>
+        ))}
       </>)}
       {kind === 'mic' && (<>
         <mesh position={[0, .02, 0]}><capsuleGeometry args={[.07, .14, 6, 12]} /><primitive object={mat} attach="material" /></mesh>

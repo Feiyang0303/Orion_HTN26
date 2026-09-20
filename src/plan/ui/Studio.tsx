@@ -13,6 +13,7 @@ import {
   type DayDraft, type Session,
 } from '../session'
 import { report } from '../../telemetry'
+import { direct } from '../../fly/directing'
 import type { Mode } from '../narrator'
 import type { Place } from '../geocode'
 import type { Day, LatLon, Stay, Trip, Wish } from '../../types'
@@ -95,7 +96,7 @@ export default function Studio({ wish, mode, origin, saved: given, onTrip, onFly
         const stays = await stageStay(s, found)
         if (ctl.signal.aborted) return
         setStay(stays[0] ?? null)
-        const made = await stagePlan(s, found, { saveAudio, onEvent, voice: true, signal: ctl.signal })
+        const made = await stagePlan(s, found, { saveAudio, onEvent, voice: true, direct, signal: ctl.signal })
         if (!ctl.signal.aborted) setTrip(made)
       } catch (e) {
         if (!ctl.signal.aborted) {
