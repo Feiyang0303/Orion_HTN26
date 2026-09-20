@@ -135,20 +135,29 @@ async function voiceId(key) {
    id nobody can read, and so a name the account does not have falls back to
    the guide's voice instead of to silence. Resolved once per run. */
 const GOOSE_WANTS = env('ELEVENLABS_GOOSE_VOICE') || 'Gigi'
-const GOOSE_LIKE = /gigi|lily|jessica|matilda|laura|alice|sarah|charlotte/i
+/* Voices that suit the goose, best first: light, young, American English.
+   Gigi is ElevenLabs' own animation voice; the others are bright American
+   voices that read like a friend rather than a broadcaster. British and
+   European accents are left out on purpose. */
+const GOOSE_LIKE = ['gigi', 'jessica', 'laura', 'sarah', 'matilda', 'rachel', 'elli']
+const AMERICAN = v => /american/i.test(v.labels?.accent ?? '') && !/british|australian|irish|swedish|african/i.test(v.labels?.accent ?? '')
+const LIGHT = v => /young|middle/i.test(v.labels?.age ?? '') && /female|neutral/i.test(v.labels?.gender ?? '')
 let resolvedGoose = null
 async function gooseVoiceId(key) {
   if (resolvedGoose) return resolvedGoose
   try {
     const voices = await listVoices(key)
     const want = GOOSE_WANTS.trim().toLowerCase()
+    const named = n => voices.find(v => (v.name ?? '').trim().toLowerCase() === n)
+      || voices.find(v => (v.name ?? '').toLowerCase().includes(n))
     resolvedGoose = voices.find(v => v.voice_id === GOOSE_WANTS)?.voice_id
-      || voices.find(v => (v.name ?? '').trim().toLowerCase() === want)?.voice_id
-      || voices.find(v => (v.name ?? '').toLowerCase().includes(want))?.voice_id
-      || voices.find(v => GOOSE_LIKE.test(v.name ?? ''))?.voice_id
+      || named(want)?.voice_id
+      || GOOSE_LIKE.map(named).find(Boolean)?.voice_id
+      || voices.find(v => AMERICAN(v) && LIGHT(v))?.voice_id
+      || voices.find(AMERICAN)?.voice_id
       || await voiceId(key)
     const chosen = voices.find(v => v.voice_id === resolvedGoose)
-    console.log(`[tts] the goose speaks as ${chosen ? `"${chosen.name}"` : 'the guide\'s own voice'}${chosen && chosen.name.toLowerCase() !== want ? ` (no voice called "${GOOSE_WANTS}" on this account)` : ''}`)
+    console.log(`[tts] the goose speaks as ${chosen ? `"${chosen.name}"${chosen.labels?.accent ? ` (${chosen.labels.accent})` : ''}` : 'the guide\'s own voice'}${chosen && chosen.name.toLowerCase() !== want ? ` — no voice called "${GOOSE_WANTS}" on this account` : ''}`)
   } catch {
     resolvedGoose = await voiceId(key)
   }
