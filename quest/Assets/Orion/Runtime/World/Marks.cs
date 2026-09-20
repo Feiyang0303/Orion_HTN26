@@ -8,7 +8,10 @@ namespace Orion.World
 {
     /* What is drawn on the city, in the manner of the desktop flight.
      *
-     *   the route    in the way each leg is travelled, with a light running along it the way it goes
+     *   the route    light laid along the street (Orion/Route), each leg in the manner it is travelled; a leg by transit
+     *                as what it is made of: a walk to the platform, the ride in the line's own colour between two marked
+     *                stations, a walk out; a leg nobody could route as a faint broken arc over the city. Nothing rides
+     *                it for show: on the leg being flown, the ribbon burns brightest just behind the guide
      *   a stop       a small amber disc with its number, and its name on a chip of dark glass beside it. It is a
      *                label, not an object: it faces the person, is drawn over whatever stands in front of it, and is
      *                the same size to the eye from any distance, as a label on a screen is
@@ -19,21 +22,27 @@ namespace Orion.World
     public class Marks : MonoBehaviour
     {
         const float Lift = 3;                                  // the route floats this far above the street it was measured on
-        const float SparkRadius = 4.5f, SparkRest = 60;        // the light that runs along a leg, and the metres' worth of pause before it sets off again
         const float TagHeight = 30;                            // a stop's label stands this far above its ground
         const float TagSize = .033f;                           // and its disc is this wide to the eye: the tangent of 1.9 degrees, which a headset's ~20 pixels a degree can read
         const float RingInner = 9, RingOuter = 11.5f, BeamHeight = 48;
-        const float GuideRadius = 2.6f;
+        const float GuideRadius = 1.3f;                        // the guide is a small light: on the leg being flown it is the ribbon that says where it is
 
-        class Drawn { public GameObject Root; public RoutePath Path; public LegStyle Style; public Transform Spark; }
+        static readonly int Head = Shader.PropertyToID("_Head"), Opacity = Shader.PropertyToID("_Opacity"), MinWidth = Shader.PropertyToID("_MinWidth"), FlowMps = Shader.PropertyToID("_FlowMps");
+
+        /// <summary>A leg as drawn: its ribbons' materials (those that show the traveller's wake, and all of them), and the
+        /// labels that stand on it.</summary>
+        class Drawn { public GameObject Root; public List<Material> Wake = new List<Material>(), All = new List<Material>(); }
+        /// <summary>A label that faces the person and is the same size to the eye from any distance.</summary>
+        class Label { public Transform Tag; public float Size; }
         class Pin { public Transform Root, Tag; public Material Disc; public TextMeshPro Number, Name; public ChipLook Chip; public Pointable Hit; }
         /// <summary>The materials of a name chip, so it can be dimmed as one.</summary>
         class ChipLook { public Material Border, Fill; }
 
         readonly List<Drawn> legs = new List<Drawn>();
         readonly List<Pin> pins = new List<Pin>();
+        readonly List<Label> labels = new List<Label>();
         Transform orb, halo, subject, ring, ripple, head;
-        Material rippleLook, played;
+        Material rippleLook;
         Color colour = Look.Amber;
         int playedLegs;                                        // legs already behind the person are dimmed, once
 
@@ -44,7 +53,7 @@ namespace Orion.World
             orb = new GameObject("Guide").transform;
             orb.SetParent(transform, false);
             Look.Draw("Core", orb, Meshes.Sphere(GuideRadius, 24, 16), Look.Flat(Look.Warm));
-            halo = Look.Draw("Halo", orb, Meshes.Sphere(GuideRadius * 2.4f, 24, 16), Look.Flat(Look.Amber.Alpha(.2f))).transform;
+            halo = Look.Draw("Halo", orb, Meshes.Sphere(GuideRadius * 2.4f, 24, 16), Look.Flat(Look.Amber.Alpha(.16f))).transform;
 
             subject = new GameObject("Subject").transform;
             subject.SetParent(transform, false);
@@ -64,7 +73,6 @@ namespace Orion.World
             foreach (var p in pins) Destroy(p.Root.gameObject);
             pins.Clear();
             colour = Look.Days[(Mathf.Max(1, day.number) - 1) % Look.Days.Length];
-            played = Look.Flat(colour.Alpha(.35f));
             for (int i = 0; i < day.stops.Length; i++)
             {
                 int stop = i;
@@ -103,18 +111,14 @@ namespace Orion.World
         public void Place(Day day, IReadOnlyList<RoutePath> paths, IReadOnlyList<Vector3?> stops)
         {
             foreach (var l in legs) Destroy(l.Root);
-            legs.Clear();
+            legs.Clear(); labels.Clear();
             playedLegs = 0;
             for (int i = 0; i < paths.Count; i++)
             {
-                var style = LegStyle.For(day.legs[i].transport, day.legs[i].estimated);
-                var leg = new Drawn { Root = new GameObject($"Leg {i}"), Path = paths[i], Style = style };
+                var leg = new Drawn { Root = new GameObject($"Leg {i}") };
                 leg.Root.transform.SetParent(transform, false);
                 legs.Add(leg);
-                if (paths[i].Pts.Count < 2) continue;
-                if (style.Glow) Look.Draw("Glow", leg.Root.transform, Meshes.Ribbon(paths[i], style.Width * 2.8f, Lift - .3f, 0, 0), Look.Flat(colour.Alpha(.16f)));
-                Look.Draw("Line", leg.Root.transform, Meshes.Ribbon(paths[i], style.Width, Lift, style.DashOn, style.DashOff), Look.Flat(colour.Alpha(style.Opacity)));
-                leg.Spark = Look.Draw("Spark", leg.Root.transform, Meshes.Sphere(SparkRadius, 12, 8), Look.Flat(Look.Warm.Alpha(.9f), depthTest: false)).transform;
+                if (paths[i].Pts.Count >= 2) Draw(leg, day.legs[i], paths[i]);
             }
             for (int i = 0; i < pins.Count; i++)
             {
@@ -123,8 +127,92 @@ namespace Orion.World
             }
         }
 
+        void Draw(Drawn drawn, Leg leg, RoutePath ground)
+        {
+            var whole = LegStyle.For(leg.transport, leg.estimated);
+            // A leg that could not be routed is two points and a guess. It is lifted into an arc over the city, because a
+            // straight line through the buildings reads as a street that is not there.
+            var path = ground;
+            if (whole.Guess)
+            {
+                float span = Vector3.Distance(ground.Pts[0], ground.Pts[ground.Pts.Count - 1]), rise = Mathf.Min(160, span * .16f), run = 0;
+                var arc = new List<Vector3>(ground.Pts.Count);
+                for (int k = 0; k < ground.Pts.Count; k++)
+                {
+                    if (k > 0) run += Vector3.Distance(ground.Pts[k], ground.Pts[k - 1]);
+                    arc.Add(ground.Pts[k] + Vector3.up * (Mathf.Sin(Mathf.PI * Mathf.Min(1, run / Mathf.Max(1, span))) * rise));
+                }
+                path = new RoutePath(arc);
+            }
+
+            // The leg as stretches, each in its own manner. The steps' own distances share the line out between them.
+            float said = 0;
+            foreach (var step in leg.steps) said += step.distanceM;
+            if (whole.Guess || leg.steps.Length == 0 || said <= 0) { Stretch(drawn, path, 0, path.Length, whole, colour); return; }
+            float at = 0;
+            foreach (var step in leg.steps)
+            {
+                float from = at; at += step.distanceM / said * path.Length;
+                if (at - from <= 1) continue;
+                bool ride = step.mode == "transit";
+                Color line = ride ? (string.IsNullOrEmpty(step.line?.colour) ? Look.Warm : Look.Hex(step.line.colour)) : colour;
+                Stretch(drawn, path, from, at, LegStyle.For(ride ? "transit" : "walk"), line);
+                if (!ride) continue;
+
+                // the two stations of a ride, and the line's own sign worn along it: its name, on its colour
+                Station(drawn, path.At(from), line, step.from);
+                Station(drawn, path.At(at), line, step.to);
+                if (string.IsNullOrEmpty(step.line?.name)) continue;
+                int signs = Mathf.Clamp(Mathf.RoundToInt((at - from) / 900), 1, 3);
+                Color ink = string.IsNullOrEmpty(step.line.textColour) ? Look.Ink : Look.Hex(step.line.textColour);
+                for (int k = 0; k < signs; k++) Sign(drawn, path.At(from + (at - from) * (k + 1) / (signs + 1)) + Vector3.up * (Lift + 6), step.line.name, line, ink, line);
+            }
+        }
+
+        /// <summary>One stretch in one manner: a soft dark casing (a city in daylight is a bright, busy thing to draw on), for
+        /// the wide ones a glow, the faint ghost of it that shows through whatever stands over the street, and the ribbon.</summary>
+        void Stretch(Drawn drawn, RoutePath path, float from, float to, LegStyle style, Color of)
+        {
+            var mesh = Meshes.RouteStrip(path, from, to);
+            float o = style.Opacity;
+            void Layer(string name, Material m, bool wake) { Look.Draw(name, drawn.Root.transform, mesh, m); drawn.All.Add(m); if (wake) drawn.Wake.Add(m); }
+            Layer("Casing", Look.Route(of, style, 1.9f, o * .42f, true, .7f, Lift, 0, shadow: true), false);
+            if (style.Glow) Layer("Glow", Look.Route(of, style, 3.2f, o * .2f, style.Guess, 1, Lift, 1), true);
+            if (!style.Guess) Layer("Ghost", Look.Route(of, style, 1, o * .4f, true, .3f, Lift, 2), true);
+            Layer("Ribbon", Look.Route(of, style, 1, o, style.Guess, .3f, Lift, 3), true);
+        }
+
+        void Station(Drawn drawn, Vector3 at, Color line, string name)
+        {
+            var root = new GameObject("Station").transform;
+            root.SetParent(drawn.Root.transform, false);
+            root.position = at + Vector3.up * (Lift + .5f);
+            Look.Draw("Disc", root, Meshes.Ring(0, 14, 40), Look.Flat(line.Alpha(.95f), depthTest: false, queue: 3004));
+            Look.Draw("Hole", root, Meshes.Ring(0, 8.5f, 40), Look.Flat(Look.Glass.Alpha(.92f), depthTest: false, queue: 3005)).transform.localPosition = Vector3.up * .2f;
+            if (!string.IsNullOrEmpty(name)) Sign(drawn, root.position + Vector3.up * 16, name, Look.Glass.Alpha(.78f), Look.Soft, line);
+        }
+
+        /// <summary>A chip of text standing on the route: a station's name on dark glass edged in its line's colour, or a line's
+        /// name on the line's own colour.</summary>
+        void Sign(Drawn drawn, Vector3 at, string text, Color fill, Color ink, Color edge)
+        {
+            var tag = new GameObject("Sign").transform;
+            tag.SetParent(drawn.Root.transform, false);
+            tag.position = at;
+            var words = Look.Text("Words", tag, Face.Sans, .42f, ink, TextAlignmentOptions.Center, new Vector2(14, 1), onTop: true, order: 12);
+            words.textWrappingMode = TextWrappingModes.NoWrap;
+            words.text = text;
+            words.ForceMeshUpdate();
+            float wide = words.preferredWidth + .6f;
+            Look.Draw("Edge", tag, Meshes.RoundedRect(wide + .06f, .92f, .46f), Look.Flat(edge.Alpha(.9f), depthTest: false), 10);
+            Look.Draw("Fill", tag, Meshes.RoundedRect(wide, .86f, .43f), Look.Flat(fill, depthTest: false), 11).transform.localPosition = Vector3.back * .01f;
+            words.transform.localPosition = Vector3.back * .02f;
+            labels.Add(new Label { Tag = tag, Size = TagSize * .85f });
+        }
+
         /// <summary>Each frame: which stop is current, where the guide's light is, what is being talked about.</summary>
-        public void Show(int currentStop, bool dwelling, float t, Vector3? guide, Vector3? target)
+        /// <param name="riding">The leg being flown and how far along it the guide is, metres; null at a stop.</param>
+        public void Show(int currentStop, bool dwelling, float t, Vector3? guide, Vector3? target, (int leg, float along)? riding)
         {
             orb.gameObject.SetActive(guide.HasValue);
             if (guide.HasValue)
@@ -159,16 +247,24 @@ namespace Orion.World
                 p.Chip.Fill.color = Look.Glass.Alpha(.78f * strength);
             }
 
-            // A leg already travelled is dimmed, once, and its light put out. On the others a light runs the way the leg goes.
-            for (; playedLegs < Mathf.Min(currentStop, legs.Count); playedLegs++)
-                foreach (var r in legs[playedLegs].Root.GetComponentsInChildren<Renderer>()) { if (r.name == "Line") r.sharedMaterial = played; else r.enabled = false; }
-            for (int i = playedLegs; i < legs.Count; i++)
+            foreach (var l in labels)
             {
-                var leg = legs[i];
-                if (leg.Spark == null) continue;
-                float s = Time.time * leg.Style.PulseMps % (leg.Path.Length + SparkRest);
-                leg.Spark.gameObject.SetActive(s <= leg.Path.Length);
-                leg.Spark.position = leg.Path.At(s) + Vector3.up * (Lift + 1);
+                Vector3 off = l.Tag.position - head.position;
+                l.Tag.localScale = Vector3.one * (Mathf.Clamp(off.magnitude, 40, 4000) * l.Size);
+                l.Tag.rotation = Quaternion.LookRotation(off, Vector3.up);
+            }
+
+            // A leg already travelled is dimmed, once: fainter, narrower, its light no longer flowing, its signs put away. On the
+            // leg being flown the ribbon says where the guide is; on the others nothing is travelling.
+            for (; playedLegs < Mathf.Min(currentStop, legs.Count); playedLegs++)
+            {
+                foreach (var m in legs[playedLegs].All) { m.SetFloat(Opacity, m.GetFloat(Opacity) * .35f); m.SetFloat(MinWidth, m.GetFloat(MinWidth) * .6f); m.SetFloat(FlowMps, 0); }
+                foreach (Transform child in legs[playedLegs].Root.transform) if (child.name == "Station" || child.name == "Sign") child.gameObject.SetActive(false);
+            }
+            for (int i = 0; i < legs.Count; i++)
+            {
+                float at = riding.HasValue && riding.Value.leg == i && i >= playedLegs ? riding.Value.along : -1;
+                foreach (var m in legs[i].Wake) m.SetFloat(Head, at);
             }
         }
     }

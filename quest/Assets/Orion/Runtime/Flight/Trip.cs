@@ -38,7 +38,20 @@ namespace Orion.Flight
         public bool estimated;
         /// <summary>What the guide says on the way, if anything.</summary>
         public Beat bridge;
+        /// <summary>A transit leg's parts, if the router gave them: the walk to the platform, the ride, the walk out.</summary>
+        public LegStep[] steps = Array.Empty<LegStep>();
     }
+
+    [Serializable]
+    public class LegStep
+    {
+        public string mode, from, to;          // "walk" or "transit"; where the ride is boarded and left
+        public float distanceM;
+        public TransitLine line;
+    }
+
+    /// <summary>The line ridden, in the operator's own colours where Google has them ("#ffcd00").</summary>
+    [Serializable] public class TransitLine { public string name, vehicle, colour, textColour; }
 
     [Serializable]
     public class Day

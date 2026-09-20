@@ -148,8 +148,36 @@
    ],
    "distanceM": 285,
    "durationSec": 219,
-   "transport": "drive",
-   "estimated": false
+   "transport": "transit",
+   "estimated": false,
+   "steps": [
+    {
+     "mode": "walk",
+     "distanceM": 57
+    },
+    {
+     "mode": "transit",
+     "distanceM": 171,
+     "from": "Corner Street",
+     "to": "North Gate",
+     "stops": 1,
+     "line": {
+      "name": "504",
+      "vehicle": "TRAM",
+      "colour": "#da251d",
+      "textColour": "#ffffff"
+     }
+    },
+    {
+     "mode": "walk",
+     "distanceM": 57
+    }
+   ],
+   "bridge": {
+    "text": "We take the tram for this stretch.",
+    "audioUrl": null,
+    "durationSec": 3
+   }
   }
  ]
 }

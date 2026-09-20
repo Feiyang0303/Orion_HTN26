@@ -44,6 +44,24 @@ namespace Orion
         }
 
         /// <summary>`onTop`: drawn over the city whatever stands in front of it, as a label on a screen would be.</summary>
+        /// <summary>A layer of a leg's ribbon (see Orion/Route). `through`: drawn whatever stands over the street.</summary>
+        public static Material Route(Color colour, Flight.LegStyle style, float width, float opacity, bool through, float soft, float lift, int order, bool shadow = false)
+        {
+            var m = new Material(ShaderNamed("OrionRoute")) { renderQueue = 3000 + order };
+            m.SetColor("_Colour", shadow ? Color.black : colour);
+            m.SetColor("_Warm", shadow ? Color.black : Warm);
+            m.SetFloat("_WidthM", style.WidthM * width);
+            m.SetFloat("_MinWidth", style.MinWidth * width);
+            m.SetFloat("_Lift", lift);
+            m.SetFloat("_Opacity", opacity);
+            m.SetFloat("_Soft", soft);
+            m.SetFloat("_FlowMps", style.FlowMps);
+            m.SetFloat("_DashOn", style.DashOn); m.SetFloat("_DashOff", style.DashOff);
+            m.SetFloat("_Between", style.Guess ? 0 : .42f);
+            m.SetFloat("_ZTest", (float)(through ? CompareFunction.Always : CompareFunction.LessEqual));
+            return m;
+        }
+
         public static Material Flat(Color colour, bool depthTest = true, bool depthWrite = false, int queue = 3000)
         {
             var m = new Material(ShaderNamed("OrionFlat")) { color = colour, renderQueue = queue };
@@ -114,25 +132,25 @@ namespace Orion
             return Build(v, tris);
         }
 
-        /// <summary>A flat band along a path, lying on it face up: solid, or in dashes `on` metres long with `off` between.</summary>
-        public static Mesh Ribbon(Flight.RoutePath path, float width, float lift, float on, float off)
+        /// <summary>The centre line of a stretch of a path, from `from` to `to` metres, as a strip for Orion/Route to give
+        /// its width: for every vertex, which way is sideways (the normal), which edge it is and how far along the whole
+        /// path it is (the uv).</summary>
+        public static Mesh RouteStrip(Flight.RoutePath path, float from, float to)
         {
-            const float Step = 4;                       // a band bends with the street this often
-            var v = new List<Vector3>(); var tris = new List<int>();
-            float period = on > 0 ? on + off : path.Length + 1, length = on > 0 ? on : path.Length;
-            for (float from = 0; from < path.Length; from += period)
+            const float Step = 6;                       // the ribbon bends with the street this often
+            var v = new List<Vector3>(); var side = new List<Vector3>(); var uv = new List<Vector2>(); var tris = new List<int>();
+            for (float s = from; ; s = Mathf.Min(to, s + Step))
             {
-                float to = Mathf.Min(path.Length, from + length);
-                int first = v.Count;
-                for (float s = from; ; s = Mathf.Min(to, s + Step))
-                {
-                    Vector3 at = path.At(s) + Vector3.up * lift, side = Vector3.Cross(Vector3.up, path.Heading(s, 2, 2, Vector3.forward)) * (width / 2);
-                    v.Add(at - side); v.Add(at + side);
-                    if (s >= to) break;
-                }
-                for (int k = first; k + 3 < v.Count; k += 2) tris.AddRange(new[] { k, k + 1, k + 2, k + 1, k + 3, k + 2 });
+                Vector3 at = path.At(s), across = Vector3.Cross(Vector3.up, path.Heading(s, 3, 3, Vector3.forward));
+                foreach (int edge in new[] { -1, 1 }) { v.Add(at); side.Add(across); uv.Add(new Vector2(edge, s)); }
+                int k = v.Count - 2;
+                if (k >= 2) tris.AddRange(new[] { k - 2, k - 1, k, k - 1, k + 1, k });
+                if (s >= to) break;
             }
-            return Build(v, tris);
+            var m = Build(v, tris);
+            m.SetNormals(side); m.SetUVs(0, uv);
+            var bounds = m.bounds; bounds.Expand(120); m.bounds = bounds;      // the shader widens and lifts it
+            return m;
         }
 
         static void AddSphere(List<Vector3> v, List<int> tris, Vector3 c, float r, int around, int up)

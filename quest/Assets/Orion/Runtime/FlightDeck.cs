@@ -230,7 +230,7 @@ namespace Orion
             if (fadeGoal == 1 && fade > .97f && fadeThen != null) { var then = fadeThen; fadeThen = null; then(); if (placed) fadeGoal = 0; }
             rig.Veil.Fade = fade;
 
-            Vector3? guide = null;
+            Vector3? guide = null; float guideAlong = 0;
             if (ready)
             {
                 /* the shot being taken now, and which shot that is. A new one is a blink away. */
@@ -238,7 +238,8 @@ namespace Orion
                 if (travelling && ride != null)
                 {
                     var r = ride.At(u * ride.T);
-                    guide = shots.LegPaths[seg.Index].At(shots.Carry(seg.Index, trails[seg.Index], r.s, out eye, out look));
+                    guideAlong = shots.Carry(seg.Index, trails[seg.Index], r.s, out eye, out look);
+                    guide = shots.LegPaths[seg.Index].At(guideAlong);
                     now = (1, seg.Index, r.part, "");
                 }
                 else
@@ -301,7 +302,7 @@ namespace Orion
             Vector3? lit = null;
             if (!travelling && beat != null)
                 lit = !string.IsNullOrEmpty(beat.Beat.targetId) && targets.TryGetValue((seg.Index, beat.Beat.targetId), out var tg) ? tg : stops[seg.Index];
-            marks.Show(cur, !travelling, t, guide, lit);
+            marks.Show(cur, !travelling, t, guide, lit, guide.HasValue ? (seg.Index, guideAlong) : ((int, float)?)null);
             rig.Captions.Progress = t / timeline.Total;
 
             /* narration: one clip per beat, started where the clock says it should be */

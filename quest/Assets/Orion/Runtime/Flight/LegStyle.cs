@@ -15,32 +15,37 @@ namespace Orion.Flight
     {
         const float MaxSlope = .3f;          // metres of height per metre along the route: steeper than any street
 
-        /// <summary>Width of the drawn line, metres.</summary>
-        public readonly float Width;
-        /// <summary>Metres of dash and of gap, or 0 for a solid line.</summary>
+        /// <summary>The ribbon laid along the street: its width on the ground in metres, and the least it may look, as a
+        /// fraction of how far off it is, so a route is still a route from two kilometres away. (The desktop gives the
+        /// second in pixels of its window; these are the same angles.)</summary>
+        public readonly float WidthM, MinWidth;
+        /// <summary>Metres of mark and of gap along it, or 0 for an unbroken ribbon.</summary>
         public readonly float DashOn, DashOff;
-        /// <summary>A wider, fainter line under the main one.</summary>
+        /// <summary>A wider, fainter one under it.</summary>
         public readonly bool Glow;
         public readonly float Opacity;
-        /// <summary>How fast the travelling light moves along the line, metres a second.</summary>
-        public readonly float PulseMps;
+        /// <summary>How fast light moves along it in the direction of travel, metres a second.</summary>
+        public readonly float FlowMps;
+        /// <summary>Only a guess: drawn broken, faint, and as an arc over the city that does not pretend to be a street.</summary>
+        public readonly bool Guess;
 
-        LegStyle(float width, float dashOn, float dashOff, bool glow, float opacity, float pulseMps)
-        { Width = width; DashOn = dashOn; DashOff = dashOff; Glow = glow; Opacity = opacity; PulseMps = pulseMps; }
+        const float PerPixel = .00104f;          // the angle of one pixel of the desktop's window
 
-        /// <summary>Walking is footsteps, cycling long dashes, transit a ribbon and driving a wide road of light, as on the
-        /// desktop (whose widths are in pixels; these are what they come to from a vantage's distance). A leg that is only
-        /// an estimate is drawn broken and faint, so a guess never looks like a route.</summary>
-        public static LegStyle For(string transport, bool estimated)
+        LegStyle(float widthM, float minPx, float dashOn, float dashOff, bool glow, float opacity, float flowMps, bool guess = false)
+        { WidthM = widthM; MinWidth = minPx * PerPixel; DashOn = dashOn; DashOff = dashOff; Glow = glow; Opacity = opacity; FlowMps = flowMps; Guess = guess; }
+
+        /// <summary>Walking is footsteps, cycling long dashes, transit a ribbon and driving a wide road of light. A leg that
+        /// is only an estimate is drawn broken and faint, so a guess never looks like a route.</summary>
+        public static LegStyle For(string transport, bool estimated = false)
         {
             LegStyle s = transport switch
             {
-                "cycle" => new LegStyle(3.4f, 34, 16, false, .95f, 90),
-                "transit" => new LegStyle(5f, 0, 0, true, .95f, 170),
-                "drive" => new LegStyle(6f, 0, 0, true, .95f, 220),
-                _ => new LegStyle(3f, 9, 15, false, .95f, 40),          // walk; old plans predate the field
+                "cycle" => new LegStyle(5, 5.8f, 30, 8, false, .95f, 14),
+                "transit" => new LegStyle(9, 8.5f, 0, 0, true, .95f, 24),
+                "drive" => new LegStyle(11, 9.5f, 0, 0, true, .95f, 20),
+                _ => new LegStyle(5, 5.5f, 8, 5, false, .95f, 9),          // walk; old plans predate the field
             };
-            return estimated ? new LegStyle(s.Width, 12, 14, false, .5f, s.PulseMps) : s;
+            return estimated ? new LegStyle(s.WidthM, s.MinWidth / PerPixel, 14, 16, false, .45f, s.FlowMps, guess: true) : s;
         }
 
         /// <summary>The same points with their heights made believable: outliers replaced by the median of

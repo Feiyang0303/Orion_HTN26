@@ -1,6 +1,6 @@
 # Orion for Meta Quest
 
-The native headset client for Orion. It plays the same guided flight as the web app's `/vr`, over
+The native headset client for Orion. It plays the web app's guided flight, over
 Google Photorealistic 3D Tiles, at a quality a browser on a Quest cannot reach. Open the app and it
 plays the trip you last sent to VR from the web (`GET /api/vr/current`).
 
@@ -18,7 +18,7 @@ The scene is empty. `App` builds everything when it loads, so there is nothing t
 | `Runtime/Flight/` | The flight's logic, with no scene in it: `Timeline` (one clock: dwell → travel → dwell…), `Comfort` (`Ride`: cruise ≤ 30 m/s, ≤ 3 m/s² along, ≤ 4 m/s² sideways, legs over 1 km flown only at their ends; `Follower`: position and yaw only, both capped), `Director` (frames a stop by its measured height), `LegStyle`, `RoutePath`, `Geo`, `Anchors`, `Trip`. |
 | `Runtime/World/` | `City` (Cesium georeference + Google tileset, haze, sky, look-ahead cameras), `Ground` (lat/lon → world, height by rays onto the tiles' physics meshes), `Shots` (vantages at stops with a line-of-sight check; the corner-rounded trail down a leg), `Marks` (route, pins, guide orb, beam and ring). |
 | `Runtime/Rig/` | The person's space: head camera, the fixed floor ring, `Veil` (blink + vignette), `Captions`, `Console`, `Credits` (Cesium's attribution overlay drawn into a texture, because a headset has no screen overlay), `Pointer`. |
-| `Runtime/FlightDeck.cs` | The frame loop: clock, blinks, follower, narration, panels. The port of the web's `src/vr/Scene.tsx`. |
+| `Runtime/FlightDeck.cs` | The frame loop: clock, blinks, follower, narration, panels. Ported from the web app's WebXR scene (`src/vr/Scene.tsx`, since removed; see git history). |
 | `Editor/Build.cs` | Project setup (URP, Player, OpenXR, scene), key injection and the APK build, all from the command line. |
 | `Tests/` | EditMode tests of the flight logic. |
 
@@ -30,7 +30,7 @@ console (Prev · Pause/Play · Next · Ride: smooth/blinks · Day › · Leave) 
   shot of a building-sized stop is ~165 m out and ~90 m up, not 270 / 150), never nearer than 70 m
   along the line of sight. A first guess for 1:1 scale; it has not been looked at in a headset.
 - **No opening dive.** The web flight dives from its planning view. Here a day arrives in the dark at
-  its first stop (the web's `/vr` also skips the dive).
+  its first stop.
 - **An ungrounded point takes the height of the last ground found**, not the ellipsoid, which can be
   a long way under a city.
 - Tile detail: one screen-space error for the whole flight (12 px), 64 px for what is out of view, fog culling beyond 4.5 km, a 512 MB tile cache.
