@@ -56,10 +56,37 @@ export async function bestOrder(
 ): Promise<{ order: number[]; totalSec: number; estimated: boolean; minutes: number[][]; transport: Transport }> {
   let far = 0
   for (let i = 0; i < points.length; i++) for (let j = i + 1; j < points.length; j++) far = Math.max(far, metresBetween(points[i], points[j]))
-  const transport = modeFor(wish, budget, far / 2)
+  let transport = modeFor(wish, budget, far / 2)
 
-  let m: Matrix | null = null
-  try { m = await postJson<Matrix>('routes/matrix', { points, transport }) } catch { m = null; breadcrumb('router', 'matrix unavailable; using estimated times', { transport }) }
+  /* The order is only as good as the times it is chosen from, and a city with
+     no transit data answers the matrix with a grid of nulls — every cell then
+     falls back to a crow-flies guess and the day is ordered as if the streets
+     were straight. So an empty answer is asked again in a mode the city can
+     actually answer for, exactly as a leg is. */
+  const usable = (g: Matrix | null) => {
+    if (!g) return false
+    let have = 0, want = 0
+    for (let i = 0; i < points.length; i++) for (let j = 0; j < points.length; j++) {
+      if (i === j) continue
+      want++
+      if (g.durationSec[i]?.[j] != null) have++
+    }
+    return want === 0 || have >= want / 2
+  }
+  const askMatrix = async (mode: Transport) => {
+    try { return await postJson<Matrix>('routes/matrix', { points, transport: mode }) } catch { return null }
+  }
+  let m: Matrix | null = await askMatrix(transport)
+  if (!usable(m)) {
+    for (const alt of FALLBACK[transport]) {
+      const g = await askMatrix(alt)
+      if (usable(g)) {
+        breadcrumb('router', `no ${transport} times in this city; the order is measured by ${alt}`, {})
+        m = g; transport = alt; break
+      }
+    }
+  }
+  if (!usable(m)) { m = null; breadcrumb('router', 'matrix unavailable; using estimated times', { transport }) }
   const sec = (i: number, j: number) => m?.durationSec[i]?.[j] ?? guessSec(points[i], points[j], transport)
 
   const movable = points.map((_, i) => i).filter(i => !(fixedFirst && i === 0))
@@ -128,30 +155,56 @@ const LEG_TRIES = 3
 const LEG_CONCURRENCY = 3
 const pause = (ms: number) => new Promise(r => setTimeout(r, ms))
 
+/* What to ask for when a city has no data for the mode we wanted. This is not
+ * a preference, it is the difference between a leg and a dotted line drawn
+ * across the city: Google serves no transit directions in Japan at all, so
+ * every train in Tokyo and Kyoto came back "no route found" and was given up
+ * on. Driving is answered everywhere there are roads, and it at least follows
+ * them, so a leg reaches the next place along real ground. Whatever mode the
+ * answer came from is the mode the leg then says it is — the book would rather
+ * tell you it priced a taxi than quietly call a taxi a train.
+ */
+const FALLBACK: Record<Transport, Transport[]> = {
+  transit: ['drive', 'walk'],
+  drive: ['walk'],
+  cycle: ['walk'],
+  walk: [],
+}
+
+/** 404 from the router means this city cannot answer for this mode, ever.
+    Anything else is a bad moment and worth asking again. */
+const neverWorks = (e: unknown) => (e as { status?: number })?.status === 404
+
 type Point = { id: string; lat: number; lon: number }
 
-async function routeLeg(from: Point, to: Point, transport: Transport): Promise<Leg> {
-  for (let attempt = 0; attempt < LEG_TRIES; attempt++) {
-    try {
-      const r = await postJson<{ encodedPolyline: string; distanceM: number; durationSec: number; how?: string }>(
-        'routes/walk', { from, to, transport })
-      return {
-        fromStopId: from.id, toStopId: to.id, polyline: decodePolyline(r.encodedPolyline),
-        distanceM: r.distanceM, durationSec: r.durationSec, transport, estimated: false,
-        // Which line, from which station: the guide says it on the way.
-        ...(r.how ? { how: r.how } : {}),
+async function routeLeg(from: Point, to: Point, wanted: Transport): Promise<Leg> {
+  for (const transport of [wanted, ...FALLBACK[wanted]]) {
+    for (let attempt = 0; attempt < LEG_TRIES; attempt++) {
+      try {
+        const r = await postJson<{ encodedPolyline: string; distanceM: number; durationSec: number; how?: string }>(
+          'routes/walk', { from, to, transport })
+        if (transport !== wanted) {
+          breadcrumb('router', `no ${wanted} route here; this leg is ${transport}`, { from: from.id, to: to.id })
+        }
+        return {
+          fromStopId: from.id, toStopId: to.id, polyline: decodePolyline(r.encodedPolyline),
+          distanceM: r.distanceM, durationSec: r.durationSec, transport, estimated: false,
+          // Which line, from which station: the guide says it on the way.
+          ...(r.how ? { how: r.how } : {}),
+        }
+      } catch (e) {
+        if (neverWorks(e)) break                                        // ask a different way, not again
+        if (attempt < LEG_TRIES - 1) await pause(300 * 2 ** attempt)    // 300 ms, then 600
       }
-    } catch {
-      if (attempt < LEG_TRIES - 1) await pause(300 * 2 ** attempt)      // 300 ms, then 600
     }
   }
-  breadcrumb('router', `leg fell back to a straight-line estimate after ${LEG_TRIES} tries`, { from: from.id, to: to.id, transport })
+  breadcrumb('router', 'leg fell back to a straight-line estimate; no mode could be routed', { from: from.id, to: to.id, transport: wanted })
   return {
     fromStopId: from.id, toStopId: to.id,
     polyline: [{ lat: from.lat, lon: from.lon }, { lat: to.lat, lon: to.lon }],
     distanceM: Math.round(metresBetween(from, to) * DETOUR),
-    durationSec: Math.round(guessSec(from, to, transport)),
-    transport, estimated: true,
+    durationSec: Math.round(guessSec(from, to, wanted)),
+    transport: wanted, estimated: true,
   }
 }
 

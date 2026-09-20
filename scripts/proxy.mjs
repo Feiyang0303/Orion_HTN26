@@ -365,7 +365,12 @@ async function routesWalk(req, res) {
   const data = await upstream.json()
   if (!upstream.ok) throw new HttpError(502, data?.error?.message ?? `routes ${upstream.status}`)
   const r = data.routes?.[0]
-  if (!r) throw new HttpError(502, 'no route found')
+  /* 404, not 502. Google has no transit data at all in some countries — Japan
+     is the loud one — so a transit request in Tokyo does not fail, it answers
+     that there is no such route, every time. The caller needs to know the
+     difference between that and a bad minute, because one is worth retrying
+     and the other is worth asking a different way. */
+  if (!r) throw new HttpError(404, 'no route found')
   const how = transit ? howOf(r) : undefined
   json(res, 200, {
     encodedPolyline: r.polyline.encodedPolyline,

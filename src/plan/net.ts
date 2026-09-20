@@ -26,7 +26,10 @@ async function postProxy(path: string, body: unknown): Promise<Response> {
   })
   if (!res.ok) {
     const msg = ((await res.json().catch(() => ({}))) as { error?: string }).error
-    const err = new Error(`/api/${path}: ${msg || res.status}`)
+    const err = new Error(`/api/${path}: ${msg || res.status}`) as Error & { status?: number }
+    // The status rides along: a caller that can do something about 404 (this
+    // will never work) but not about 502 (try again) needs to tell them apart.
+    err.status = res.status
     if (res.status !== 501) report(err, `api.${path}`, { level: 'warning', extra: { status: res.status } })   // 501 = a key is not configured, which is setup, not a fault
     throw err
   }
