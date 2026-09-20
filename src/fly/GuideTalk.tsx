@@ -10,13 +10,15 @@ import { report } from '../telemetry'
  * answer would be two guides at once. Closing it lets the flight go on.
  */
 
-export default function GuideTalk({ day, city, stopIndex, caption, onClose }: {
+export default function GuideTalk({ day, city, stopIndex, caption, onClose, onState }: {
   day: Flown
   city: string
   stopIndex: number
   /** What the narrator was saying when they stopped it — the "that" in "what's that?". */
   caption: string
   onClose: () => void
+  /** What the guide is doing, for the goose: composing an answer, or saying one. */
+  onState?: (s: 'thinking' | 'talking' | 'quiet') => void
 }) {
   const [turns, setTurns] = useState<Turn[]>([])
   const [typed, setTyped] = useState('')
@@ -29,6 +31,8 @@ export default function GuideTalk({ day, city, stopIndex, caption, onClose }: {
   live.current = { turns, stopIndex, caption }
 
   const hush = useCallback(() => { audio.current?.pause(); audio.current = null; setSpeaking(false) }, [])
+  useEffect(() => { onState?.(thinking ? 'thinking' : speaking ? 'talking' : 'quiet') }, [thinking, speaking, onState])
+  useEffect(() => () => onState?.('quiet'), [onState])
 
   const send = useCallback(async (question: string) => {
     const q = question.trim()

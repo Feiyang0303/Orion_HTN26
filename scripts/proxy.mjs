@@ -4,7 +4,8 @@
  *
  *   GET  /api/health          which keys are configured (booleans only)
  *   POST /api/llm             { role: 'scout'|'critic'|'narrator', system, user, maxTokens } -> { text }
- *   POST /api/tts             { text } -> audio/mpeg (ElevenLabs, mp3_44100_128)
+ *   POST /api/tts             { text, expressive?, mood?, character?: 'goose'|'guide' } -> audio/mpeg (ElevenLabs, mp3_44100_128)
+ *   GET  /api/voices          { goose, wanted, voices: [{ id, name, category, labels }] }
  *   POST /api/routes/matrix   { points: LatLon[], transport? } -> { distanceM: (number|null)[][], durationSec: (number|null)[][] }
  *   POST /api/routes/walk     { from: LatLon, to: LatLon, transport? } -> { encodedPolyline, distanceM, durationSec, how?, steps? } | { none: true }
  */
@@ -128,6 +129,32 @@ async function voiceId(key) {
   return resolvedVoice
 }
 
+/* The goose. The guide is a small magic goose now, and a goose does not sound
+   like a documentary. Its voice is looked up by name in the account's own
+   list, so the choice lives in .env as a word ("Gigi", "Lily") rather than an
+   id nobody can read, and so a name the account does not have falls back to
+   the guide's voice instead of to silence. Resolved once per run. */
+const GOOSE_WANTS = env('ELEVENLABS_GOOSE_VOICE') || 'Gigi'
+const GOOSE_LIKE = /gigi|lily|jessica|matilda|laura|alice|sarah|charlotte/i
+let resolvedGoose = null
+async function gooseVoiceId(key) {
+  if (resolvedGoose) return resolvedGoose
+  try {
+    const voices = await listVoices(key)
+    const want = GOOSE_WANTS.trim().toLowerCase()
+    resolvedGoose = voices.find(v => v.voice_id === GOOSE_WANTS)?.voice_id
+      || voices.find(v => (v.name ?? '').trim().toLowerCase() === want)?.voice_id
+      || voices.find(v => (v.name ?? '').toLowerCase().includes(want))?.voice_id
+      || voices.find(v => GOOSE_LIKE.test(v.name ?? ''))?.voice_id
+      || await voiceId(key)
+    const chosen = voices.find(v => v.voice_id === resolvedGoose)
+    console.log(`[tts] the goose speaks as ${chosen ? `"${chosen.name}"` : 'the guide\'s own voice'}${chosen && chosen.name.toLowerCase() !== want ? ` (no voice called "${GOOSE_WANTS}" on this account)` : ''}`)
+  } catch {
+    resolvedGoose = await voiceId(key)
+  }
+  return resolvedGoose
+}
+
 /* Strip the audio tags out of a line. v3 reads "[warmly] it is right there" as
    a delivery note; every other model reads it aloud, brackets and all. */
 const untag = t => t.replace(/\[[^\]]{1,24}\]/g, ' ').replace(/\s{2,}/g, ' ').trim()
@@ -235,9 +262,10 @@ async function speak(key, voice, text, model, mood, withStyle) {
    anyone, and losing the reply because a model id was wrong would be. */
 async function tts(req, res) {
   const key = requireEnv('ELEVENLABS_API_KEY')
-  const { text, expressive, mood } = await readJson(req)
+  const { text, expressive, mood, character = 'goose' } = await readJson(req)
   if (!text || typeof text !== 'string') throw new HttpError(400, 'text required')
-  const voice = await voiceId(key)
+  // Everything the flight says is the goose; `character: 'guide'` is the old voice, kept for anything that wants it.
+  const voice = character === 'guide' ? await voiceId(key) : await gooseVoiceId(key)
   const { fast, rich, tags, style } = await models(key)
 
   let upstream
@@ -428,6 +456,17 @@ const routes = {
     persistentTrips: trips.persistent,
     keys: { openai: !!env('OPENAI_API_KEY'), elevenlabs: !!env('ELEVENLABS_API_KEY'), routes: !!routesKey() },
   }),
+  /** The account's voices, names only, and which one the goose resolved to — so a choice made in .env can be checked. */
+  'GET /api/voices': async (_req, res) => {
+    const key = requireEnv('ELEVENLABS_API_KEY')
+    const voices = await listVoices(key)
+    const goose = await gooseVoiceId(key)
+    json(res, 200, {
+      goose: voices.find(v => v.voice_id === goose)?.name ?? null,
+      wanted: GOOSE_WANTS,
+      voices: voices.map(v => ({ id: v.voice_id, name: v.name, category: v.category, labels: v.labels ?? {} })),
+    })
+  },
   'GET /api/wiki': handleWiki,
   'POST /api/overpass': (req, res) => handleOverpass(req, res, readJson),
   ...trips.routes,

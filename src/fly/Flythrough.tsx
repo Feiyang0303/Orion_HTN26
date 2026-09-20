@@ -16,6 +16,7 @@ import { startFlight, tag, log, lastFault, report } from '../telemetry'
 import Fault from '../ui/Fault'
 import FlightHud, { type Control, type Hud } from './FlightHud'
 import GuideTalk from './GuideTalk'
+import Goose, { type GooseState } from './Goose'
 import MapRig, { type MapView } from './MapRig'
 import DirectorDesk from './DirectorDesk'
 import './fly.css'
@@ -390,6 +391,14 @@ export default function Flythrough(props: FlyProps & { map?: MapView }) {
      not restart a flight the person had paused for their own reasons. */
   const [asking, setAsking] = useState(false)
   const heldByUs = useRef(false)
+  /* What the goose is doing. While the guide is being asked something, the
+     panel says (thinking, talking); the rest of the time it is the narration
+     — talking while a caption is on screen and the flight is running, paused
+     when the person has stopped it, idle in the gaps. */
+  const [guide, setGuide] = useState<'thinking' | 'talking' | 'quiet'>('quiet')
+  const gooseState: GooseState = asking
+    ? (guide === 'quiet' ? 'paused' : guide)
+    : hud?.paused ? 'paused' : hud?.caption ? 'talking' : 'idle'
   /* Only over a place. The button is already disabled on the way, and this is
      the same rule kept where it cannot be got round: the guide is handed the
      stop under them as its context, so a question asked mid-leg would be
@@ -462,9 +471,10 @@ export default function Flythrough(props: FlyProps & { map?: MapView }) {
       )}
       {probe === 'checking' && <div className="fly-status">Connecting to the map…</div>}
       {begin && hud && <FlightHud hud={hud} control={control} quality={quality} onQuality={toggleQuality} onExit={onExit} onAsk={plan ? openAsk : undefined} />}
+      {begin && hud && hud.phase !== 'done' && <Goose state={gooseState} />}
       {begin && asking && plan && (
         <GuideTalk day={plan} city={plan.wish.city} stopIndex={Math.max(0, hud?.stopIndex ?? 0)}
-          caption={hud?.caption ?? ''} onClose={closeAsk} />
+          caption={hud?.caption ?? ''} onClose={closeAsk} onState={setGuide} />
       )}
     </div>
   )
