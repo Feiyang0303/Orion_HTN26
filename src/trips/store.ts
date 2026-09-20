@@ -21,7 +21,11 @@ import type { Beat, Trip } from '../types'
  * refused because of a sound file. Now the clip is dropped to null, the trip is
  * saved, and the next flight simply speaks that beat again. */
 
-export type Saved = { id: string; trip: Trip; mode: 'full' | 'short'; origin: Place; updatedAt: number }
+export type Saved = {
+  id: string; trip: Trip; mode: 'full' | 'short'; origin: Place; updatedAt: number
+  /** Set on a copy held only in the page, which the server has not been given yet. A trip loaded from the server has none. */
+  unsaved?: boolean
+}
 export type Summary = { id: string; city: string; days: number; places: number; updatedAt: number }
 
 export const newId = () => Array.from(crypto.getRandomValues(new Uint8Array(8)), b => b.toString(16).padStart(2, '0')).join('')

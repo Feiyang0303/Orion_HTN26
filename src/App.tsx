@@ -105,13 +105,14 @@ function App() {
     void (async () => {
       const voiced = await voiceDay(day, saveAudio)
       if (saved) {
-        setResume({ ...saved, trip: { ...saved.trip, days: saved.trip.days.map(d => d.number === voiced.number ? voiced : d) } })
+        // Voicing a day gives it clips the server has not got: the trip is unsaved again, and the Studio keeps it when it next has it.
+        setResume({ ...saved, unsaved: true, trip: { ...saved.trip, days: saved.trip.days.map(d => d.number === voiced.number ? voiced : d) } })
         setKickoff({ wish: saved.trip.wish, mode: saved.mode, origin: saved.origin })
         setOrigin({ lat: saved.origin.lat, lon: saved.origin.lon })
         setGlobeCity({ lat: saved.origin.lat, lon: saved.origin.lon })
       }
       setLive(prev => prev
-        ? { ...prev, trip: { ...prev.trip, days: prev.trip.days.map(d => d.number === voiced.number ? voiced : d) } }
+        ? { ...prev, unsaved: true, trip: { ...prev.trip, days: prev.trip.days.map(d => d.number === voiced.number ? voiced : d) } }
         : prev)
       setFlying(voiced)
       setFlightFrom(from)

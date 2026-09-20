@@ -111,29 +111,41 @@ export default function Studio({ wish, mode, origin, saved: given, onTrip, onFly
 
   /* ---------------------------------------------------------- keeping it -- */
 
-  /* Keeping a trip is the person's decision, not a side effect of having made
-     one. It used to save itself a second after every change, which meant the
-     editor's every experiment landed in their trips whether they wanted it or
-     not, and there was no way to try something and walk away from it. Now
-     nothing reaches the server until they press something that says so. */
+  /* Every plan is kept, by itself. For a while keeping one was the person's decision, behind a Save button, so that
+     an experiment could be walked away from; but a plan that was never saved could not be sent to a headset or found
+     again, the button was one more thing to get wrong, and what people expected was for their trip to be there. So a
+     trip is saved a moment after it is made and after every change to it, one save at a time and never in the middle
+     of planning, and the bar only says how that went.
+
+     `lastSaved` is the trip the server has. It starts as the trip this view was handed only if that one came from the
+     server: a copy the page was holding (App's `live`) says so with `unsaved`, and is saved like any other change. */
   const tripKey = useRef(saved?.id ?? newId())
-  const lastSaved = useRef<Trip | null>(saved?.trip ?? null)
+  const lastSaved = useRef<Trip | null>(saved && !saved.unsaved ? saved.trip : null)
   const keepError = useRef('')
+  const saving = useRef<Promise<unknown>>(Promise.resolve())
   const [keep, setKeep] = useState<'idle' | 'saving' | 'saved' | 'local' | 'failed'>('idle')
   const [openingJournal, setOpeningJournal] = useState(false)
-  const persist = useCallback(async (t: Trip) => {
-    setKeep('saving')
-    try { const r = await saveTrip(tripKey.current, t, mode, origin); lastSaved.current = t; setKeep(r.persistent ? 'saved' : 'local'); return true }
-    catch (e) { keepError.current = e instanceof Error ? e.message : String(e); report(e, 'trips.save', { level: 'warning' }); setKeep('failed'); return false }
-  }, [mode, origin])
-  useEffect(() => { if (trip) onTrip?.({ id: tripKey.current, trip, mode, origin, updatedAt: Date.now() }) }, [trip, mode, origin, onTrip])
-  const dirty = !!trip && trip !== lastSaved.current
-  const save = useCallback(async () => { if (trip) await persist(trip) }, [trip, persist])
+  const persist = useCallback((t: Trip) => {
+    const next = saving.current.then(async () => {
+      if (t === lastSaved.current) return true
+      setKeep('saving')
+      try {
+        const r = await saveTrip(tripKey.current, t, mode, origin)
+        lastSaved.current = t
+        setKeep(r.persistent ? 'saved' : 'local')
+        onTrip?.({ id: tripKey.current, trip: t, mode, origin, updatedAt: Date.now() })
+        return true
+      } catch (e) { keepError.current = e instanceof Error ? e.message : String(e); report(e, 'trips.save', { level: 'warning' }); setKeep('failed'); return false }
+    })
+    saving.current = next
+    return next
+  }, [mode, origin, onTrip])
+  useEffect(() => { if (trip) onTrip?.({ id: tripKey.current, trip, mode, origin, updatedAt: Date.now(), unsaved: trip !== lastSaved.current }) }, [trip, mode, origin, onTrip])
 
   const saveAndOpenJournal = useCallback(async () => {
     if (!trip || openingJournal) return
     setOpeningJournal(true)
-    const kept = trip === lastSaved.current || await persist(trip)
+    const kept = await persist(trip)
     setOpeningJournal(false)
     if (kept) onJournal()
   }, [trip, openingJournal, persist, onJournal])
@@ -143,7 +155,8 @@ export default function Studio({ wish, mode, origin, saved: given, onTrip, onFly
     if (!trip) return
     setVr({ state: 'busy' })
     try {
-      if (trip !== lastSaved.current && !(await persist(trip))) throw new Error('not saved')
+      // The server has to have the trip before it can be marked for VR: marking one it had never seen was a 404, "no such trip".
+      if (!(await persist(trip))) throw new Error('not saved')
       setVr({ state: 'ready', url: await vrLink(tripKey.current) })
     } catch (e) { setVr({ state: 'failed', why: keepError.current || (e instanceof Error ? e.message : String(e)) }) }
   }, [trip, persist])
@@ -216,6 +229,14 @@ export default function Studio({ wish, mode, origin, saved: given, onTrip, onFly
     } finally { setSwapping(false) }
   }, [trip, swapping, asking, saveAudio, onEvent, origin.name])
 
+  /* The keeping itself: a moment after the trip last changed, and not while the editor or the bed-shuffle is still
+     at work on it, so a change made of several steps is saved once, as what it became. */
+  useEffect(() => {
+    if (!trip || asking || swapping || trip === lastSaved.current) return
+    const soon = setTimeout(() => { void persist(trip) }, 800)
+    return () => clearTimeout(soon)
+  }, [trip, asking, swapping, persist])
+
   const last = useMemo(() => events.filter(e => e.type === 'crew').at(-1) as Extract<CrewEvent, { type: 'crew' }> | undefined, [events])
   /* The same trip, read as a book: paper spreads, the map that unfolds, the
      bed's page with the street outside it. It is a way of reading the plan,
@@ -231,17 +252,13 @@ export default function Studio({ wish, mode, origin, saved: given, onTrip, onFly
       <div className="tv-bar">
         <button className="o-btn quiet small" onClick={onHome}>← New trip</button>
         <button className="o-btn primary small" onClick={() => void saveAndOpenJournal()} disabled={openingJournal || !trip}>
-          <Icon name="spark" size={14} /> {openingJournal ? 'Saving…' : 'Save & open journal'}
+          <Icon name="spark" size={14} /> {openingJournal ? 'Saving…' : 'Open journal'}
         </button>
         <button className="o-btn small" onClick={openInVr} disabled={vr.state === 'busy' || asking}>{vr.state === 'busy' ? 'Preparing…' : 'View in VR'}</button>
-        <button className="o-btn small" onClick={() => void save()} disabled={!dirty || keep === 'saving'}>
-          {keep === 'saving' ? 'Saving…' : dirty ? 'Save trip' : 'Saved'}
-        </button>
-        <span className={`tv-keep is-${dirty ? 'dirty' : keep}`} role="status">
-          {keep === 'saving' ? 'Saving…'
-            : dirty ? 'Not saved — this trip is only in this tab'
-            : { saved: 'Saved to your trips', local: 'Saved until the server restarts', failed: 'Not saved', idle: '' }[keep]}
+        <span className={`tv-keep is-${keep}`} role="status">
+          {{ saving: 'Saving…', saved: 'Saved to your trips', local: 'Saved until the server restarts', failed: 'Couldn’t save this trip', idle: '' }[keep]}
         </span>
+        {keep === 'failed' && trip && <button className="o-btn quiet small" onClick={() => void persist(trip)}>Try again</button>}
         {vr.state === 'ready' && vr.url && (
           <p className="tv-vr o-glass">
             Open this on the headset’s browser: <a href={vr.url} target="_blank" rel="noreferrer">{vr.url}</a>
