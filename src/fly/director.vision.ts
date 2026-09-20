@@ -34,6 +34,7 @@ import { log, report } from '../telemetry'
 
 const W = 448, H = 288                        // a picture a model is shown: enough to judge a view, small enough to send six
 const SETTLE_MIN_SEC = 1.2, SETTLE_MAX_SEC = 4.5, SETTLED_AT = 25
+const TAU = Math.PI * 2, NEAR_SIDE = 1.7     // radians: a quarter turn and a little
 const ASKING_AT_ONCE = 2, SIDES_USED = 3      // lines about one thing share out its best few sides, not its worst
 
 const SYSTEM = `You are the cinematographer for a guided aerial tour flown over a photorealistic 3D model of a real city.
@@ -184,7 +185,11 @@ export class VisionDirector {
 
   private apply(job: Job, v: Verdict) {
     this.verdicts[job.key] = v
-    const best = v.ranking.slice(0, SIDES_USED)
+    // Lines about one thing share out its best few sides, but only sides near the best one: from the best side to
+    // the one opposite is half a turn round the building between two sentences, which is a lurch however it is flown.
+    const arc = (a: number, b: number) => Math.abs(((a - b) % TAU + TAU + Math.PI) % TAU - Math.PI)
+    const first = CANDIDATE_SIDES[v.ranking[0]]
+    const best = v.ranking.filter(i => arc(CANDIDATE_SIDES[i], first) <= NEAR_SIDE).slice(0, SIDES_USED)
     job.beats.forEach((b, k) => {
       const key = shotKey(job.stop, b)
       this.shots.chosen.set(key, CANDIDATE_SIDES[best[k % best.length]])
