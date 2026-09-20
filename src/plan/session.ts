@@ -116,7 +116,9 @@ async function stagePlacesImpl(s: Session): Promise<DayDraft[]> {
   // A quick tour is three stops a day, as its switch says. It was sized to the hours like any other, so the switch only
   // shortened what was said at each of seven places.
   const quick = s.mode === 'short'
-  const perDay = quick ? QUICK_STOPS : Math.max(2, Math.min(7, Math.round(budget / 50) + 1))
+  // About seventy-five minutes a place, and no "one over": it was fifty and one more, which made seven places of a
+  // standard day, and since nothing after the Scout may leave a place out, the clock then shrank every visit to fit them.
+  const perDay = quick ? QUICK_STOPS : Math.max(2, Math.min(6, Math.round(budget / 75)))
 
   const taken = new Set<number>()
   const fixed: Candidate[] = []

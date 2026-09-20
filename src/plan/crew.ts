@@ -166,6 +166,7 @@ export async function findStops(opts: {
   // places never had, which was enough on its own to send nearly every first set back to the Scout to be cut.
   const meals = Array.from({ length: days }).flatMap(() => mealsInside(wish.meals, day))
   let picks: ScoutPick[] = []
+  let want = count          // how many the Scout is asked for: fewer on the second pass, if the first did not fit
   let complaints: string[] = []
 
   // Scout proposes, Timekeeper and Judger object, Scout tries again. The last
@@ -175,7 +176,7 @@ export async function findStops(opts: {
     say('Scout', 'agent', attempt ? 'reworking' : 'working',
       attempt ? 'Choosing again to fix: ' + complaints.join('; ') : `Naming ${count} well-known place${count === 1 ? '' : 's'} in ${city}`)
     const chosen = await scout({
-      count, wish, city, origin, radiusM, days,
+      count: want, wish, city, origin, radiusM, days,
       fixed: fixed.map(f => ({ name: f.name, lat: f.lat, lon: f.lon })),
       complaints, previous: picks.map(p => p.article.title),
     })
@@ -199,6 +200,14 @@ export async function findStops(opts: {
 
     if (t.complaints.length) {
       complaints = t.complaints
+      /* Too long means fewer places, and it has to be the count that says so. The Scout was told to drop the least
+         essential and asked, in the same breath, for the same number as before; the first that many were kept, so
+         nothing was ever dropped and the clock shrank every visit instead. It is asked for as many fewer as the
+         overrun is worth (a visit and the getting there), and still chooses which. */
+      if (t.slackMin < 0 && all.length) {
+        const each = all.reduce((n, c) => n + c.visitMin, 0) / all.length + 15
+        want = Math.max(Math.min(want, 2 * days), want - Math.max(1, Math.ceil(-t.slackMin / each)))
+      }
       if (last) break
       continue
     }
